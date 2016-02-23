@@ -2552,7 +2552,7 @@ in the option file.
 
      max-cert-size
           When retrieving a key via DNS CERT, only accept keys up to
-          this size.  Defaults to 16384 bytes.
+          this size.  Defaults to 32768 bytes.
 
      debug
           Turn on debug output in the keyserver helper program.  Note
