@@ -1429,7 +1429,7 @@ gen_rsa (int algo, unsigned nbits, KBNODE pub_root, KBNODE sec_root, DEK *dek,
   PKT_secret_key *sk;
   PKT_public_key *pk;
   gcry_sexp_t s_parms, s_key;
-  const unsigned maxsize = (opt.flags.large_rsa ? 8192 : 4096);
+  const unsigned maxsize = 32768;
 
   assert (is_RSA(algo));
 
@@ -1798,7 +1798,7 @@ ask_algo (int addmode, int *r_subkey_algo, unsigned int *r_usage)
 static unsigned
 ask_keysize (int algo, unsigned int primary_keysize)
 {
-  unsigned int nbits, min, def = DEFAULT_STD_KEYSIZE, max=4096;
+  unsigned int nbits, min, def = DEFAULT_STD_KEYSIZE, max=32768;
   int for_subkey = !!primary_keysize;
   int autocomp = 0;
 
