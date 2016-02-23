@@ -3612,7 +3612,7 @@ send_le (int slot, int class, int ins, int p0, int p1,
       else if (extended_mode < 0)
         {
           /* Send APDU using chaining mode.  */
-          if (lc > 16384)
+          if (lc > 32768)
             return SW_WRONG_LENGTH;   /* Sanity check.  */
           if ((class&0xf0) != 0)
             return SW_HOST_INV_VALUE; /* Upper 4 bits need to be 0.  */
