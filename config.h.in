@@ -608,6 +608,9 @@
 /* Size of secure memory buffer */
 #undef SECMEM_BUFFER_SIZE
 
+/* Maximum key size or lookslike */
+#undef KEY_MAX_SIZE_LOOKSLIKE
+
 /* defines the filename of the shred program */
 #undef SHRED
 

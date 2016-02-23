@@ -2964,7 +2964,7 @@ apdu_open_reader (const char *portstr)
 
   if (opt.ctapi_driver && *opt.ctapi_driver)
     {
-      int port = portstr? atoi (portstr) : 32768;
+      int port = portstr? atoi (portstr) : KEY_MAX_SIZE_LOOKSLIKE;
 
       if (!ct_api_loaded)
         {
@@ -3612,7 +3612,7 @@ send_le (int slot, int class, int ins, int p0, int p1,
       else if (extended_mode < 0)
         {
           /* Send APDU using chaining mode.  */
-          if (lc > 32768)
+          if (lc > KEY_MAX_SIZE_LOOKSLIKE)
             return SW_WRONG_LENGTH;   /* Sanity check.  */
           if ((class&0xf0) != 0)
             return SW_HOST_INV_VALUE; /* Upper 4 bits need to be 0.  */

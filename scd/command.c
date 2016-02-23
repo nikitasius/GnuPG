@@ -45,13 +45,13 @@
 #define MAXLEN_PIN 100
 
 /* Maximum allowed size of key data as used in inquiries. */
-#define MAXLEN_KEYDATA 32768
+#define MAXLEN_KEYDATA KEY_MAX_SIZE_LOOKSLIKE
 
 /* Maximum allowed total data size for SETDATA.  */
-#define MAXLEN_SETDATA 32768
+#define MAXLEN_SETDATA KEY_MAX_SIZE_LOOKSLIKE
 
 /* Maximum allowed size of certificate data as used in inquiries. */
-#define MAXLEN_CERTDATA 32768
+#define MAXLEN_CERTDATA KEY_MAX_SIZE_LOOKSLIKE
 
 
 #define set_error(e,t) assuan_set_error (ctx, gpg_error (e), (t))

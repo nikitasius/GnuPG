@@ -592,7 +592,7 @@ stream_read_mpi (estream_t stream, unsigned int secure, gcry_mpi_t *mpint)
      not too large. */
   if (mpi_data_size > 520)
     {
-      log_error (_("ssh keys greater than %d bits are not supported\n"), 32768);
+      log_error (_("ssh keys greater than %d bits are not supported\n"), KEY_MAX_SIZE_LOOKSLIKE);
       err = GPG_ERR_TOO_LARGE;
       goto out;
     }

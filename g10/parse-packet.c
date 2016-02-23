@@ -1681,7 +1681,7 @@ read_protected_v3_mpi (IOBUF inp, unsigned long *length)
   --*length;
   nbits |= c;
 
-  if (nbits > 32768)
+  if (nbits > KEY_MAX_SIZE_LOOKSLIKE)
     {
       log_error ("mpi too large (%u bits)\n", nbits);
       return NULL;

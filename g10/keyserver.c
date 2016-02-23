@@ -94,7 +94,7 @@ static int keyserver_work(enum ks_action action,strlist_t list,
 			  struct keyserver_spec *keyserver);
 
 /* Reasonable guess */
-#define DEFAULT_MAX_CERT_SIZE 32768
+#define DEFAULT_MAX_CERT_SIZE KEY_MAX_SIZE_LOOKSLIKE
 
 static size_t max_cert_size=DEFAULT_MAX_CERT_SIZE;
 

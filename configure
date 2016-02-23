@@ -5311,9 +5311,9 @@ if test "$large_secmem" = yes ; then
 else
    SECMEM_BUFFER_SIZE=262144
 fi
-
 cat >>confdefs.h <<_ACEOF
 #define SECMEM_BUFFER_SIZE $SECMEM_BUFFER_SIZE
+#define KEY_MAX_SIZE_LOOKSLIKE 32768
 _ACEOF
 
 

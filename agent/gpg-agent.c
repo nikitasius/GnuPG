@@ -233,7 +233,7 @@ static int putty_support;
 /* To avoid surprises we limit the size of the mapped IPC file to this
    value.  Putty currently (0.62) uses 8k, thus 16k should be enough
    for the foreseeable future.  */
-#define PUTTY_IPC_MAXLEN 32768
+#define PUTTY_IPC_MAXLEN KEY_MAX_SIZE_LOOKSLIKE
 #endif /*HAVE_W32_SYSTEM*/
 
 /* The list of open file descriptors at startup.  Note that this list

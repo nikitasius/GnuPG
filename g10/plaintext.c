@@ -225,9 +225,9 @@ handle_plaintext( PKT_plaintext *pt, md_filter_context_t *mfx,
 	    }
 	}
 	else { /* binary mode */
-	    byte *buffer = xmalloc( 32768 );
+	    byte *buffer = xmalloc( KEY_MAX_SIZE_LOOKSLIKE );
 	    while( pt->len ) {
-		int len = pt->len > 32768 ? 32768 : pt->len;
+		int len = pt->len > KEY_MAX_SIZE_LOOKSLIKE ? KEY_MAX_SIZE_LOOKSLIKE : pt->len;
 		len = iobuf_read( pt->buf, buffer, len );
 		if( len == -1 ) {
                     rc = gpg_error_from_syserror ();
@@ -294,7 +294,7 @@ handle_plaintext( PKT_plaintext *pt, md_filter_context_t *mfx,
 	    }
 	}
 	else { /* binary mode */
-	    byte *buffer = xmalloc( 32768 );
+	    byte *buffer = xmalloc( KEY_MAX_SIZE_LOOKSLIKE );
 	    int eof_seen = 0;
 
 	    while ( !eof_seen ) {
@@ -304,10 +304,10 @@ handle_plaintext( PKT_plaintext *pt, md_filter_context_t *mfx,
 		 * off and therefore we don't catch the boundary.
 		 * So, always assume EOF if iobuf_read returns less bytes
 		 * then requested */
-		int len = iobuf_read( pt->buf, buffer, 32768 );
+		int len = iobuf_read( pt->buf, buffer, KEY_MAX_SIZE_LOOKSLIKE );
 		if( len == -1 )
 		    break;
-		if( len < 32768 )
+		if( len < KEY_MAX_SIZE_LOOKSLIKE )
 		    eof_seen = 1;
 		if( mfx->md )
 		    gcry_md_write ( mfx->md, buffer, len );

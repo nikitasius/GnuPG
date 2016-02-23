@@ -946,7 +946,7 @@ change_cert (const char *args)
     {
       for (args++; spacep (args); args++)
         ;
-      n = get_data_from_file (args, 32768, &data);
+      n = get_data_from_file (args, KEY_MAX_SIZE_LOOKSLIKE, &data);
       if (n < 0)
         return -1;
     }
@@ -1285,7 +1285,7 @@ static unsigned int
 ask_card_keysize (int keyno, unsigned int nbits)
 {
   unsigned int min_nbits = 1024;
-  unsigned int max_nbits = 32768;
+  unsigned int max_nbits = KEY_MAX_SIZE_LOOKSLIKE;
   char *prompt, *answer;
   unsigned int req_nbits;
 
