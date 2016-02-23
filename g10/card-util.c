@@ -946,7 +946,7 @@ change_cert (const char *args)
     {
       for (args++; spacep (args); args++)
         ;
-      n = get_data_from_file (args, 16384, &data);
+      n = get_data_from_file (args, 32768, &data);
       if (n < 0)
         return -1;
     }
