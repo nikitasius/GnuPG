@@ -51,7 +51,7 @@
 #define MAXLEN_SETDATA 4096
 
 /* Maximum allowed size of certificate data as used in inquiries. */
-#define MAXLEN_CERTDATA 16384
+#define MAXLEN_CERTDATA 32768
 
 
 #define set_error(e,t) assuan_set_error (ctx, gpg_error (e), (t))
