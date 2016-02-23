@@ -602,7 +602,7 @@ pct_expando(const char *string,struct expando_args *args)
       if(!done)
 	{
 	  /* 8192 is way bigger than we'll need here */
-	  if(maxlen>=8192)
+	  if(maxlen>=33792)
 	    goto fail;
 
 	  maxlen+=1024;
