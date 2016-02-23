@@ -5309,7 +5309,7 @@ $as_echo "$large_secmem" >&6; }
 if test "$large_secmem" = yes ; then
    SECMEM_BUFFER_SIZE=262144
 else
-   SECMEM_BUFFER_SIZE=32768
+   SECMEM_BUFFER_SIZE=262144
 fi
 
 cat >>confdefs.h <<_ACEOF
