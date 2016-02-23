@@ -1285,7 +1285,7 @@ static unsigned int
 ask_card_keysize (int keyno, unsigned int nbits)
 {
   unsigned int min_nbits = 1024;
-  unsigned int max_nbits = 4096;
+  unsigned int max_nbits = 32768;
   char *prompt, *answer;
   unsigned int req_nbits;
 
