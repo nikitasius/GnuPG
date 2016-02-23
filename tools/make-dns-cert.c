@@ -64,7 +64,7 @@ cert_key(const char *name,const char *keyfile)
       goto fail;
     }
 
-  if(statbuf.st_size>16384)
+  if(statbuf.st_size>32768)
     fprintf(stderr,"Warning: key file %s is larger than the default"
 	    " GnuPG max-cert-size\n",keyfile);
 
