@@ -45,10 +45,10 @@
 #define MAXLEN_PIN 100
 
 /* Maximum allowed size of key data as used in inquiries. */
-#define MAXLEN_KEYDATA 4096
+#define MAXLEN_KEYDATA 32768
 
 /* Maximum allowed total data size for SETDATA.  */
-#define MAXLEN_SETDATA 4096
+#define MAXLEN_SETDATA 32768
 
 /* Maximum allowed size of certificate data as used in inquiries. */
 #define MAXLEN_CERTDATA 32768
