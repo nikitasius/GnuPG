@@ -305,7 +305,7 @@ main(int argc,char *argv[])
 
   printf("CERT lookup on %s\n",argv[1]);
 
-  rc=get_dns_cert (argv[1],16384,&iobuf,&fpr,&fpr_len,&url);
+  rc=get_dns_cert (argv[1],32768,&iobuf,&fpr,&fpr_len,&url);
   if(rc==-1)
     printf("error\n");
   else if(rc==0)
