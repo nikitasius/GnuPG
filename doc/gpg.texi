@@ -1645,7 +1645,7 @@ are available for all keyserver types, some common options are:
 @ifclear gpgtwoone
   @item max-cert-size
   When retrieving a key via DNS CERT, only accept keys up to this size.
-  Defaults to 16384 bytes.
+  Defaults to 32768 bytes.
 @end ifclear
 
   @item debug
