@@ -1036,7 +1036,7 @@ main (int argc, char **argv )
     }
 
   setup_libgcrypt_logging ();
-  gcry_control (GCRYCTL_INIT_SECMEM, 16384, 0);
+  gcry_control (GCRYCTL_INIT_SECMEM, SECMEM_BUFFER_SIZE, 0);
 
 
   opt_homedir = default_homedir ();

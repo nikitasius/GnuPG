@@ -999,7 +999,7 @@ main (int argc, char **argv)
                  NEED_LIBGCRYPT_VERSION, gcry_check_version (NULL) );
     }
   setup_libgcrypt_logging ();
-  gcry_control (GCRYCTL_INIT_SECMEM, 16384, 0);
+  gcry_control (GCRYCTL_INIT_SECMEM, SECMEM_BUFFER_SIZE, 0);
 
   /* Tell simple-pwquery about the the standard socket name.  */
   {
