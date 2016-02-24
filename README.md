@@ -1,4 +1,7 @@
 # GnuPG with large RSA keys
+##WARNING
+###Before installation you **must** export **ALL** your secure keys from current keyring and delete keyring!
+Explanation you can find in Errors section.
 ## Description
 GnuPG with large RSA keys (up to 32768 bytes).
 
@@ -43,6 +46,42 @@ This problem common for all versions of GnuPG which was installed manually and h
  2) install pinentry, for example `pinentry-curses`: `aptitude install pinentry-curses` and configure your gnupg to use this as adding `--with-pinentry-pgm=/usr/bin/pinentry-curses` to `./configure`.
  
 **Both** solution can work, but i recommend to start with solution#1, and if it changed nothing, apply solution#2. In my case i've used both solution, because i prefer curses as pinentry.
+###Keyring problems
+As i've written above: before installation you must export ALL your current keys from your current keyring and DELETE your current keyring. We are changed packet size, so it will be impossible to work with OLD keyring!
+
+> gpg: checking the trustdb
+
+> gpg: keyring_get_keyblock: read error: Invalid packet
+
+> gpg: keyring_get_keyblock failed: Invalid keyring
+
+> gpg: failed to rebuild keyring cache: Invalid keyring
+
+> gpg: keydb_search failed: Invalid packet
+
+> gpg: public key of ultimately trusted key C6890411 not found
+
+> gpg: keydb_search failed: Invalid packet
+
+> gpg: public key of ultimately trusted key 8BF0E8A4 not found
+
+> gpg: keyring_get_keyblock: read error: Invalid packet
+
+> gpg: keydb_get_keyblock failed: Invalid keyring
+
+> gpg: keydb_search failed: Invalid keyring
+
+> gpg: public key of ultimately trusted key BE98D714 not found
+
+> gpg: 3 marginal(s) needed, 1 complete(s) needed, PGP trust model
+
+> gpg: keyring_get_keyblock: read error: Invalid packet
+
+> gpg: keydb_get_keyblock failed: Invalid keyring
+
+> gpg: validate_key_list failed
+
+> /home/USERNAME/.gnupg/secring.gpg
 
 
 ##This is devel branch, so it's under testing now.
