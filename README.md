@@ -3,7 +3,7 @@
 #There is a BUG, im testing with modified libgcrypt.
 
 ##WARNING
-###Before installation you **must** export **ALL** your pub/sec keys from current keyring and delete keyring!
+###Before installation you **must** export **ALL** your pub/sec keys from current keyring and delete keyring! *CHECKING*
 Explanation you can find in Errors section.
 ## Description
 GnuPG with large RSA keys (up to 32768 bytes).
@@ -39,7 +39,7 @@ If all is how you want, you can run `make`
 ##Tests
 To pass the tests run `make check`
 
-I've tested on my laptop: RSA1024-OK, RSA2048-OK,RSA3072-OK, RSA4096-OK, RSA8192-OK, RSA16384-OK (19min), RSA32768-testing.
+I've tested on my laptop: RSA1024-OK, RSA2048-OK,RSA3072-OK, RSA4096-OK, RSA8192-OK, RSA16384-OK (19min), RSA32768-OK (2h).
 
 ##Installation
 If all tests are passed well, execute`checkinstall` and fill the fields like below:
@@ -63,7 +63,7 @@ This problem common for all versions of GnuPG which was installed manually and h
  2) install pinentry, for example `pinentry-curses`: `aptitude install pinentry-curses` and configure your gnupg to use this as adding `--with-pinentry-pgm=/usr/bin/pinentry-curses` to `./configure`.
  
 **Both** solution can work, but i recommend to start with solution#1, and if it changed nothing, apply solution#2. In my case i've used both solution, because i prefer curses as pinentry.
-###Keyring problems
+###Keyring problems *UNCONFIRMED* - TESTING. After libgcrypt fix seems nice. So i need to generate again keys on vanilla and on modified versions to know did they affect keyring.
 As i've written above: before installation you must export ALL your current pub/sec keys from your current keyring and DELETE your current keyring! We are changed packet size, so it will be impossible to work with OLD keyring.
 
 > gpg: checking the trustdb
