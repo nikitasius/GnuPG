@@ -7,7 +7,7 @@
 ## Description
 GnuPG with large RSA keys support (up to 32768 bytes).
 
-This version based on GnuPG version [2.0.29](https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.0.29.tar.bz2), which can be downloaded from official https://gnupg.org website.
+This version based on GnuPG version [2.0.29](https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.0.29.tar.bz2), which can be downloaded from official https://gnupg.org website. To start i copied original GnuPG into the branch `gnupg-2.0.29`, where it stays **non**-modified. After it goes into `devel` branch where im working with. And after it goes into `2.0.29-RSA32k` branch, where can be downloaded.
 
 ## Preparation
 ###Debian
