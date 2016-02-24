@@ -54,6 +54,42 @@ If all tests are passed well, execute`checkinstall` and fill the fields like bel
 
 After this you will be able to delete it via gpkg as `dpkg -r gnupg2`.
 
+##Perfomance
+On i5-5200U laptop under debian 8.3 (`4.3.0-0.bpo.1-amd64 #1 SMP Debian 4.3.3-7~bpo8+1 (2016-01-19) x86_64 GNU/Linux`)
+
+>RSA 16384 - 19 minutes
+
+>RSA 32768 - 2 hours
+
+**Encryption with RSA 32k** file.gz - 12Mb file from debian [ls-lR.gz](http://ftp.debian.org/debian/ls-lR.gz)
+> time gpg2 --out file.gz.enc --recipient "test32768pair" --encrypt file.gz
+
+>
+
+>real	0m0.079s
+
+>user	0m0.072s
+
+>sys	0m0.004s
+
+**decryption with RSA 32k**
+> time gpg2 --out file.gz.gz --decrypt file.gz.enc
+
+>
+
+>real	0m7.610s
+
+>user	0m5.624s
+
+>sys	0m0.024s
+
+**sha1sum file.* **
+>7ab98fd4a154fad5f5bbe0d698178783cd2ac994  file.gz
+
+>9773bb1b9d7f75f408f562d476e8936aafa0f3b9  file.gz.enc
+
+>7ab98fd4a154fad5f5bbe0d698178783cd2ac994  file.gz.gz
+
 ##Errors
 ###gpg: problem with the agent: No pinentry
 This problem common for all versions of GnuPG which was installed manually and here is 2 solutions:
