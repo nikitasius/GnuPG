@@ -1,3 +1,8 @@
+2016-02-24  nikitasius <nikita@saraeff.net>
+	Release 2.0.29.RSA32k
+	
+	Added: support for 32769 RSA keypairs (https://github.com/nikitasius/GnuPG).
+
 2015-09-08  Werner Koch  <wk@gnupg.org>
 
 	Release 2.0.29.
