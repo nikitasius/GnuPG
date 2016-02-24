@@ -1,4 +1,7 @@
 # GnuPG with large RSA keys
+
+#There is a BUG, im testing with modified libgcrypt.
+
 ##WARNING
 ###Before installation you **must** export **ALL** your pub/sec keys from current keyring and delete keyring!
 Explanation you can find in Errors section.
