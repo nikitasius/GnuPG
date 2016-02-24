@@ -55,7 +55,7 @@ If all tests are passed well, execute`checkinstall` and fill the fields like bel
 
 > 11 - Provides: [ gnupg2 ]
 
-After this you will be able to delete it via gpkg as `dpkg -r gnupg2`.
+After this you will be able to delete it via gpkg as `dpkg -r gnupg2` **or** run `make install` if you do not use `checkinstall`.
 
 ##Perfomance
 On i5-5200U laptop under debian 8.3 (`4.3.0-0.bpo.1-amd64 #1 SMP Debian 4.3.3-7~bpo8+1 (2016-01-19) x86_64 GNU/Linux`)
