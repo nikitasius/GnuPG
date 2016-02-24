@@ -1,6 +1,6 @@
 # GnuPG with large RSA keys
 ##WARNING
-###Before installation you **must** export **ALL** your secure keys from current keyring and delete keyring!
+###Before installation you **must** export **ALL** your pub/sec keys from current keyring and delete keyring!
 Explanation you can find in Errors section.
 ## Description
 GnuPG with large RSA keys (up to 32768 bytes).
@@ -47,7 +47,7 @@ This problem common for all versions of GnuPG which was installed manually and h
  
 **Both** solution can work, but i recommend to start with solution#1, and if it changed nothing, apply solution#2. In my case i've used both solution, because i prefer curses as pinentry.
 ###Keyring problems
-As i've written above: before installation you must export ALL your current keys from your current keyring and DELETE your current keyring. We are changed packet size, so it will be impossible to work with OLD keyring!
+As i've written above: before installation you must export ALL your current pub/sec keys from your current keyring and DELETE your current keyring! We are changed packet size, so it will be impossible to work with OLD keyring.
 
 > gpg: checking the trustdb
 
