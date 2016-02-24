@@ -1,4 +1,4 @@
-2016-02-24  nikitasius <nikita@saraeff.net>
+2016-02-24  Nikita S. <nikita@saraeff.net>
 	Release 2.0.29.RSA32k
 	
 	Added: support for 32769 RSA keypairs (https://github.com/nikitasius/GnuPG).
