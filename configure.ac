@@ -183,12 +183,15 @@ AC_ARG_ENABLE(large-secmem,
               large_secmem=$enableval, large_secmem=no)
 AC_MSG_RESULT($large_secmem)
 if test "$large_secmem" = yes ; then
-   SECMEM_BUFFER_SIZE=65536
+   SECMEM_BUFFER_SIZE=262144
 else
-   SECMEM_BUFFER_SIZE=32768
+   SECMEM_BUFFER_SIZE=262144
 fi
 AC_DEFINE_UNQUOTED(SECMEM_BUFFER_SIZE,$SECMEM_BUFFER_SIZE,
                    [Size of secure memory buffer])
+                   
+AC_DEFINE_UNQUOTED(KEY_MAX_SIZE_LOOKSLIKE,32768,
+                   [Maximum key size or lookslike])                   
 
 
 # Allow disabling of bzib2 support.
