@@ -31,8 +31,11 @@ I've tested additionally on my side: RSA2048-OK, RSA4096-OK, RSA8192-OK, RSA1638
 If all tests are passed well, execute`checkinstall` and fill the fields like below:
 
 > 1 -  Summary: [ gnupg2-2.0.29 ]
+
 > 2 -  Name:    [ gnupg2 ]
+
 > 3 -  Version: [ 2.0.29 ]
+
 > 11 - Provides: [ gnupg2 ]
 
 After this you will be able to delete it via gpkg as `dpkg -r gnupg2`.
