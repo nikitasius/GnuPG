@@ -7,6 +7,17 @@ GnuPG with large RSA keys (up to 32768 bytes).
 
 This version based on GnuPG version [2.0.29](https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.0.29.tar.bz2), which can be downloaded from official https://gnupg.org website.
 
+## Preparation
+You need enought entropy. Check your current entropy level you can via `cat /proc/sys/kernel/random/entropy_avail`.
+
+Your maximum level of entropy here: `cat /proc/sys/kernel/random/poolsize`. For last linux distro we have `4096` as poolsize value.
+You in case when you limited with 4096 you should have 3000+ entropy. During all tests my laptop had 3100-3200 entropy.
+To increase your entropy level you can install `rng-tools` and `haveged`.
+
+`rng-tools` - there is many guides how to tune it. After installing it will boost well your entropy level. Same time if your PC support TPM and you have hardware random generators, you can tune `rng-tools` to use it. In another case it will use `rdrand` CPU flag (if your CPU have it) to boost entropy level.
+
+`haveged` - i don't have TPM module in my laptop, so i use `haveged` to boost my entropy level with `rng-tools` same time. `haveged` run with default param `1024`. Without `haveged` i have 1600-2000 entropy, so i've set up `3072` for `haveged` service to have at least 3100 of entropy. Each time when you configure `haveged` check CPU consumption, because it's a software generator and if you don't have entropy as is, it will consume a lot of CPU time. In my case with i5-5200U and `3072` for `haveged` all cores have 3%-7% in idle time on `4.3.0-0.bpo.1-amd64 #1 SMP Debian 4.3.3-7~bpo8+1 (2016-01-19) x86_64 GNU/Linux`.
+
 ## Configuration
 ### Debian
 Update your aptitude: `aptitude update`
@@ -25,7 +36,7 @@ If all is how you want, you can run `make`
 ##Tests
 To pass the tests run `make check`
 
-I've tested additionally on my side: RSA2048-OK, RSA4096-OK, RSA8192-OK, RSA16384-OK (19min), RSA32768-testing.
+I've tested on my laptop: RSA1024-OK, RSA2048-OK,RSA3072-OK, RSA4096-OK, RSA8192-OK, RSA16384-OK (19min), RSA32768-testing.
 
 ##Installation
 If all tests are passed well, execute`checkinstall` and fill the fields like below:
