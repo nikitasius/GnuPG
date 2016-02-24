@@ -2,7 +2,7 @@
 
 ## WARNING
 ## USE MODIFIED GNUPG AT YOUR OWN RISK. SOFTWARE MAY CAUSE DATA LOSS, SYSTEM CRASHES, AND RED EYES.
-### Large keys, created in modified GnuPG with modified libgcrypt CANNOT be read by vanilla versions! It mean, that if you have another PGP stuff in your PC which work work with keys, you should to export keys OR create another keyring for vanilla versions.
+### Large keys, created in modified GnuPG with modified libgcrypt CANNOT be read by vanilla versions! It mean, that if you have another PGP stuff in your PC which work with keys, you should to export keys OR create another keyring for vanilla versions.
 
 ## Description
 GnuPG with large RSA keys support (up to 32768 bytes).
