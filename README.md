@@ -27,7 +27,7 @@ Update your aptitude: `aptitude update`
 
 Install packets for compilation: `aptitude install gcc make checkinstall`
 
-Install **modified** libgcrypt, what can be found [here](https://github.com/nikitasius/libgcrypt).
+Install [**modified** libgcrypt](https://github.com/nikitasius/libgcrypt).
 
 To build with BZIP2 support you need: `aptitude install libbz2-dev`
 
