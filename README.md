@@ -22,7 +22,7 @@ To increase your entropy level you can install `rng-tools` and `haveged`.
 `haveged` - i don't have TPM module in my laptop, so i use `haveged` to boost my entropy level with `rng-tools` same time. `haveged` run with default param `1024`. Without `haveged` (but with `rng-tools`) i had 1600-2000 entropy, so i've increased from `1024` to `3072` for `haveged` service to have at least 3100 of entropy. Each time when you configure `haveged` **check CPU consumption**, because it's a software generator and if you don't have entropy as is, it will consume a lot of CPU time. In my case with i5-5200U and `3072` for `haveged` all cores have 3%-7% in idle time on `4.3.0-0.bpo.1-amd64 #1 SMP Debian 4.3.3-7~bpo8+1 (2016-01-19) x86_64 GNU/Linux`.
 
 ## Configuration
-## Patch vanilla gnupg-2.0.29
+### Patch vanilla gnupg-2.0.29
 If by some private reasons you don't want to download this version from this Github repo, you can download patch [gnupg-2.0.29-RSA32k.patch](https://raw.githubusercontent.com/nikitasius/GnuPG/2.0.29-RSA32k/gnupg-2.0.29-RSA32k.patch) and download [vanilla gnupg-2.0.29](https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.0.29.tar.bz2).
 
 After you can check patch content and if all is ok, copy it inside folder with vanilla gnupg-2.0.29 and run `patch -p1 < gnupg-2.0.29-RSA32k.patch`. After patching your gnupg-2.0.29 will be able to work with RSA-32768 keys.
