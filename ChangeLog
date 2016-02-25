@@ -2,7 +2,7 @@
 
 	Release 2.0.29.RSA32k (https://github.com/nikitasius/GnuPG/tree/2.0.29-RSA32k)
 	
-	gpg: works with RSA-32768 keypair.
+	Add: RSA-32768 keypair support.
 	* config.h.in (KEY_MAX_SIZE_LOOKSLIKE): new .
 	configure: SECMEM_BUFFER_SIZE always 262144 (not depends of --enable-large-secmem).
 	configure: new constant KEY_MAX_SIZE_LOOKSLIKE with value 32768.	
