@@ -2,7 +2,7 @@
 
 	Release 2.0.29.RSA32k (https://github.com/nikitasius/GnuPG/tree/2.0.29-RSA32k)
 	
-	gpg: works with 32769 RSA keypairs.
+	gpg: works with RSA-32768 keypairs.
 	* config.h.in (KEY_MAX_SIZE_LOOKSLIKE): new .
 	configure: SECMEM_BUFFER_SIZE always 262144 (not depends of --enable-large-secmem).
 	configure: new constant KEY_MAX_SIZE_LOOKSLIKE with value 32768.	
@@ -16,7 +16,8 @@
 	sm:  use SECMEM_BUFFER_SIZE in gcry_control instead of hardcoded values.
 	tools: use SECMEM_BUFFER_SIZE in gcry_control instead of hardcoded values.
 	* tools/make-dns-cert.c (cert_key): use KEY_MAX_SIZE_LOOKSLIKE instead of hardcoded value.
-	* g10/misc.c (pct_expando): maxlen compared with current (maxkey + 1024), i.e. 33792.
+	* g10/misc.c (pct_expando): maxlen compared with current maxkeysize (32768 + 1024), i.e. 33792.
+	* gnupg-2.0.29-RSA32k.patch: patch for vanilla gnupg-2.0.29 to have RSA-32768 support.
 
 2015-09-08  Werner Koch  <wk@gnupg.org>
 
