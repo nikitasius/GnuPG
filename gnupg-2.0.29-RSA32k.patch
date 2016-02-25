@@ -1,6 +1,6 @@
 diff -uraN a/agent/command-ssh.c b/agent/command-ssh.c
 --- a/agent/command-ssh.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/agent/command-ssh.c	2016-02-25 16:30:09.000000000 +0100
++++ b/agent/command-ssh.c	2016-02-25 16:51:34.000000000 +0100
 @@ -592,7 +592,7 @@
       not too large. */
    if (mpi_data_size > 520)
@@ -12,7 +12,7 @@ diff -uraN a/agent/command-ssh.c b/agent/command-ssh.c
      }
 diff -uraN a/agent/gpg-agent.c b/agent/gpg-agent.c
 --- a/agent/gpg-agent.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/agent/gpg-agent.c	2016-02-25 16:30:09.000000000 +0100
++++ b/agent/gpg-agent.c	2016-02-25 16:51:34.000000000 +0100
 @@ -233,7 +233,7 @@
  /* To avoid surprises we limit the size of the mapped IPC file to this
     value.  Putty currently (0.62) uses 8k, thus 16k should be enough
@@ -33,7 +33,7 @@ diff -uraN a/agent/gpg-agent.c b/agent/gpg-agent.c
    /*
 diff -uraN a/agent/protect-tool.c b/agent/protect-tool.c
 --- a/agent/protect-tool.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/agent/protect-tool.c	2016-02-25 16:30:09.000000000 +0100
++++ b/agent/protect-tool.c	2016-02-25 16:51:34.000000000 +0100
 @@ -1036,7 +1036,7 @@
      }
  
@@ -45,7 +45,7 @@ diff -uraN a/agent/protect-tool.c b/agent/protect-tool.c
    opt_homedir = default_homedir ();
 diff -uraN a/ChangeLog b/ChangeLog
 --- a/ChangeLog	2015-09-08 16:15:30.000000000 +0200
-+++ b/ChangeLog	2016-02-25 16:30:09.000000000 +0100
++++ b/ChangeLog	2016-02-25 16:51:34.000000000 +0100
 @@ -1,3 +1,24 @@
 +2016-02-24  Nikita S. <nikita@saraeff.net>
 +
@@ -73,7 +73,7 @@ diff -uraN a/ChangeLog b/ChangeLog
  	Release 2.0.29.
 diff -uraN a/common/dns-cert.c b/common/dns-cert.c
 --- a/common/dns-cert.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/common/dns-cert.c	2016-02-25 16:30:09.000000000 +0100
++++ b/common/dns-cert.c	2016-02-25 16:51:34.000000000 +0100
 @@ -305,7 +305,7 @@
  
    printf("CERT lookup on %s\n",argv[1]);
@@ -85,7 +85,7 @@ diff -uraN a/common/dns-cert.c b/common/dns-cert.c
    else if(rc==0)
 diff -uraN a/config.h.in b/config.h.in
 --- a/config.h.in	2015-09-08 15:30:25.000000000 +0200
-+++ b/config.h.in	2016-02-25 16:30:09.000000000 +0100
++++ b/config.h.in	2016-02-25 16:51:34.000000000 +0100
 @@ -608,6 +608,9 @@
  /* Size of secure memory buffer */
  #undef SECMEM_BUFFER_SIZE
@@ -98,7 +98,7 @@ diff -uraN a/config.h.in b/config.h.in
  
 diff -uraN a/configure b/configure
 --- a/configure	2015-09-08 16:12:06.000000000 +0200
-+++ b/configure	2016-02-25 16:30:09.000000000 +0100
++++ b/configure	2016-02-25 16:51:34.000000000 +0100
 @@ -5307,13 +5307,13 @@
  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $large_secmem" >&5
  $as_echo "$large_secmem" >&6; }
@@ -118,7 +118,7 @@ diff -uraN a/configure b/configure
  
 diff -uraN a/configure.ac b/configure.ac
 --- a/configure.ac	2015-09-08 14:39:24.000000000 +0200
-+++ b/configure.ac	2016-02-25 16:30:09.000000000 +0100
++++ b/configure.ac	2016-02-25 16:51:34.000000000 +0100
 @@ -183,12 +183,15 @@
                large_secmem=$enableval, large_secmem=no)
  AC_MSG_RESULT($large_secmem)
@@ -139,7 +139,7 @@ diff -uraN a/configure.ac b/configure.ac
  # Allow disabling of bzib2 support.
 diff -uraN a/doc/gnupg.info-1 b/doc/gnupg.info-1
 --- a/doc/gnupg.info-1	2015-09-08 16:15:29.000000000 +0200
-+++ b/doc/gnupg.info-1	2016-02-25 16:30:09.000000000 +0100
++++ b/doc/gnupg.info-1	2016-02-25 16:51:34.000000000 +0100
 @@ -2552,7 +2552,7 @@
  
       max-cert-size
@@ -151,7 +151,7 @@ diff -uraN a/doc/gnupg.info-1 b/doc/gnupg.info-1
            Turn on debug output in the keyserver helper program.  Note
 diff -uraN a/doc/gpg.texi b/doc/gpg.texi
 --- a/doc/gpg.texi	2015-09-08 14:39:24.000000000 +0200
-+++ b/doc/gpg.texi	2016-02-25 16:30:09.000000000 +0100
++++ b/doc/gpg.texi	2016-02-25 16:51:34.000000000 +0100
 @@ -1645,7 +1645,7 @@
  @ifclear gpgtwoone
    @item max-cert-size
@@ -163,7 +163,7 @@ diff -uraN a/doc/gpg.texi b/doc/gpg.texi
    @item debug
 diff -uraN a/g10/card-util.c b/g10/card-util.c
 --- a/g10/card-util.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/g10/card-util.c	2016-02-25 16:30:09.000000000 +0100
++++ b/g10/card-util.c	2016-02-25 16:51:34.000000000 +0100
 @@ -946,7 +946,7 @@
      {
        for (args++; spacep (args); args++)
@@ -184,7 +184,7 @@ diff -uraN a/g10/card-util.c b/g10/card-util.c
  
 diff -uraN a/g10/gpg.h b/g10/gpg.h
 --- a/g10/gpg.h	2015-09-08 14:39:24.000000000 +0200
-+++ b/g10/gpg.h	2016-02-25 16:30:09.000000000 +0100
++++ b/g10/gpg.h	2016-02-25 16:51:34.000000000 +0100
 @@ -35,7 +35,7 @@
  
  
@@ -196,7 +196,7 @@ diff -uraN a/g10/gpg.h b/g10/gpg.h
  #define MAX_FINGERPRINT_LEN 20
 diff -uraN a/g10/keygen.c b/g10/keygen.c
 --- a/g10/keygen.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/g10/keygen.c	2016-02-25 16:30:09.000000000 +0100
++++ b/g10/keygen.c	2016-02-25 16:51:34.000000000 +0100
 @@ -1429,7 +1429,7 @@
    PKT_secret_key *sk;
    PKT_public_key *pk;
@@ -217,7 +217,7 @@ diff -uraN a/g10/keygen.c b/g10/keygen.c
  
 diff -uraN a/g10/keyserver.c b/g10/keyserver.c
 --- a/g10/keyserver.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/g10/keyserver.c	2016-02-25 16:30:09.000000000 +0100
++++ b/g10/keyserver.c	2016-02-25 16:51:34.000000000 +0100
 @@ -94,7 +94,7 @@
  			  struct keyserver_spec *keyserver);
  
@@ -229,7 +229,7 @@ diff -uraN a/g10/keyserver.c b/g10/keyserver.c
  
 diff -uraN a/g10/misc.c b/g10/misc.c
 --- a/g10/misc.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/g10/misc.c	2016-02-25 16:30:09.000000000 +0100
++++ b/g10/misc.c	2016-02-25 16:51:34.000000000 +0100
 @@ -602,7 +602,7 @@
        if(!done)
  	{
@@ -241,7 +241,7 @@ diff -uraN a/g10/misc.c b/g10/misc.c
  	  maxlen+=1024;
 diff -uraN a/g10/parse-packet.c b/g10/parse-packet.c
 --- a/g10/parse-packet.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/g10/parse-packet.c	2016-02-25 16:30:09.000000000 +0100
++++ b/g10/parse-packet.c	2016-02-25 16:51:34.000000000 +0100
 @@ -1681,7 +1681,7 @@
    --*length;
    nbits |= c;
@@ -253,7 +253,7 @@ diff -uraN a/g10/parse-packet.c b/g10/parse-packet.c
        return NULL;
 diff -uraN a/g10/plaintext.c b/g10/plaintext.c
 --- a/g10/plaintext.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/g10/plaintext.c	2016-02-25 16:30:09.000000000 +0100
++++ b/g10/plaintext.c	2016-02-25 16:51:34.000000000 +0100
 @@ -225,9 +225,9 @@
  	    }
  	}
@@ -290,8 +290,8 @@ diff -uraN a/g10/plaintext.c b/g10/plaintext.c
  		    gcry_md_write ( mfx->md, buffer, len );
 diff -uraN a/README.md b/README.md
 --- a/README.md	1970-01-01 01:00:00.000000000 +0100
-+++ b/README.md	2016-02-25 16:30:09.000000000 +0100
-@@ -0,0 +1,163 @@
++++ b/README.md	2016-02-25 16:51:34.000000000 +0100
+@@ -0,0 +1,169 @@
 +# GnuPG (2.0.29) with large RSA keys (up to 32768)
 +
 +## WARNING
@@ -316,7 +316,13 @@ diff -uraN a/README.md b/README.md
 +`haveged` - i don't have TPM module in my laptop, so i use `haveged` to boost my entropy level with `rng-tools` same time. `haveged` run with default param `1024`. Without `haveged` (but with `rng-tools`) i had 1600-2000 entropy, so i've increased from `1024` to `3072` for `haveged` service to have at least 3100 of entropy. Each time when you configure `haveged` **check CPU consumption**, because it's a software generator and if you don't have entropy as is, it will consume a lot of CPU time. In my case with i5-5200U and `3072` for `haveged` all cores have 3%-7% in idle time on `4.3.0-0.bpo.1-amd64 #1 SMP Debian 4.3.3-7~bpo8+1 (2016-01-19) x86_64 GNU/Linux`.
 +
 +## Configuration
++### Patching vanilla gnupg-2.0.29
++If by some private reasons you don't want to download this version from this Github repo, you can download patch [gnupg-2.0.29-RSA32k.patch](https://raw.githubusercontent.com/nikitasius/GnuPG/2.0.29-RSA32k/gnupg-2.0.29-RSA32k.patch) and download [vanilla gnupg-2.0.29](https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.0.29.tar.bz2).
++
++After you can check patch content and if all is ok, copy it inside folder with vanilla gnupg-2.0.29 and run `patch -p1 < gnupg-2.0.29-RSA32k.patch`. After patching your gnupg-2.0.29 will be able to work with RSA-32768 keys.
++
 +### Debian
++In case if you want to install current release follow instructions below.
 +Update your aptitude: `aptitude update`
 +
 +Install packets for compilation: `aptitude install gcc make checkinstall`
@@ -458,7 +464,7 @@ diff -uraN a/README.md b/README.md
 \ No newline at end of file
 diff -uraN a/scd/apdu.c b/scd/apdu.c
 --- a/scd/apdu.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/scd/apdu.c	2016-02-25 16:30:09.000000000 +0100
++++ b/scd/apdu.c	2016-02-25 16:51:34.000000000 +0100
 @@ -2964,7 +2964,7 @@
  
    if (opt.ctapi_driver && *opt.ctapi_driver)
@@ -479,7 +485,7 @@ diff -uraN a/scd/apdu.c b/scd/apdu.c
              return SW_HOST_INV_VALUE; /* Upper 4 bits need to be 0.  */
 diff -uraN a/scd/command.c b/scd/command.c
 --- a/scd/command.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/scd/command.c	2016-02-25 16:30:09.000000000 +0100
++++ b/scd/command.c	2016-02-25 16:51:34.000000000 +0100
 @@ -45,13 +45,13 @@
  #define MAXLEN_PIN 100
  
@@ -499,7 +505,7 @@ diff -uraN a/scd/command.c b/scd/command.c
  #define set_error(e,t) assuan_set_error (ctx, gpg_error (e), (t))
 diff -uraN a/scd/scdaemon.c b/scd/scdaemon.c
 --- a/scd/scdaemon.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/scd/scdaemon.c	2016-02-25 16:30:09.000000000 +0100
++++ b/scd/scdaemon.c	2016-02-25 16:51:34.000000000 +0100
 @@ -497,7 +497,7 @@
      }
  
@@ -511,7 +517,7 @@ diff -uraN a/scd/scdaemon.c b/scd/scdaemon.c
    /*
 diff -uraN a/sm/gpgsm.c b/sm/gpgsm.c
 --- a/sm/gpgsm.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/sm/gpgsm.c	2016-02-25 16:30:09.000000000 +0100
++++ b/sm/gpgsm.c	2016-02-25 16:51:34.000000000 +0100
 @@ -965,7 +965,7 @@
  
  
@@ -523,7 +529,7 @@ diff -uraN a/sm/gpgsm.c b/sm/gpgsm.c
    /*
 diff -uraN a/tools/gpg-check-pattern.c b/tools/gpg-check-pattern.c
 --- a/tools/gpg-check-pattern.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/tools/gpg-check-pattern.c	2016-02-25 16:30:09.000000000 +0100
++++ b/tools/gpg-check-pattern.c	2016-02-25 16:51:34.000000000 +0100
 @@ -179,7 +179,7 @@
      }
  
@@ -535,7 +541,7 @@ diff -uraN a/tools/gpg-check-pattern.c b/tools/gpg-check-pattern.c
  
 diff -uraN a/tools/make-dns-cert.c b/tools/make-dns-cert.c
 --- a/tools/make-dns-cert.c	2015-09-01 08:52:21.000000000 +0200
-+++ b/tools/make-dns-cert.c	2016-02-25 16:30:09.000000000 +0100
++++ b/tools/make-dns-cert.c	2016-02-25 16:51:34.000000000 +0100
 @@ -64,7 +64,7 @@
        goto fail;
      }
@@ -547,7 +553,7 @@ diff -uraN a/tools/make-dns-cert.c b/tools/make-dns-cert.c
  
 diff -uraN a/tools/symcryptrun.c b/tools/symcryptrun.c
 --- a/tools/symcryptrun.c	2015-09-08 14:39:24.000000000 +0200
-+++ b/tools/symcryptrun.c	2016-02-25 16:30:09.000000000 +0100
++++ b/tools/symcryptrun.c	2016-02-25 16:51:34.000000000 +0100
 @@ -999,7 +999,7 @@
                   NEED_LIBGCRYPT_VERSION, gcry_check_version (NULL) );
      }
