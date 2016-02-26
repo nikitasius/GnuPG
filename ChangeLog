@@ -1,3 +1,7 @@
+2016-02-26  Nikita S. <nikita@saraeff.net>
+	
+	* g10/misc.c (pct_expando): maxlen returned back to 8192, there is no link with maxkeysize, tested.
+
 2016-02-24  Nikita S. <nikita@saraeff.net>
 
 	Release 2.0.29.RSA32k (https://github.com/nikitasius/GnuPG/tree/2.0.29-RSA32k)
