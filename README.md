@@ -1,2 +1,2 @@
 # GnuPG
-GnuPG with large RSA keys (>=8kb)
+This is original GnuPG 2.0.29
