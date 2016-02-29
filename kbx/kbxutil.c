@@ -1,5 +1,5 @@
 /* kbxutil.c - The Keybox utility
- * Copyright (C) 2000, 2001, 2004, 2007 Free Software Foundation, Inc.
+ * Copyright (C) 2000, 2001, 2004, 2007, 2011 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -28,16 +28,16 @@
 #include <limits.h>
 #include <assert.h>
 
-#define JNLIB_NEED_LOG_LOGV
-#include "../jnlib/logging.h"
-#include "../jnlib/argparse.h"
-#include "../jnlib/stringhelp.h"
-#include "../jnlib/utf8conv.h"
+#include <gpg-error.h>
+#include "../common/logging.h"
+#include "../common/argparse.h"
+#include "../common/stringhelp.h"
+#include "../common/utf8conv.h"
 #include "i18n.h"
-#include "init.h"
 #include "keybox-defs.h"
-
+#include "../common/init.h"
 #include <gcrypt.h>
+
 
 enum cmd_and_opt_values {
   aNull = 0,
@@ -46,7 +46,7 @@ enum cmd_and_opt_values {
   oOutput	  = 'o',
   oQuiet	  = 'q',
   oVerbose	  = 'v',
-  
+
   aNoSuchCmd    = 500,   /* force other values not to be a letter */
   aFindByFpr,
   aFindByKid,
@@ -73,13 +73,13 @@ static ARGPARSE_OPTS opts[] = {
 /*   { aFindByFpr,  "find-by-fpr", 0, "|FPR| find key using it's fingerprnt" }, */
 /*   { aFindByKid,  "find-by-kid", 0, "|KID| find key using it's keyid" }, */
 /*   { aFindByUid,  "find-by-uid", 0, "|NAME| find key by user name" }, */
-  { aStats,      "stats",       0, "show key statistics" }, 
+  { aStats,      "stats",       0, "show key statistics" },
   { aImportOpenPGP, "import-openpgp", 0, "import OpenPGP keyblocks"},
   { aFindDups,    "find-dups",   0, "find duplicates" },
   { aCut,         "cut",         0, "export records" },
-  
+
   { 301, NULL, 0, N_("@\nOptions:\n ") },
-  
+
   { oFrom, "from", 4, "|N|first record to export" },
   { oTo,   "to",   4, "|N|last record to export" },
 /*   { oArmor, "armor",     0, N_("create ascii armored output")}, */
@@ -88,7 +88,7 @@ static ARGPARSE_OPTS opts[] = {
   { oVerbose, "verbose",   0, N_("verbose") },
   { oQuiet,	"quiet",   0, N_("be somewhat more quiet") },
   { oDryRun, "dry-run",   0, N_("do not make any changes") },
-  
+
   { oDebug, "debug"     ,4|16, N_("set debugging flags")},
   { oDebugAll, "debug-all" ,0, N_("enable full debugging")},
 
@@ -106,7 +106,7 @@ my_strusage( int level )
 {
     const char *p;
     switch( level ) {
-      case 11: p = "kbxutil (GnuPG)";
+      case 11: p = "kbxutil (@GNUPG@)";
 	break;
       case 13: p = VERSION; break;
       case 17: p = PRINTABLE_OS_NAME; break;
@@ -137,14 +137,14 @@ my_gcry_logger (void *dummy, int level, const char *fmt, va_list arg_ptr)
   /* Map the log levels.  */
   switch (level)
     {
-    case GCRY_LOG_CONT: level = JNLIB_LOG_CONT; break;
-    case GCRY_LOG_INFO: level = JNLIB_LOG_INFO; break;
-    case GCRY_LOG_WARN: level = JNLIB_LOG_WARN; break;
-    case GCRY_LOG_ERROR:level = JNLIB_LOG_ERROR; break;
-    case GCRY_LOG_FATAL:level = JNLIB_LOG_FATAL; break;
-    case GCRY_LOG_BUG:  level = JNLIB_LOG_BUG; break;
-    case GCRY_LOG_DEBUG:level = JNLIB_LOG_DEBUG; break;
-    default:            level = JNLIB_LOG_ERROR; break;  
+    case GCRY_LOG_CONT: level = GPGRT_LOG_CONT; break;
+    case GCRY_LOG_INFO: level = GPGRT_LOG_INFO; break;
+    case GCRY_LOG_WARN: level = GPGRT_LOG_WARN; break;
+    case GCRY_LOG_ERROR:level = GPGRT_LOG_ERROR; break;
+    case GCRY_LOG_FATAL:level = GPGRT_LOG_FATAL; break;
+    case GCRY_LOG_BUG:  level = GPGRT_LOG_BUG; break;
+    case GCRY_LOG_DEBUG:level = GPGRT_LOG_DEBUG; break;
+    default:            level = GPGRT_LOG_ERROR; break;
     }
   log_logv (level, fmt, arg_ptr);
 }
@@ -236,7 +236,7 @@ read_file (const char *fname, size_t *r_length)
   FILE *fp;
   char *buf;
   size_t buflen;
-  
+
   if (!strcmp (fname, "-"))
     {
       size_t nread, bufsize = 0;
@@ -245,7 +245,7 @@ read_file (const char *fname, size_t *r_length)
       buf = NULL;
       buflen = 0;
 #define NCHUNK 8192
-      do 
+      do
         {
           bufsize += NCHUNK;
           if (!buf)
@@ -258,7 +258,7 @@ read_file (const char *fname, size_t *r_length)
           nread = fread (buf+buflen, 1, NCHUNK, fp);
           if (nread < NCHUNK && ferror (fp))
             {
-              log_error ("error reading `[stdin]': %s\n", strerror (errno));
+              log_error ("error reading '[stdin]': %s\n", strerror (errno));
               xfree (buf);
               return NULL;
             }
@@ -275,24 +275,24 @@ read_file (const char *fname, size_t *r_length)
       fp = fopen (fname, "rb");
       if (!fp)
         {
-          log_error ("can't open `%s': %s\n", fname, strerror (errno));
+          log_error ("can't open '%s': %s\n", fname, strerror (errno));
           return NULL;
         }
-  
+
       if (fstat (fileno(fp), &st))
         {
-          log_error ("can't stat `%s': %s\n", fname, strerror (errno));
+          log_error ("can't stat '%s': %s\n", fname, strerror (errno));
           fclose (fp);
           return NULL;
         }
-      
+
       buflen = st.st_size;
       buf = xtrymalloc (buflen+1);
       if (!buf)
         log_fatal ("can't allocate buffer: %s\n", strerror (errno));
       if (fread (buf, buflen, 1, fp) != 1)
         {
-          log_error ("error reading `%s': %s\n", fname, strerror (errno));
+          log_error ("error reading '%s': %s\n", fname, strerror (errno));
           fclose (fp);
           xfree (buf);
           return NULL;
@@ -332,7 +332,8 @@ dump_fpr (const unsigned char *buffer, size_t len)
 static void
 dump_openpgp_key (keybox_openpgp_info_t info, const unsigned char *image)
 {
-  printf ("pub %02X%02X%02X%02X",
+  printf ("pub %2d %02X%02X%02X%02X",
+          info->primary.algo,
           info->primary.keyid[4], info->primary.keyid[5],
           info->primary.keyid[6], info->primary.keyid[7] );
   dump_fpr (info->primary.fpr, info->primary.fprlen);
@@ -342,9 +343,10 @@ dump_openpgp_key (keybox_openpgp_info_t info, const unsigned char *image)
       struct _keybox_openpgp_key_info *k;
 
       k = &info->subkeys;
-      do 
+      do
         {
-          printf ("sub %02X%02X%02X%02X",
+          printf ("sub %2d %02X%02X%02X%02X",
+                  k->algo,
                   k->keyid[4], k->keyid[5],
                   k->keyid[6], k->keyid[7] );
           dump_fpr (k->fpr, k->fprlen);
@@ -358,7 +360,7 @@ dump_openpgp_key (keybox_openpgp_info_t info, const unsigned char *image)
       struct _keybox_openpgp_uid_info *u;
 
       u = &info->uids;
-      do 
+      do
         {
           printf ("uid\t\t%.*s\n", (int)u->len, image + u->off);
           u = u->next;
@@ -369,13 +371,14 @@ dump_openpgp_key (keybox_openpgp_info_t info, const unsigned char *image)
 
 
 static void
-import_openpgp (const char *filename)
+import_openpgp (const char *filename, int dryrun)
 {
   gpg_error_t err;
   char *buffer;
   size_t buflen, nparsed;
   unsigned char *p;
   struct _keybox_openpgp_info info;
+  KEYBOXBLOB blob;
 
   buffer = read_file (filename, &buflen);
   if (!buffer)
@@ -389,12 +392,46 @@ import_openpgp (const char *filename)
         {
           if (gpg_err_code (err) == GPG_ERR_NO_DATA)
             break;
-          log_info ("%s: failed to parse OpenPGP keyblock: %s\n",
-                    filename, gpg_strerror (err));
+          if (gpg_err_code (err) == GPG_ERR_UNSUPPORTED_ALGORITHM)
+            {
+              /* This is likely a v3 key packet with a non-RSA
+                 algorithm.  These are keys from very early versions
+                 of GnuPG (pre-OpenPGP).  */
+            }
+          else
+            {
+              fflush (stdout);
+              log_info ("%s: failed to parse OpenPGP keyblock: %s\n",
+                        filename, gpg_strerror (err));
+            }
         }
       else
         {
-          dump_openpgp_key (&info, p);
+          if (dryrun)
+            dump_openpgp_key (&info, p);
+          else
+            {
+              err = _keybox_create_openpgp_blob (&blob, &info, p, nparsed,
+                                                 NULL, 0);
+              if (err)
+                {
+                  fflush (stdout);
+                  log_error ("%s: failed to create OpenPGP keyblock: %s\n",
+                             filename, gpg_strerror (err));
+                }
+              else
+                {
+                  err = _keybox_write_blob (blob, stdout);
+                  _keybox_release_blob (blob);
+                  if (err)
+                    {
+                      fflush (stdout);
+                      log_error ("%s: failed to write OpenPGP keyblock: %s\n",
+                                 filename, gpg_strerror (err));
+                    }
+                }
+            }
+
           _keybox_destroy_openpgp_info (&info);
         }
       p += nparsed;
@@ -412,14 +449,16 @@ main( int argc, char **argv )
   ARGPARSE_ARGS pargs;
   enum cmd_and_opt_values cmd = 0;
   unsigned long from = 0, to = ULONG_MAX;
-  
+  int dry_run = 0;
+
+  early_system_init ();
   set_strusage( my_strusage );
   gcry_control (GCRYCTL_DISABLE_SECMEM);
-  log_set_prefix ("kbxutil", 1); 
+  log_set_prefix ("kbxutil", 1);
 
   /* Make sure that our subsystems are ready.  */
   i18n_init ();
-  init_common_subsystems ();
+  init_common_subsystems (&argc, &argv);
 
   /* Check that the libraries are suitable.  Do it here because
      the option parsing may need services of the library.  */
@@ -433,7 +472,7 @@ main( int argc, char **argv )
 
   /*create_dotlock(NULL); register locking cleanup */
 
-  /* We need to use the gcry malloc function because jnlib does use them */
+  /* We need to use the gcry malloc function because jnlib uses them.  */
   keybox_set_malloc_hooks (gcry_malloc, gcry_realloc, gcry_free);
   ksba_set_malloc_hooks (gcry_malloc, gcry_realloc, gcry_free );
 
@@ -469,71 +508,73 @@ main( int argc, char **argv )
         case oFrom: from = pargs.r.ret_ulong; break;
         case oTo: to = pargs.r.ret_ulong; break;
 
+        case oDryRun: dry_run = 1; break;
+
         default:
           pargs.err = 2;
           break;
 	}
     }
-  
+
   if (to < from)
     log_error ("record number of \"--to\" is lower than \"--from\" one\n");
 
 
   if (log_get_errorcount(0) )
     myexit(2);
-  
+
   if (!cmd)
     { /* Default is to list a KBX file */
-      if (!argc) 
+      if (!argc)
         _keybox_dump_file (NULL, 0, stdout);
       else
         {
-          for (; argc; argc--, argv++) 
+          for (; argc; argc--, argv++)
             _keybox_dump_file (*argv, 0, stdout);
         }
     }
   else if (cmd == aStats )
     {
-      if (!argc) 
+      if (!argc)
         _keybox_dump_file (NULL, 1, stdout);
       else
         {
-          for (; argc; argc--, argv++) 
+          for (; argc; argc--, argv++)
             _keybox_dump_file (*argv, 1, stdout);
         }
     }
   else if (cmd == aFindDups )
     {
-      if (!argc) 
+      if (!argc)
         _keybox_dump_find_dups (NULL, 0, stdout);
       else
         {
-          for (; argc; argc--, argv++) 
+          for (; argc; argc--, argv++)
             _keybox_dump_find_dups (*argv, 0, stdout);
         }
     }
   else if (cmd == aCut )
     {
-      if (!argc) 
+      if (!argc)
         _keybox_dump_cut_records (NULL, from, to, stdout);
       else
         {
-          for (; argc; argc--, argv++) 
+          for (; argc; argc--, argv++)
             _keybox_dump_cut_records (*argv, from, to, stdout);
         }
     }
   else if (cmd == aImportOpenPGP)
     {
       if (!argc)
-        import_openpgp ("-");
+        import_openpgp ("-", dry_run);
       else
         {
-          for (; argc; argc--, argv++) 
-            import_openpgp (*argv);
+          for (; argc; argc--, argv++)
+            import_openpgp (*argv, dry_run);
         }
     }
 #if 0
-  else if ( cmd == aFindByFpr ) 
+  else if ( cmd == aFindByFpr )
     {
       char *fpr;
       if ( argc != 2 )
@@ -541,17 +582,17 @@ main( int argc, char **argv )
       fpr = format_fingerprint ( argv[1] );
       if ( !fpr )
         log_error ("invalid formatted fingerprint\n");
-      else 
+      else
         {
           kbxfile_search_by_fpr ( argv[0], fpr );
           gcry_free ( fpr );
         }
     }
-  else if ( cmd == aFindByKid ) 
+  else if ( cmd == aFindByKid )
     {
       u32 kid[2];
       int mode;
-      
+
       if ( argc != 2 )
         wrong_args ("kbxfile short-or-long-keyid");
       mode = format_keyid ( argv[1], kid );
@@ -562,7 +603,7 @@ main( int argc, char **argv )
           kbxfile_search_by_kid ( argv[0], kid, mode );
 	}
     }
-  else if ( cmd == aFindByUid ) 
+  else if ( cmd == aFindByUid )
     {
       if ( argc != 2 )
         wrong_args ("kbxfile userID");
@@ -571,7 +612,7 @@ main( int argc, char **argv )
 #endif
   else
       log_error ("unsupported action\n");
-  
+
   myexit(0);
   return 8; /*NEVER REACHED*/
 }
@@ -590,5 +631,3 @@ myexit( int rc )
 			keybox_errors_seen? 1 : 0;
     exit(rc );
 }
-
-

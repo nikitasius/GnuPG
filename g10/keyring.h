@@ -20,25 +20,26 @@
 #ifndef GPG_KEYRING_H
 #define GPG_KEYRING_H 1
 
+#include "../common/userids.h"
 
 typedef struct keyring_handle *KEYRING_HANDLE;
 
-int keyring_register_filename (const char *fname, int secret, int readonly,
-                               void **ptr);
+int keyring_register_filename (const char *fname, int read_only, void **ptr);
 int keyring_is_writable (void *token);
 
-KEYRING_HANDLE keyring_new (void *token, int secret);
+KEYRING_HANDLE keyring_new (void *token);
 void keyring_release (KEYRING_HANDLE hd);
+void keyring_push_found_state (KEYRING_HANDLE hd);
+void keyring_pop_found_state (KEYRING_HANDLE hd);
 const char *keyring_get_resource_name (KEYRING_HANDLE hd);
 int keyring_lock (KEYRING_HANDLE hd, int yes);
 int keyring_get_keyblock (KEYRING_HANDLE hd, KBNODE *ret_kb);
 int keyring_update_keyblock (KEYRING_HANDLE hd, KBNODE kb);
 int keyring_insert_keyblock (KEYRING_HANDLE hd, KBNODE kb);
-int keyring_locate_writable (KEYRING_HANDLE hd);
 int keyring_delete_keyblock (KEYRING_HANDLE hd);
 int keyring_search_reset (KEYRING_HANDLE hd);
 int keyring_search (KEYRING_HANDLE hd, KEYDB_SEARCH_DESC *desc,
-		    size_t ndesc, size_t *descindex);
+		    size_t ndesc, size_t *descindex, int skip_legacy);
 int keyring_rebuild_cache (void *token,int noisy);
 
 #endif /*GPG_KEYRING_H*/

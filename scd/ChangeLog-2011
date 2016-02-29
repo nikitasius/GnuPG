@@ -1,15 +1,111 @@
-2011-12-02  Werner Koch  <wk@g10code.com>
+2011-12-01  Werner Koch  <wk@g10code.com>
 
 	NB: ChangeLog files are no longer manually maintained.  Starting
 	on December 1st, 2011 we put change information only in the GIT
 	commit log, and generate a top-level ChangeLog file from logs at
 	"make dist".  See doc/HACKING for details.
 
-2011-08-04  Werner Koch  <wk@g10code.com>
+2011-12-01  Niibe Yutaka  <gniibe@fsij.org>
 
-	* pcsc-wrapper.c (handle_open): Remove unused var LISTLEN.
+	* app-openpgp.c (do_change_pin): Fix pincb messages when
+	use_keypad == 1.
 
-	* scdaemon.c (main): Remove var MAY_COREDUMP.
+2011-11-29  Niibe Yutaka  <gniibe@fsij.org>
+
+	PC/SC pininput support for passphrase modification (2/2)
+	* apdu.h (apdu_send_simple_kp): Remove.
+
+	* apdu.c (pcsc_keypad_modify): Add bConfirmPIN handling.
+	(apdu_send_simple_kp): Remove.
+
+	* iso7816.h (iso7816_reset_retry_counter_kp): Remove arguments
+	of NEWCHV, and NEWCHVLEN.
+	(iso7816_reset_retry_counter_with_rc_kp, iso7816_put_data_kp): New.
+
+	* iso7816.c (iso7816_reset_retry_counter_with_rc_kp): New.
+	(iso7816_reset_retry_counter_kp): Call apdu_keypad_modify.  Only
+	handle the case with PININFO.
+	(iso7816_reset_retry_counter): Don't call
+	iso7816_reset_retry_counter_kp.
+	(iso7816_put_data_kp): New.
+
+	* app-openpgp.c (do_change_pin): Add with_resetcode.
+	Handle keypad for unblocking pass phrase with resetcode,
+	setting up of resetcode, and unblocking by admin.
+
+	PC/SC pininput support for passphrase modification (1/2)
+	* iso7816.h (iso7816_change_reference_data_kp): Remove arguments
+	of OLDCHV, OLDCHVLEN, NEWCHV, and NEWCHVLEN.
+
+	* iso7816.c (iso7816_change_reference_data_kp): Call
+	apdu_keypad_modify.
+	(iso7816_change_reference_data): Don't call
+	iso7816_change_reference_data_kp.
+
+	* apdu.h (apdu_keypad_modify): New.
+
+	* apdu.c (pcsc_keypad_modify, apdu_keypad_modify): New.
+	(struct reader_table_s): New memeber function keypad_modify.
+	(new_reader_slot, open_ct_reader, open_ccid_reader)
+	(open_rapdu_reader): Initialize keypad_modify.
+
+	* app-openpgp.c (do_change_pin): Handle keypad and call
+	iso7816_change_reference_data_kp if it is the case.
+
+2011-11-28  Niibe Yutaka  <gniibe@fsij.org>
+
+	* iso7816.h (iso7816_verify_kp): Remove arguments of CHV and CHVLEN.
+
+	* iso7816.c (iso7816_verify_kp): Call apdu_keypad_verify. Only
+	handle the case with PININFO.
+	(iso7816_verify): Call apdu_send_simple.
+
+	* app-openpgp.c (verify_a_chv, verify_chv3): Follow the change of
+	iso7816_verify_kp.
+
+	* app-nks.c (verify_pin): Likewise.
+
+	* app-dinsig.c (verify_pin): Likewise.
+
+	* apdu.c: Include "iso7816.h".
+	(struct reader_table_s): New memeber function keypad_verify.
+	Add fields verify_ioctl and modify_ioctl in pcsc.
+	(CM_IOCTL_GET_FEATURE_REQUEST, FEATURE_VERIFY_PIN_DIRECT)
+	(FEATURE_MODIFY_PIN_DIRECT): New.
+	(pcsc_control): New.
+	(control_pcsc_direct, control_pcsc_wrapped, control_pcsc)
+	(check_pcsc_keypad, pcsc_keypad_verify): New.
+	(ccid_keypad_verify, apdu_keypad_verify): New.
+	(new_reader_slot): Initialize with check_pcsc_keypad,
+	pcsc_keypad_verify, verify_ioctl and modify_ioctl.
+	(open_ct_reader): Initialize keypad_verify with NULL.
+	(open_ccid_reader): Initialize keypad_verify.
+	(open_rapdu_reader): Initialize keypad_verify with NULL.
+	(apdu_open_reader): Initialize pcsc_control.
+
+	* pcsc-wrapper.c (load_pcsc_driver): Initialize pcsc_control.
+	(handle_control): New.
+	(main): Handle the case 6 of handle_control.
+
+2011-08-10  Werner Koch  <wk@g10code.com>
+
+	* command.c (cmd_killscd): Use the new assuan force close flag
+	if available.
+
+2011-08-08  Werner Koch  <wk@g10code.com>
+
+	* app-openpgp.c (do_decipher): Take care of accidentally passed
+	signed integer data with a leading 0.
+
+2011-06-16  Werner Koch  <wk@g10code.com>
+
+	* app-openpgp.c (send_key_data): Implemented chunked mode.
+	(change_keyattr): Increase limit to 4096.
+	(do_decipher): Adjust padding for 4096 bit keys.
+
+2011-02-23  Werner Koch  <wk@g10code.com>
+
+	* apdu.c (apdu_open_reader): Lock in to CCID if used once.
 
 2011-01-25  NIIBE Yutaka <gniibe@fsij.org>,
 	    Grant Olson <kgo@grant-olson.net>  (wk)
@@ -18,7 +114,9 @@
 	(update_reader_status_file): Fix handling of the VALID flag for
 	unplugged readers.
 
-2010-03-17  Werner Koch  <wk@g10code.com>
+2011-01-25  Werner Koch  <wk@g10code.com>
+
+	From 2.0 branch, 2010-03-17:
 
 	* command.c (open_card): Return GPG_ERR_NOT_OPERATIONAL if no
 	card services are available.
@@ -29,16 +127,89 @@
 	(open_pcsc_reader_direct): Set it.
 	(apdu_open_reader): Add arg R_NO_SERVICE.
 
-2010-02-11  Marcus Brinkmann  <marcus@g10code.de>
+2011-01-05  Werner Koch  <wk@g10code.com>
 
-	From trunk 2009-09-23, 2009-10-16, 2009-11-02, 2009-11-04, 2009-11-05,
-	2009-11-25:
+	* ccid-driver.c (ccid_transceive_secure): Support the gnuk token.
 
-	* Makefile.am (AM_CFLAGS, scdaemon_LDADD): Use libassuan instead
-	of libassuan-pth.
+2010-11-16  Werner Koch  <wk@g10code.com>
+
+	* apdu.c (PCSC_UNKNOWN) [W32]: Fix all these values which don't
+	match those of libpcsc.  Reported by Michael Petig.
+
+2010-10-27  Werner Koch  <wk@g10code.com>
+
+	* scdaemon.c (create_socket_name): Use TMPDIR.  Change callers.
+
+2010-10-18  Werner Koch  <wk@g10code.com>
+
+	* app-openpgp.c (parse_algorithm_attribute): Remove extra const in
+	definition of DESC.
+
+2010-08-16  Werner Koch  <wk@g10code.com>
+
+	* scdaemon.c: Replace remaining printf by es_printf.
+
+2010-06-09  Werner Koch  <wk@g10code.com>
+
+	* scdaemon.c (main): s/log_set_get_tid_callback/log_set_pid_suffix_cb/.
+	(tid_log_callback): Adjust for this change.
+
+2010-03-11  Werner Koch  <wk@g10code.com>
+
+	* scdaemon.c: Include "asshelp.h".
+	(main): Remove assuan_set_assuan_log_prefix.  Add
+	assuan_set_log_cb.
+	(handle_signal): Disable pth ctrl dumping.
+	* command.c (scd_command_handler): Remove assuan_set_log_stream.
+
+2010-03-10  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (scdaemon_LDADD): Remove libjnlib.a.
+
+2009-12-15  Werner Koch  <wk@g10code.com>
+
+	* iso7816.c (do_generate_keypair): s/readonly/read_only/ because
+	the first is a keyword in VMS C.
+
+2009-12-03  Werner Koch  <wk@g10code.com>
+
+	* scdaemon.c (set_debug): Allow for numerical debug leveles.  Print
+	active debug flags.
+
+2009-11-25  Marcus Brinkmann  <marcus@g10code.de>
+
+	* command.c (scd_command_handler): Use assuan_fd_t and
+	assuan_fdopen on fds.
+
+2009-11-05  Marcus Brinkmann  <marcus@g10code.de>
+
+	* command.c (scd_command_handler): Call assuan_init_socket_server,
+	not assuan_init_socket_server_ext.
+
+2009-11-04  Werner Koch  <wk@g10code.com>
+
+	* command.c (register_commands): Add help arg to
+	assuan_register_command.  Add help strings to all commands.
+
+2009-11-02  Marcus Brinkmann  <marcus@g10code.de>
+
+	* command.c (reset_notify): Take LINE arg and return error.
+	(register_commands): Use assuan_handler_t type.
+
+2009-10-25  Werner Koch  <wk@g10code.com>
+
+	* scdaemon.c (scd_deinit_default_ctrl): Release IN_DATA.
+	* command.c (cmd_setdata): Release IN_DATA.  Reported by Klaus
+	Flittner.
+
+2009-10-16  Marcus Brinkmann  <marcus@g10code.com>
+
+	* AM_CFLAGS, scdaemon_LDADD: Use libassuan instead of libassuan-pth.
 	* scdaemon.c: Invoke ASSUAN_SYSTEM_PTH_IMPL.
-	(main): Update to new Assuan API.  Call assuan_set_system_hooks
-	and assuan_sock_init.
+	(main): Call assuan_set_system_hooks and assuan_sock_init.
+
+2009-09-23  Marcus Brinkmann  <marcus@g10code.de>
+
 	* command.c: Include "scdaemon.h" before <assuan.h> because of
 	GPG_ERR_SOURCE_DEFAULT check.
 	(option_handler, open_card, cmd_serialno, cmd_lean, cmd_readcert)
@@ -48,17 +219,7 @@
 	(cmd_unlock, cmd_getinfo, cmd_restart, cmd_disconnect, cmd_apdu)
 	(cmd_killscd): Return gpg_error_t instead of int.
 	(scd_command_handler): Allocate assuan context before starting server.
-	Call assuan_init_socket_server, not assuan_init_socket_server_ext.
-	Use assuan_fd_t and assuan_fdopen on fds.
-	(reset_notify): Take LINE arg and return error.
-	(register_commands): Use assuan_handler_t type.
-	Add NULL arg to	assuan_register_command.  Add help arg to
-	assuan_register_command.  Add help strings to all commands.
-
-2009-12-03  Werner Koch  <wk@g10code.com>
-
-	* scdaemon.c (set_debug): Allow for numerical debug levels.  Print
-	active debug flags.
+	* scdaemon.c (main): Update to new Assuan API.
 
 2009-09-03  Werner Koch  <wk@g10code.com>
 
@@ -2425,3 +2586,7 @@
  This file is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+Local Variables:
+buffer-read-only: t
+End:

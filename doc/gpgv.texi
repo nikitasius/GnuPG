@@ -6,6 +6,8 @@
 @c This is included by tools.texi.
 @c
 
+@include defs.inc
+
 @c Begin GnuPG 1.x specific stuff
 @ifset gpgone
 @macro gpgvname
@@ -62,10 +64,16 @@ the public keys used to make the signature are valid. There are
 no configuration files and only a few options are implemented.
 
 @code{@gpgvname} assumes that all keys in the keyring are trustworthy.
-By default it uses a keyring named @file{trustedkeys.gpg} which is
-assumed to be in the home directory as defined by GnuPG or set by an
-option or an environment variable. An option may be used to specify
-another keyring or even multiple keyrings.
+That does also mean that it does not check for expired or revoked
+keys.
+
+By default a keyring named @file{trustedkeys.kbx} is used; if that
+does not exist a keyring named @file{trustedkeys.gpg} is used.  The
+default keyring is assumed to be in the home directory of GnuPG,
+either the default home directory or the one set by an option or an
+environment variable.  The option @code{--keyring} may be used to
+specify a different keyring or even multiple keyrings.
+
 
 @noindent
 @mansect options
@@ -109,6 +117,14 @@ be older than the key due to clock problems. This option turns these
 checks into warnings.
 
 @include opt-homedir.texi
+
+@item --weak-digest @code{name}
+@opindex weak-digest
+Treat the specified digest algorithm as weak.  Signatures made over
+weak digests algorithms are normally rejected. This option can be
+supplied multiple times if multiple algorithms should be considered
+weak.  MD5 is always considered weak, and does not need to be listed
+explicitly.
 
 @end table
 

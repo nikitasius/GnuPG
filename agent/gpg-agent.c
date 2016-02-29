@@ -1,7 +1,6 @@
 /* gpg-agent.c  -  The GnuPG Agent
- * Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005,
- *               2006, 2007, 2009, 2010 Free Software Foundation, Inc.
- * Copyright (C) 2013 Werner Koch
+ * Copyright (C) 2000-2007, 2009-2010 Free Software Foundation, Inc.
+ * Copyright (C) 2000-2014 Werner Koch
  *
  * This file is part of GnuPG.
  *
@@ -45,21 +44,23 @@
 # include <sys/un.h>
 #endif /*!HAVE_W32_SYSTEM*/
 #include <unistd.h>
-#include <signal.h>
-#include <pth.h>
+#ifdef HAVE_SIGNAL_H
+# include <signal.h>
+#endif
+#include <npth.h>
 
-#define JNLIB_NEED_LOG_LOGV
-#define JNLIB_NEED_AFLOCAL
+#define GNUPG_COMMON_NEED_AFLOCAL
 #include "agent.h"
 #include <assuan.h> /* Malloc hooks  and socket wrappers. */
 
 #include "i18n.h"
-#include "mkdtemp.h" /* Gnulib replacement. */
 #include "sysutils.h"
-#include "setenv.h"
 #include "gc-opt-flags.h"
 #include "exechelp.h"
-#include "../common/estream.h"
+#include "asshelp.h"
+#include "openpgpdefs.h"  /* for PUBKEY_ALGO_ECDSA, PUBKEY_ALGO_ECDH */
+#include "../common/init.h"
+
 
 enum cmd_and_opt_values
 { aNull = 0,
@@ -77,6 +78,8 @@ enum cmd_and_opt_values
   oDebugAll,
   oDebugLevel,
   oDebugWait,
+  oDebugQuickRandom,
+  oDebugPinentry,
   oNoGreeting,
   oNoOptions,
   oHomedir,
@@ -89,6 +92,8 @@ enum cmd_and_opt_values
 
   oPinentryProgram,
   oPinentryTouchFile,
+  oPinentryInvisibleChar,
+  oPinentryTimeout,
   oDisplay,
   oTTYname,
   oTTYtype,
@@ -108,103 +113,150 @@ enum cmd_and_opt_values
   oEnablePassphraseHistory,
   oUseStandardSocket,
   oNoUseStandardSocket,
+  oExtraSocket,
+  oBrowserSocket,
   oFakedSystemTime,
 
   oIgnoreCacheForSigning,
   oAllowMarkTrusted,
   oNoAllowMarkTrusted,
   oAllowPresetPassphrase,
+  oAllowLoopbackPinentry,
   oNoAllowExternalCache,
+  oAllowEmacsPinentry,
   oKeepTTY,
   oKeepDISPLAY,
   oSSHSupport,
   oPuttySupport,
   oDisableScdaemon,
+  oDisableCheckOwnSocket,
   oWriteEnvFile
 };
 
 
+#ifndef ENAMETOOLONG
+# define ENAMETOOLONG EINVAL
+#endif
+
 
 static ARGPARSE_OPTS opts[] = {
 
-  { aGPGConfList, "gpgconf-list", 256, "@" },
-  { aGPGConfTest, "gpgconf-test", 256, "@" },
-  { aUseStandardSocketP, "use-standard-socket-p", 256, "@" },
+  ARGPARSE_c (aGPGConfList, "gpgconf-list", "@"),
+  ARGPARSE_c (aGPGConfTest, "gpgconf-test", "@"),
+  ARGPARSE_c (aUseStandardSocketP, "use-standard-socket-p", "@"),
 
-  { 301, NULL, 0, N_("@Options:\n ") },
+  ARGPARSE_group (301, N_("@Options:\n ")),
 
-  { oDaemon,   "daemon",     0, N_("run in daemon mode (background)") },
-  { oServer,   "server",     0, N_("run in server mode (foreground)") },
-  { oVerbose, "verbose",     0, N_("verbose") },
-  { oQuiet,	"quiet",     0, N_("be somewhat more quiet") },
-  { oSh,	"sh",        0, N_("sh-style command output") },
-  { oCsh,	"csh",       0, N_("csh-style command output") },
-  { oOptions, "options"  , 2, N_("|FILE|read options from FILE")},
-  { oDebug,	"debug"     ,4|16, "@"},
-  { oDebugAll, "debug-all"     ,0, "@"},
-  { oDebugLevel, "debug-level" ,2, "@"},
-  { oDebugWait,"debug-wait",1, "@"},
-  { oNoDetach, "no-detach" ,0, N_("do not detach from the console")},
-  { oNoGrab, "no-grab"     ,0, N_("do not grab keyboard and mouse")},
-  { oLogFile, "log-file"   ,2, N_("use a log file for the server")},
-  { oUseStandardSocket, "use-standard-socket", 0,
-                      N_("use a standard location for the socket")},
-  { oNoUseStandardSocket, "no-use-standard-socket", 0, "@"},
-  { oPinentryProgram, "pinentry-program", 2 ,
-                               N_("|PGM|use PGM as the PIN-Entry program") },
-  { oPinentryTouchFile, "pinentry-touch-file", 2 , "@" },
-  { oScdaemonProgram, "scdaemon-program", 2 ,
-                               N_("|PGM|use PGM as the SCdaemon program") },
-  { oDisableScdaemon, "disable-scdaemon", 0, N_("do not use the SCdaemon") },
-  { oFakedSystemTime, "faked-system-time", 2, "@" }, /* (epoch time) */
+  ARGPARSE_s_n (oDaemon,  "daemon", N_("run in daemon mode (background)")),
+  ARGPARSE_s_n (oServer,  "server", N_("run in server mode (foreground)")),
+  ARGPARSE_s_n (oVerbose, "verbose", N_("verbose")),
+  ARGPARSE_s_n (oQuiet,	  "quiet",     N_("be somewhat more quiet")),
+  ARGPARSE_s_n (oSh,	  "sh",        N_("sh-style command output")),
+  ARGPARSE_s_n (oCsh,	  "csh",       N_("csh-style command output")),
+  ARGPARSE_s_s (oOptions, "options", N_("|FILE|read options from FILE")),
 
-  { oBatch,      "batch",       0, "@" },
-  { oHomedir,    "homedir",     2, "@"},
+  ARGPARSE_s_s (oDebug,	     "debug",       "@"),
+  ARGPARSE_s_n (oDebugAll,   "debug-all",   "@"),
+  ARGPARSE_s_s (oDebugLevel, "debug-level", "@"),
+  ARGPARSE_s_i (oDebugWait,"  debug-wait",  "@"),
+  ARGPARSE_s_n (oDebugQuickRandom, "debug-quick-random", "@"),
+  ARGPARSE_s_n (oDebugPinentry, "debug-pinentry", "@"),
 
-  { oDisplay,    "display",     2, "@" },
-  { oTTYname,    "ttyname",     2, "@" },
-  { oTTYtype,    "ttytype",     2, "@" },
-  { oLCctype,    "lc-ctype",    2, "@" },
-  { oLCmessages, "lc-messages", 2, "@" },
-  { oXauthority, "xauthority",  2, "@" },
-  { oKeepTTY,    "keep-tty",    0,  N_("ignore requests to change the TTY")},
-  { oKeepDISPLAY, "keep-display",
-                          0, N_("ignore requests to change the X display")},
+  ARGPARSE_s_n (oNoDetach,  "no-detach", N_("do not detach from the console")),
+  ARGPARSE_s_n (oNoGrab,    "no-grab",   N_("do not grab keyboard and mouse")),
+  ARGPARSE_s_s (oLogFile,   "log-file",  N_("use a log file for the server")),
+  ARGPARSE_s_s (oPinentryProgram, "pinentry-program",
+                /* */             N_("|PGM|use PGM as the PIN-Entry program")),
+  ARGPARSE_s_s (oPinentryTouchFile, "pinentry-touch-file", "@"),
+  ARGPARSE_s_s (oPinentryInvisibleChar, "pinentry-invisible-char", "@"),
+  ARGPARSE_s_u (oPinentryTimeout, "pinentry-timeout", "@"),
+  ARGPARSE_s_s (oScdaemonProgram, "scdaemon-program",
+                /* */             N_("|PGM|use PGM as the SCdaemon program") ),
+  ARGPARSE_s_n (oDisableScdaemon, "disable-scdaemon",
+                /* */             N_("do not use the SCdaemon") ),
+  ARGPARSE_s_n (oDisableCheckOwnSocket, "disable-check-own-socket", "@"),
 
-  { oDefCacheTTL, "default-cache-ttl", 4,
-                               N_("|N|expire cached PINs after N seconds")},
-  { oDefCacheTTLSSH, "default-cache-ttl-ssh", 4, "@" },
-  { oMaxCacheTTL, "max-cache-ttl", 4, "@" },
-  { oMaxCacheTTLSSH, "max-cache-ttl-ssh", 4, "@" },
+  ARGPARSE_s_s (oExtraSocket, "extra-socket",
+                /* */       N_("|NAME|accept some commands via NAME")),
 
-  { oEnforcePassphraseConstraints, "enforce-passphrase-constraints", 0, "@"},
-  { oMinPassphraseLen, "min-passphrase-len", 4, "@" },
-  { oMinPassphraseNonalpha, "min-passphrase-nonalpha", 4, "@" },
-  { oCheckPassphrasePattern, "check-passphrase-pattern", 2, "@" },
-  { oMaxPassphraseDays, "max-passphrase-days", 4, "@" },
-  { oEnablePassphraseHistory, "enable-passphrase-history", 0, "@" },
+  ARGPARSE_s_s (oBrowserSocket, "browser-socket", "@"),
 
-  { oIgnoreCacheForSigning, "ignore-cache-for-signing", 0,
-                               N_("do not use the PIN cache when signing")},
-  { oNoAllowMarkTrusted, "no-allow-mark-trusted", 0,
-                            N_("disallow clients to mark keys as \"trusted\"")},
-  { oAllowMarkTrusted, "allow-mark-trusted", 0, "@"},
-  { oAllowPresetPassphrase, "allow-preset-passphrase", 0,
-                             N_("allow presetting passphrase")},
-  { oSSHSupport, "enable-ssh-support", 0, N_("enable ssh support") },
-  { oPuttySupport, "enable-putty-support", 0,
+  ARGPARSE_s_s (oFakedSystemTime, "faked-system-time", "@"),
+
+  ARGPARSE_s_n (oBatch,      "batch",        "@"),
+  ARGPARSE_s_s (oHomedir,    "homedir",      "@"),
+
+  ARGPARSE_s_s (oDisplay,    "display",     "@"),
+  ARGPARSE_s_s (oTTYname,    "ttyname",     "@"),
+  ARGPARSE_s_s (oTTYtype,    "ttytype",     "@"),
+  ARGPARSE_s_s (oLCctype,    "lc-ctype",    "@"),
+  ARGPARSE_s_s (oLCmessages, "lc-messages", "@"),
+  ARGPARSE_s_s (oXauthority, "xauthority",  "@"),
+  ARGPARSE_s_n (oKeepTTY,    "keep-tty",
+                /* */        N_("ignore requests to change the TTY")),
+  ARGPARSE_s_n (oKeepDISPLAY, "keep-display",
+                /* */        N_("ignore requests to change the X display")),
+
+  ARGPARSE_s_u (oDefCacheTTL,    "default-cache-ttl",
+                                 N_("|N|expire cached PINs after N seconds")),
+  ARGPARSE_s_u (oDefCacheTTLSSH, "default-cache-ttl-ssh", "@" ),
+  ARGPARSE_s_u (oMaxCacheTTL,    "max-cache-ttl",         "@" ),
+  ARGPARSE_s_u (oMaxCacheTTLSSH, "max-cache-ttl-ssh",     "@" ),
+
+  ARGPARSE_s_n (oEnforcePassphraseConstraints, "enforce-passphrase-constraints",
+                /* */                          "@"),
+  ARGPARSE_s_u (oMinPassphraseLen,        "min-passphrase-len", "@"),
+  ARGPARSE_s_u (oMinPassphraseNonalpha,   "min-passphrase-nonalpha", "@"),
+  ARGPARSE_s_s (oCheckPassphrasePattern,  "check-passphrase-pattern", "@"),
+  ARGPARSE_s_u (oMaxPassphraseDays,       "max-passphrase-days", "@"),
+  ARGPARSE_s_n (oEnablePassphraseHistory, "enable-passphrase-history", "@"),
+
+  ARGPARSE_s_n (oIgnoreCacheForSigning, "ignore-cache-for-signing",
+                /* */    N_("do not use the PIN cache when signing")),
+  ARGPARSE_s_n (oNoAllowExternalCache,  "no-allow-external-cache",
+                /* */    N_("disallow the use of an external password cache")),
+  ARGPARSE_s_n (oNoAllowMarkTrusted, "no-allow-mark-trusted",
+                /* */    N_("disallow clients to mark keys as \"trusted\"")),
+  ARGPARSE_s_n (oAllowMarkTrusted,   "allow-mark-trusted", "@"),
+  ARGPARSE_s_n (oAllowPresetPassphrase, "allow-preset-passphrase",
+                /* */                    N_("allow presetting passphrase")),
+  ARGPARSE_s_n (oAllowLoopbackPinentry, "allow-loopback-pinentry",
+                                   N_("allow caller to override the pinentry")),
+  ARGPARSE_s_n (oAllowEmacsPinentry,  "allow-emacs-pinentry",
+                /* */    N_("allow passphrase to be prompted through Emacs")),
+
+  ARGPARSE_s_n (oSSHSupport,   "enable-ssh-support", N_("enable ssh support")),
+  ARGPARSE_s_n (oPuttySupport, "enable-putty-support",
 #ifdef HAVE_W32_SYSTEM
-      N_("enable putty support")
+                /* */           N_("enable putty support")
 #else
-      "@"
+                /* */           "@"
 #endif
-  },
-  { oNoAllowExternalCache, "no-allow-external-cache", 0,
-            N_("disallow the use of an external password cache") },
-  { oWriteEnvFile, "write-env-file", 2|8,
-            N_("|FILE|write environment settings also to FILE")},
-  {0}
+                ),
+
+  /* Dummy options for backward compatibility.  */
+  ARGPARSE_o_s (oWriteEnvFile, "write-env-file", "@"),
+  ARGPARSE_s_n (oUseStandardSocket, "use-standard-socket", "@"),
+  ARGPARSE_s_n (oNoUseStandardSocket, "no-use-standard-socket", "@"),
+
+  {0} /* End of list */
 };
+
+
+/* The list of supported debug flags.  */
+static struct debug_flags_s debug_flags [] =
+  {
+    { DBG_COMMAND_VALUE, "command"  },
+    { DBG_MPI_VALUE    , "mpi"     },
+    { DBG_CRYPTO_VALUE , "crypto"  },
+    { DBG_MEMORY_VALUE , "memory"  },
+    { DBG_CACHE_VALUE  , "cache"   },
+    { DBG_MEMSTAT_VALUE, "memstat" },
+    { DBG_HASHING_VALUE, "hashing" },
+    { DBG_IPC_VALUE    , "ipc"     },
+    { 77, NULL } /* 77 := Do not exit on "help" or "?".  */
+  };
+
 
 
 #define DEFAULT_CACHE_TTL     (10*60)  /* 10 minutes */
@@ -217,13 +269,23 @@ static ARGPARSE_OPTS opts[] = {
 
 /* The timer tick used for housekeeping stuff.  For Windows we use a
    longer period as the SetWaitableTimer seems to signal earlier than
-   the 2 seconds.  */
-#ifdef HAVE_W32_SYSTEM
-#define TIMERTICK_INTERVAL    (4)
+   the 2 seconds.  CHECK_OWN_SOCKET_INTERVAL defines how often we
+   check our own socket in standard socket mode.  If that value is 0
+   we don't check at all.   All values are in seconds. */
+#if defined(HAVE_W32CE_SYSTEM)
+# define TIMERTICK_INTERVAL         (60)
+# define CHECK_OWN_SOCKET_INTERVAL   (0)  /* Never */
+#elif defined(HAVE_W32_SYSTEM)
+# define TIMERTICK_INTERVAL          (4)
+# define CHECK_OWN_SOCKET_INTERVAL  (60)
 #else
-#define TIMERTICK_INTERVAL    (2)    /* Seconds.  */
+# define TIMERTICK_INTERVAL          (2)
+# define CHECK_OWN_SOCKET_INTERVAL  (60)
 #endif
 
+
+/* Flag indicating that the ssh-agent subsystem has been enabled.  */
+static int ssh_support;
 
 #ifdef HAVE_W32_SYSTEM
 /* Flag indicating that support for Putty has been enabled.  */
@@ -252,18 +314,35 @@ static int shutdown_pending;
 /* Counter for the currently running own socket checks.  */
 static int check_own_socket_running;
 
+/* Flags to indicate that check_own_socket shall not be called.  */
+static int disable_check_own_socket;
+
 /* It is possible that we are currently running under setuid permissions */
 static int maybe_setuid = 1;
 
-/* Name of the communication socket used for native gpg-agent requests.  */
+/* Name of the communication socket used for native gpg-agent
+   requests. The second variable is either NULL or a malloced string
+   with the real socket name in case it has been redirected.  */
 static char *socket_name;
+static char *redir_socket_name;
+
+/* Name of the optional extra socket used for native gpg-agent requests.  */
+static char *socket_name_extra;
+static char *redir_socket_name_extra;
+
+/* Name of the optional browser socket used for native gpg-agent requests.  */
+static char *socket_name_browser;
+static char *redir_socket_name_browser;
 
 /* Name of the communication socket used for ssh-agent-emulation.  */
 static char *socket_name_ssh;
+static char *redir_socket_name_ssh;
 
 /* We need to keep track of the server's nonces (these are dummies for
    POSIX systems). */
 static assuan_sock_nonce_t socket_nonce;
+static assuan_sock_nonce_t socket_nonce_extra;
+static assuan_sock_nonce_t socket_nonce_browser;
 static assuan_sock_nonce_t socket_nonce_ssh;
 
 
@@ -290,50 +369,70 @@ static char *current_logfile;
    watched. */
 static pid_t parent_pid = (pid_t)(-1);
 
+/* Number of active connections.  */
+static int active_connections;
+
+/* This object is used to dispatch progress messages from Libgcrypt to
+ * the right thread.  Given that we won't have at max a few dozen
+ * connections at the same time using a linked list is the easiest way
+ * to handle this. */
+struct progress_dispatch_s
+{
+  struct progress_dispatch_s *next;
+  /* The control object of the connection.  If this is NULL no
+   * connection is associated with this item and it is free for reuse
+   * by new connections.  */
+  ctrl_t ctrl;
+
+  /* The thread id of (npth_self) of the connection.  */
+  npth_t tid;
+
+  /* The callback set by the connection.  This is similar to the
+   * Libgcrypt callback but with the control object passed as the
+   * first argument.  */
+  void (*cb)(ctrl_t ctrl,
+             const char *what, int printchar,
+             int current, int total);
+};
+struct progress_dispatch_s *progress_dispatch_list;
+
+
+
 
 /*
    Local prototypes.
  */
 
-static char *create_socket_name (char *standard_name, char *template);
-static gnupg_fd_t create_server_socket (char *name, int is_ssh,
+static char *create_socket_name (char *standard_name, int with_homedir);
+static gnupg_fd_t create_server_socket (char *name, int primary, int cygwin,
+                                        char **r_redir_name,
                                         assuan_sock_nonce_t *nonce);
 static void create_directories (void);
 
+static void agent_libgcrypt_progress_cb (void *data, const char *what,
+                                         int printchar,
+                                         int current, int total);
 static void agent_init_default_ctrl (ctrl_t ctrl);
 static void agent_deinit_default_ctrl (ctrl_t ctrl);
 
 static void handle_connections (gnupg_fd_t listen_fd,
+                                gnupg_fd_t listen_fd_extra,
+                                gnupg_fd_t listen_fd_browser,
                                 gnupg_fd_t listen_fd_ssh);
 static void check_own_socket (void);
-static int check_for_running_agent (int silent, int mode);
+static int check_for_running_agent (int silent);
 
 /* Pth wrapper function definitions. */
-ASSUAN_SYSTEM_PTH_IMPL;
-
-#if GCRYPT_VERSION_NUMBER < 0x010600
-GCRY_THREAD_OPTION_PTH_IMPL;
-#if GCRY_THREAD_OPTION_VERSION < 1
-static int fixed_gcry_pth_init (void)
-{
-  return pth_self ()? 0 : (pth_init () == FALSE) ? errno : 0;
-}
-#endif
-#endif /*GCRYPT_VERSION_NUMBER < 0x10600*/
-
-#ifndef PTH_HAVE_PTH_THREAD_ID
-static unsigned long pth_thread_id (void)
-{
-  return (unsigned long)pth_self ();
-}
-#endif
-
+ASSUAN_SYSTEM_NPTH_IMPL;
 
 
 /*
    Functions.
  */
 
+/* Allocate a string describing a library version by calling a GETFNC.
+   This function is expected to be called only once.  GETFNC is
+   expected to have a semantic like gcry_check_version ().  */
 static char *
 make_libversion (const char *libname, const char *(*getfnc)(const char*))
 {
@@ -351,7 +450,9 @@ make_libversion (const char *libname, const char *(*getfnc)(const char*))
   return result;
 }
 
-
+/* Return strings describing this program.  The case values are
+   described in common/argparse.c:strusage.  The values here override
+   the default values given by strusage.  */
 static const char *
 my_strusage (int level)
 {
@@ -360,7 +461,7 @@ my_strusage (int level)
 
   switch (level)
     {
-    case 11: p = "gpg-agent (GnuPG)";
+    case 11: p = "@GPG_AGENT@ (@GNUPG@)";
       break;
     case 13: p = VERSION; break;
     case 17: p = PRINTABLE_OS_NAME; break;
@@ -376,10 +477,10 @@ my_strusage (int level)
       break;
 
     case 1:
-    case 40: p =  _("Usage: gpg-agent [options] (-h for help)");
+    case 40: p =  _("Usage: @GPG_AGENT@ [options] (-h for help)");
       break;
-    case 41: p =  _("Syntax: gpg-agent [options] [command [args]]\n"
-                    "Secret key management for GnuPG\n");
+    case 41: p =  _("Syntax: @GPG_AGENT@ [options] [command [args]]\n"
+                    "Secret key management for @GNUPG@\n");
     break;
 
     default: p = NULL;
@@ -406,11 +507,11 @@ set_debug (void)
   else if (!strcmp (debug_level, "none") || (numok && numlvl < 1))
     opt.debug = 0;
   else if (!strcmp (debug_level, "basic") || (numok && numlvl <= 2))
-    opt.debug = DBG_ASSUAN_VALUE;
+    opt.debug = DBG_IPC_VALUE;
   else if (!strcmp (debug_level, "advanced") || (numok && numlvl <= 5))
-    opt.debug = DBG_ASSUAN_VALUE|DBG_COMMAND_VALUE;
+    opt.debug = DBG_IPC_VALUE|DBG_COMMAND_VALUE;
   else if (!strcmp (debug_level, "expert") || (numok && numlvl <= 8))
-    opt.debug = (DBG_ASSUAN_VALUE|DBG_COMMAND_VALUE
+    opt.debug = (DBG_IPC_VALUE|DBG_COMMAND_VALUE
                  |DBG_CACHE_VALUE);
   else if (!strcmp (debug_level, "guru") || numok)
     {
@@ -424,7 +525,7 @@ set_debug (void)
     }
   else
     {
-      log_error (_("invalid debug-level `%s' given\n"), debug_level);
+      log_error (_("invalid debug-level '%s' given\n"), debug_level);
       opt.debug = 0; /* Reset debugging, so that prior debug
                         statements won't have an undesired effect. */
     }
@@ -441,27 +542,23 @@ set_debug (void)
   gcry_control (GCRYCTL_SET_VERBOSITY, (int)opt.verbose);
 
   if (opt.debug)
-    log_info ("enabled debug flags:%s%s%s%s%s%s%s%s\n",
-              (opt.debug & DBG_COMMAND_VALUE)? " command":"",
-              (opt.debug & DBG_MPI_VALUE    )? " mpi":"",
-              (opt.debug & DBG_CRYPTO_VALUE )? " crypto":"",
-              (opt.debug & DBG_MEMORY_VALUE )? " memory":"",
-              (opt.debug & DBG_CACHE_VALUE  )? " cache":"",
-              (opt.debug & DBG_MEMSTAT_VALUE)? " memstat":"",
-              (opt.debug & DBG_HASHING_VALUE)? " hashing":"",
-              (opt.debug & DBG_ASSUAN_VALUE )? " assuan":"");
+    parse_debug_flag (NULL, &opt.debug, debug_flags);
 }
 
 
-/* Helper for cleanup to remove one socket with NAME.  */
+/* Helper for cleanup to remove one socket with NAME.  REDIR_NAME is
+   the corresponding real name if the socket has been redirected.  */
 static void
-remove_socket (char *name)
+remove_socket (char *name, char *redir_name)
 {
   if (name && *name)
     {
       char *p;
 
-      remove (name);
+      if (redir_name)
+        name = redir_name;
+
+      gnupg_remove (name);
       p = strrchr (name, '/');
       if (p)
 	{
@@ -473,11 +570,24 @@ remove_socket (char *name)
     }
 }
 
+
+/* Cleanup code for this program.  This is either called has an atexit
+   handler or directly.  */
 static void
 cleanup (void)
 {
-  remove_socket (socket_name);
-  remove_socket (socket_name_ssh);
+  static int done;
+
+  if (done)
+    return;
+  done = 1;
+  deinitialize_module_cache ();
+  remove_socket (socket_name, redir_socket_name);
+  if (opt.extra_socket > 1)
+    remove_socket (socket_name_extra, redir_socket_name_extra);
+  if (opt.browser_socket > 1)
+    remove_socket (socket_name_browser, redir_socket_name_browser);
+  remove_socket (socket_name_ssh, redir_socket_name_ssh);
 }
 
 
@@ -496,8 +606,12 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       opt.verbose = 0;
       opt.debug = 0;
       opt.no_grab = 0;
+      opt.debug_pinentry = 0;
       opt.pinentry_program = NULL;
       opt.pinentry_touch_file = NULL;
+      xfree (opt.pinentry_invisible_char);
+      opt.pinentry_invisible_char = NULL;
+      opt.pinentry_timeout = 0;
       opt.scdaemon_program = NULL;
       opt.def_cache_ttl = DEFAULT_CACHE_TTL;
       opt.def_cache_ttl_ssh = DEFAULT_CACHE_TTL_SSH;
@@ -511,8 +625,10 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       opt.enable_passhrase_history = 0;
       opt.ignore_cache_for_signing = 0;
       opt.allow_mark_trusted = 1;
-      opt.disable_scdaemon = 0;
       opt.allow_external_cache = 1;
+      opt.allow_emacs_pinentry = 0;
+      opt.disable_scdaemon = 0;
+      disable_check_own_socket = 0;
       return 1;
     }
 
@@ -521,9 +637,12 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
     case oQuiet: opt.quiet = 1; break;
     case oVerbose: opt.verbose++; break;
 
-    case oDebug: opt.debug |= pargs->r.ret_ulong; break;
+    case oDebug:
+      parse_debug_flag (pargs->r.ret_str, &opt.debug, debug_flags);
+      break;
     case oDebugAll: opt.debug = ~0; break;
     case oDebugLevel: debug_level = pargs->r.ret_str; break;
+    case oDebugPinentry: opt.debug_pinentry = 1; break;
 
     case oLogFile:
       if (!reread)
@@ -532,8 +651,6 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
           || strcmp (current_logfile, pargs->r.ret_str))
         {
           log_set_file (pargs->r.ret_str);
-	  if (DBG_ASSUAN)
-	    assuan_set_assuan_log_stream (log_get_stream ());
           xfree (current_logfile);
           current_logfile = xtrystrdup (pargs->r.ret_str);
         }
@@ -543,8 +660,14 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
 
     case oPinentryProgram: opt.pinentry_program = pargs->r.ret_str; break;
     case oPinentryTouchFile: opt.pinentry_touch_file = pargs->r.ret_str; break;
+    case oPinentryInvisibleChar:
+      xfree (opt.pinentry_invisible_char);
+      opt.pinentry_invisible_char = xtrystrdup (pargs->r.ret_str); break;
+      break;
+    case oPinentryTimeout: opt.pinentry_timeout = pargs->r.ret_ulong; break;
     case oScdaemonProgram: opt.scdaemon_program = pargs->r.ret_str; break;
     case oDisableScdaemon: opt.disable_scdaemon = 1; break;
+    case oDisableCheckOwnSocket: disable_check_own_socket = 1; break;
 
     case oDefCacheTTL: opt.def_cache_ttl = pargs->r.ret_ulong; break;
     case oDefCacheTTLSSH: opt.def_cache_ttl_ssh = pargs->r.ret_ulong; break;
@@ -575,7 +698,12 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
 
     case oAllowPresetPassphrase: opt.allow_preset_passphrase = 1; break;
 
+    case oAllowLoopbackPinentry: opt.allow_loopback_pinentry = 1; break;
+
     case oNoAllowExternalCache: opt.allow_external_cache = 0;
+      break;
+
+    case oAllowEmacsPinentry: opt.allow_emacs_pinentry = 1;
       break;
 
     default:
@@ -584,6 +712,14 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
 
   return 1; /* handled */
 }
+
+
+/* Fixup some options after all have been processed.  */
+static void
+finalize_rereadable_options (void)
+{
+}
+
 
 
 /* The main entry point.  */
@@ -599,8 +735,6 @@ main (int argc, char **argv )
   unsigned configlineno;
   int parse_debug = 0;
   int default_config =1;
-  int greeting = 0;
-  int nogreeting = 0;
   int pipe_server = 0;
   int is_daemon = 0;
   int nodetach = 0;
@@ -609,8 +743,9 @@ main (int argc, char **argv )
   int debug_wait = 0;
   int gpgconf_list = 0;
   gpg_error_t err;
-  const char *env_file_name = NULL;
   struct assuan_malloc_hooks malloc_hooks;
+
+  early_system_init ();
 
   /* Before we do anything else we save the list of currently open
      file descriptors and the signal mask.  This info is required to
@@ -627,27 +762,13 @@ main (int argc, char **argv )
   /* Please note that we may running SUID(ROOT), so be very CAREFUL
      when adding any stuff between here and the call to INIT_SECMEM()
      somewhere after the option parsing */
-  log_set_prefix ("gpg-agent", JNLIB_LOG_WITH_PREFIX|JNLIB_LOG_WITH_PID);
+  log_set_prefix (GPG_AGENT_NAME, GPGRT_LOG_WITH_PREFIX|GPGRT_LOG_WITH_PID);
 
   /* Make sure that our subsystems are ready.  */
   i18n_init ();
-  init_common_subsystems ();
+  init_common_subsystems (&argc, &argv);
 
-
-#if GCRYPT_VERSION_NUMBER < 0x010600
-  /* Libgcrypt < 1.6 requires us to register the threading model first.
-     Note that this will also do the pth_init. */
-#if GCRY_THREAD_OPTION_VERSION < 1
-  gcry_threads_pth.init = fixed_gcry_pth_init;
-#endif
-  err = gcry_control (GCRYCTL_SET_THREAD_CBS, &gcry_threads_pth);
-  if (err)
-    {
-      log_fatal ("can't register GNU Pth with Libgcrypt: %s\n",
-                 gpg_strerror (err));
-    }
-#endif /*GCRYPT_VERSION_NUMBER < 0x010600*/
-
+  npth_init ();
 
   /* Check that the libraries are suitable.  Do it here because
      the option parsing may need services of the library. */
@@ -661,22 +782,19 @@ main (int argc, char **argv )
   malloc_hooks.realloc = gcry_realloc;
   malloc_hooks.free = gcry_free;
   assuan_set_malloc_hooks (&malloc_hooks);
-  assuan_set_assuan_log_prefix (log_get_prefix (NULL));
   assuan_set_gpg_err_source (GPG_ERR_SOURCE_DEFAULT);
-  assuan_set_system_hooks (ASSUAN_SYSTEM_PTH);
+  assuan_set_system_hooks (ASSUAN_SYSTEM_NPTH);
   assuan_sock_init ();
+  setup_libassuan_logging (&opt.debug);
 
   setup_libgcrypt_logging ();
   gcry_control (GCRYCTL_USE_SECURE_RNDPOOL);
+  gcry_set_progress_handler (agent_libgcrypt_progress_cb, NULL);
 
   disable_core_dumps ();
 
   /* Set default options.  */
   parse_rereadable_options (NULL, 0); /* Reset them to default values. */
-#ifdef USE_STANDARD_SOCKET
-  opt.use_standard_socket = 1;  /* Under Windows we always use a standard
-                                   socket.  */
-#endif
 
   shell = getenv ("SHELL");
   if (shell && strlen (shell) >= 3 && !strcmp (shell+strlen (shell)-3, "csh") )
@@ -703,7 +821,7 @@ main (int argc, char **argv )
       }
     if (!err)
       {
-        s = ttyname (0);
+        s = gnupg_ttyname (0);
         if (s)
           err = session_env_setenv (opt.startup_env, "GPG_TTY", s);
       }
@@ -740,6 +858,11 @@ main (int argc, char **argv )
           default_config = 0; /* --no-options */
 	else if (pargs.r_opt == oHomedir)
           opt.homedir = pargs.r.ret_str;
+	else if (pargs.r_opt == oDebugQuickRandom)
+          {
+            gcry_control (GCRYCTL_ENABLE_QUICK_RANDOM, 0);
+          }
+
     }
 
   /* Initialize the secure memory. */
@@ -751,7 +874,8 @@ main (int argc, char **argv )
   */
 
   if (default_config)
-    configname = make_filename (opt.homedir, "gpg-agent.conf", NULL );
+    configname = make_filename (opt.homedir, GPG_AGENT_NAME EXTSEP_S "conf",
+                                NULL );
 
   argc = orig_argc;
   argv = orig_argv;
@@ -768,7 +892,7 @@ main (int argc, char **argv )
           if (default_config)
             {
               if( parse_debug )
-                log_info (_("NOTE: no default option file `%s'\n"),
+                log_info (_("Note: no default option file '%s'\n"),
                           configname );
               /* Save the default conf file name so that
                  reread_configuration is able to test whether the
@@ -779,7 +903,7 @@ main (int argc, char **argv )
 	    }
           else
             {
-              log_error (_("option file `%s': %s\n"),
+              log_error (_("option file '%s': %s\n"),
                          configname, strerror(errno) );
               exit(2);
 	    }
@@ -787,7 +911,7 @@ main (int argc, char **argv )
           configname = NULL;
 	}
       if (parse_debug && configname )
-        log_info (_("reading options from `%s'\n"), configname );
+        log_info (_("reading options from '%s'\n"), configname );
       default_config = 0;
     }
 
@@ -813,7 +937,7 @@ main (int argc, char **argv )
 		goto next_pass;
 	    }
           break;
-        case oNoGreeting: nogreeting = 1; break;
+        case oNoGreeting: /* Dummy option.  */ break;
         case oNoVerbose: opt.verbose = 0; break;
         case oNoOptions: break; /* no-options */
         case oHomedir: opt.homedir = pargs.r.ret_str; break;
@@ -829,11 +953,14 @@ main (int argc, char **argv )
         case oTTYtype: default_ttytype = xstrdup (pargs.r.ret_str); break;
         case oLCctype: default_lc_ctype = xstrdup (pargs.r.ret_str); break;
         case oLCmessages: default_lc_messages = xstrdup (pargs.r.ret_str);
+          break;
         case oXauthority: default_xauthority = xstrdup (pargs.r.ret_str);
           break;
 
-        case oUseStandardSocket:   opt.use_standard_socket = 1; break;
-        case oNoUseStandardSocket: opt.use_standard_socket = 0; break;
+        case oUseStandardSocket:
+        case oNoUseStandardSocket:
+          obsolete_option (configname, configlineno, "use-standard-socket");
+          break;
 
         case oFakedSystemTime:
           {
@@ -847,19 +974,31 @@ main (int argc, char **argv )
         case oKeepTTY: opt.keep_tty = 1; break;
         case oKeepDISPLAY: opt.keep_display = 1; break;
 
-	case oSSHSupport:  opt.ssh_support = 1; break;
+	case oSSHSupport:
+          ssh_support = 1;
+          break;
         case oPuttySupport:
 #        ifdef HAVE_W32_SYSTEM
           putty_support = 1;
-          opt.ssh_support = 1;
 #        endif
           break;
 
+        case oExtraSocket:
+          opt.extra_socket = 1;  /* (1 = points into argv)  */
+          socket_name_extra = pargs.r.ret_str;
+          break;
+
+        case oBrowserSocket:
+          opt.browser_socket = 1;  /* (1 = points into argv)  */
+          socket_name_browser = pargs.r.ret_str;
+          break;
+
+        case oDebugQuickRandom:
+          /* Only used by the first stage command line parser.  */
+          break;
+
         case oWriteEnvFile:
-          if (pargs.r_type)
-            env_file_name = pargs.r.ret_str;
-          else
-            env_file_name = make_filename ("~/.gpg-agent-info", NULL);
+          obsolete_option (configname, configlineno, "write-env-file");
           break;
 
         default : pargs.err = configfp? 1:2; break;
@@ -883,20 +1022,44 @@ main (int argc, char **argv )
   configname = NULL;
   if (log_get_errorcount(0))
     exit(2);
-  if (nogreeting )
-    greeting = 0;
 
-  if (greeting)
+  finalize_rereadable_options ();
+
+  /* Turn the homedir into an absolute one. */
+  opt.homedir = make_absfilename (opt.homedir, NULL);
+
+  /* Print a warning if an argument looks like an option.  */
+  if (!opt.quiet && !(pargs.flags & ARGPARSE_FLAG_STOP_SEEN))
     {
-      fprintf (stderr, "%s %s; %s\n",
-                 strusage(11), strusage(13), strusage(14) );
-      fprintf (stderr, "%s\n", strusage(15) );
+      int i;
+
+      for (i=0; i < argc; i++)
+        if (argv[i][0] == '-' && argv[i][1] == '-')
+          log_info (_("Note: '%s' is not considered an option\n"), argv[i]);
     }
-#ifdef IS_DEVELOPMENT_VERSION
-  /* We don't want to print it here because gpg-agent is useful of its
-     own and quite matured.  */
-  /*log_info ("NOTE: this is a development version!\n");*/
+
+#ifdef ENABLE_NLS
+  /* gpg-agent usually does not output any messages because it runs in
+     the background.  For log files it is acceptable to have messages
+     always encoded in utf-8.  We switch here to utf-8, so that
+     commands like --help still give native messages.  It is far
+     easier to switch only once instead of for every message and it
+     actually helps when more then one thread is active (avoids an
+     extra copy step). */
+    bind_textdomain_codeset (PACKAGE_GT, "UTF-8");
 #endif
+
+  if (!pipe_server && !is_daemon && !gpgconf_list)
+    {
+     /* We have been called without any options and thus we merely
+        check whether an agent is already running.  We do this right
+        here so that we don't clobber a logfile with this check but
+        print the status directly to stderr. */
+      opt.debug = 0;
+      set_debug ();
+      check_for_running_agent (0);
+      agent_exit (0);
+    }
 
   set_debug ();
 
@@ -907,6 +1070,7 @@ main (int argc, char **argv )
       exit (1);
     }
 
+  initialize_module_cache ();
   initialize_module_call_pinentry ();
   initialize_module_call_scd ();
   initialize_module_trustlist ();
@@ -923,24 +1087,30 @@ main (int argc, char **argv )
     }
 
   if (gpgconf_list == 3)
-    agent_exit (!opt.use_standard_socket);
-  if (gpgconf_list == 2)
+    {
+      /* We now use the standard socket always - return true for
+         backward compatibility.  */
+      agent_exit (0);
+    }
+  else if (gpgconf_list == 2)
     agent_exit (0);
-  if (gpgconf_list)
+  else if (gpgconf_list)
     {
       char *filename;
       char *filename_esc;
 
       /* List options and default values in the GPG Conf format.  */
-      filename = make_filename (opt.homedir, "gpg-agent.conf", NULL );
+      filename = make_filename (opt.homedir, GPG_AGENT_NAME EXTSEP_S "conf",
+                                NULL );
       filename_esc = percent_escape (filename, NULL);
 
-      printf ("gpgconf-gpg-agent.conf:%lu:\"%s\n",
-              GC_OPT_FLAG_DEFAULT, filename_esc);
+      es_printf ("%s-%s.conf:%lu:\"%s\n",
+                 GPGCONF_NAME, GPG_AGENT_NAME,
+                 GC_OPT_FLAG_DEFAULT, filename_esc);
       xfree (filename);
       xfree (filename_esc);
 
-      printf ("verbose:%lu:\n"
+      es_printf ("verbose:%lu:\n"
               "quiet:%lu:\n"
               "debug-level:%lu:\"none:\n"
               "log-file:%lu:\n",
@@ -948,83 +1118,65 @@ main (int argc, char **argv )
               GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME,
               GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME,
               GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME );
-      printf ("default-cache-ttl:%lu:%d:\n",
+      es_printf ("default-cache-ttl:%lu:%d:\n",
               GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME, DEFAULT_CACHE_TTL );
-      printf ("default-cache-ttl-ssh:%lu:%d:\n",
+      es_printf ("default-cache-ttl-ssh:%lu:%d:\n",
               GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME, DEFAULT_CACHE_TTL_SSH );
-      printf ("max-cache-ttl:%lu:%d:\n",
+      es_printf ("max-cache-ttl:%lu:%d:\n",
               GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME, MAX_CACHE_TTL );
-      printf ("max-cache-ttl-ssh:%lu:%d:\n",
+      es_printf ("max-cache-ttl-ssh:%lu:%d:\n",
               GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME, MAX_CACHE_TTL_SSH );
-      printf ("enforce-passphrase-constraints:%lu:\n",
+      es_printf ("enforce-passphrase-constraints:%lu:\n",
               GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
-      printf ("min-passphrase-len:%lu:%d:\n",
+      es_printf ("min-passphrase-len:%lu:%d:\n",
               GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME, MIN_PASSPHRASE_LEN );
-      printf ("min-passphrase-nonalpha:%lu:%d:\n",
+      es_printf ("min-passphrase-nonalpha:%lu:%d:\n",
               GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME,
               MIN_PASSPHRASE_NONALPHA);
-      printf ("check-passphrase-pattern:%lu:\n",
+      es_printf ("check-passphrase-pattern:%lu:\n",
               GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME);
-      printf ("max-passphrase-days:%lu:%d:\n",
+      es_printf ("max-passphrase-days:%lu:%d:\n",
               GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME,
               MAX_PASSPHRASE_DAYS);
-      printf ("enable-passphrase-history:%lu:\n",
+      es_printf ("enable-passphrase-history:%lu:\n",
               GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
-      printf ("no-grab:%lu:\n",
+      es_printf ("no-grab:%lu:\n",
               GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
-      printf ("ignore-cache-for-signing:%lu:\n",
+      es_printf ("ignore-cache-for-signing:%lu:\n",
               GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
-      printf ("no-allow-mark-trusted:%lu:\n",
+      es_printf ("no-allow-external-cache:%lu:\n",
               GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
-      printf ("no-allow-external-cache:%lu:\n",
+      es_printf ("no-allow-mark-trusted:%lu:\n",
               GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
-      printf ("disable-scdaemon:%lu:\n",
+      es_printf ("disable-scdaemon:%lu:\n",
               GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
+      es_printf ("enable-ssh-support:%lu:\n", GC_OPT_FLAG_NONE);
 #ifdef HAVE_W32_SYSTEM
-      printf ("enable-putty-support:%lu:\n", GC_OPT_FLAG_NONE);
-#else
-      printf ("enable-ssh-support:%lu:\n", GC_OPT_FLAG_NONE);
+      es_printf ("enable-putty-support:%lu:\n", GC_OPT_FLAG_NONE);
 #endif
+      es_printf ("allow-loopback-pinentry:%lu:\n",
+                 GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
+      es_printf ("allow-emacs-pinentry:%lu:\n",
+                 GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
+      es_printf ("pinentry-timeout:%lu:0:\n",
+                 GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME);
 
       agent_exit (0);
     }
-
-  /* If this has been called without any options, we merely check
-     whether an agent is already running.  We do this here so that we
-     don't clobber a logfile but print it directly to stderr. */
-  if (!pipe_server && !is_daemon)
-    {
-      log_set_prefix (NULL, JNLIB_LOG_WITH_PREFIX);
-      check_for_running_agent (0, 0);
-      agent_exit (0);
-    }
-
-#ifdef ENABLE_NLS
-  /* gpg-agent usually does not output any messages because it runs in
-     the background.  For log files it is acceptable to have messages
-     always encoded in utf-8.  We switch here to utf-8, so that
-     commands like --help still give native messages.  It is far
-     easier to switch only once instead of for every message and it
-     actually helps when more then one thread is active (avoids an
-     extra copy step). */
-    bind_textdomain_codeset (PACKAGE_GT, "UTF-8");
-#endif
 
   /* Now start with logging to a file if this is desired. */
   if (logfile)
     {
       log_set_file (logfile);
-      log_set_prefix (NULL, (JNLIB_LOG_WITH_PREFIX
-                             |JNLIB_LOG_WITH_TIME
-                             |JNLIB_LOG_WITH_PID));
+      log_set_prefix (NULL, (GPGRT_LOG_WITH_PREFIX
+                             | GPGRT_LOG_WITH_TIME
+                             | GPGRT_LOG_WITH_PID));
       current_logfile = xstrdup (logfile);
     }
-  if (DBG_ASSUAN)
-    assuan_set_assuan_log_stream (log_get_stream ());
 
   /* Make sure that we have a default ttyname. */
-  if (!default_ttyname && ttyname (1))
-    default_ttyname = xstrdup (ttyname (1));
+  if (!default_ttyname && gnupg_ttyname (1))
+    default_ttyname = xstrdup (gnupg_ttyname (1));
   if (!default_ttytype && getenv ("TERM"))
     default_ttytype = xstrdup (getenv ("TERM"));
 
@@ -1059,8 +1211,12 @@ main (int argc, char **argv )
   else
     { /* Regular server mode */
       gnupg_fd_t fd;
-      gnupg_fd_t fd_ssh;
+      gnupg_fd_t fd_extra = GNUPG_INVALID_FD;
+      gnupg_fd_t fd_browser = GNUPG_INVALID_FD;
+      gnupg_fd_t fd_ssh = GNUPG_INVALID_FD;
+#ifndef HAVE_W32_SYSTEM
       pid_t pid;
+#endif
 
       /* Remove the DISPLAY variable so that a pinentry does not
          default to a specific display.  There is still a default
@@ -1070,22 +1226,44 @@ main (int argc, char **argv )
          exec the program given as arguments). */
 #ifndef HAVE_W32_SYSTEM
       if (!opt.keep_display && !argc)
-        unsetenv ("DISPLAY");
+        gnupg_unsetenv ("DISPLAY");
 #endif
 
+      /* Remove the INSIDE_EMACS variable so that a pinentry does not
+         always try to interact with Emacs.  The variable is set when
+         a client requested this using an OPTION command.  */
+      gnupg_unsetenv ("INSIDE_EMACS");
 
       /* Create the sockets.  */
-      socket_name = create_socket_name
-        ("S.gpg-agent", "/tmp/gpg-XXXXXX/S.gpg-agent");
-      if (opt.ssh_support)
-	socket_name_ssh = create_socket_name
-          ("S.gpg-agent.ssh", "/tmp/gpg-XXXXXX/S.gpg-agent.ssh");
+      socket_name = create_socket_name (GPG_AGENT_SOCK_NAME, 1);
+      fd = create_server_socket (socket_name, 1, 0,
+                                 &redir_socket_name, &socket_nonce);
 
-      fd = create_server_socket (socket_name, 0, &socket_nonce);
-      if (opt.ssh_support)
-	fd_ssh = create_server_socket (socket_name_ssh, 1, &socket_nonce_ssh);
-      else
-	fd_ssh = GNUPG_INVALID_FD;
+      if (opt.extra_socket)
+        {
+          socket_name_extra = create_socket_name (socket_name_extra, 0);
+          opt.extra_socket = 2; /* Indicate that it has been malloced.  */
+          fd_extra = create_server_socket (socket_name_extra, 0, 0,
+                                           &redir_socket_name_extra,
+                                           &socket_nonce_extra);
+        }
+
+      if (opt.browser_socket)
+        {
+          socket_name_browser = create_socket_name (socket_name_browser, 0);
+          opt.browser_socket = 2; /* Indicate that it has been malloced.  */
+          fd_browser = create_server_socket (socket_name_browser, 0, 0,
+                                             &redir_socket_name_browser,
+                                             &socket_nonce_browser);
+        }
+
+      if (ssh_support)
+        {
+          socket_name_ssh = create_socket_name (GPG_AGENT_SSH_SOCK_NAME, 1);
+          fd_ssh = create_server_socket (socket_name_ssh, 0, 1,
+                                         &redir_socket_name_ssh,
+                                         &socket_nonce_ssh);
+        }
 
       /* If we are going to exec a program in the parent, we record
          the PID, so that the child may check whether the program is
@@ -1095,8 +1273,8 @@ main (int argc, char **argv )
 
       fflush (NULL);
 #ifdef HAVE_W32_SYSTEM
-      pid = getpid ();
-      printf ("set GPG_AGENT_INFO=%s;%lu;1\n", socket_name, (ulong)pid);
+      (void)csh_style;
+      (void)nodetach;
 #else /*!HAVE_W32_SYSTEM*/
       pid = fork ();
       if (pid == (pid_t)-1)
@@ -1106,25 +1284,14 @@ main (int argc, char **argv )
         }
       else if (pid)
         { /* We are the parent */
-          char *infostr, *infostr_ssh_sock, *infostr_ssh_pid;
+          char *infostr_ssh_sock, *infostr_ssh_valid;
 
           /* Close the socket FD. */
           close (fd);
 
-          /* Note that we used a standard fork so that Pth runs in
-             both the parent and the child.  The pth_fork would
-             terminate Pth in the child but that is not the way we
-             want it.  Thus we use a plain fork and terminate Pth here
-             in the parent.  The pth_kill may or may not work reliable
-             but it should not harm to call it.  Because Pth fiddles
-             with the signal mask the signal mask might not be correct
-             right now and thus we restore it.  That is not strictly
-             necessary but some programs falsely assume a cleared
-             signal mask.  es_pth_kill is a wrapper around pth_kill to
-             take care not to use any Pth functions in the estream
-             code after Pth has been killed.  */
-          if ( !es_pth_kill () )
-            log_error ("pth_kill failed in forked process\n");
+          /* The signal mask might not be correct right now and thus
+             we restore it.  That is not strictly necessary but some
+             programs falsely assume a cleared signal mask.  */
 
 #ifdef HAVE_SIGPROCMASK
           if (startup_signal_mask_valid)
@@ -1137,15 +1304,8 @@ main (int argc, char **argv )
             log_info ("no saved signal mask\n");
 #endif /*HAVE_SIGPROCMASK*/
 
-          /* Create the info string: <name>:<pid>:<protocol_version> */
-          if (asprintf (&infostr, "GPG_AGENT_INFO=%s:%lu:1",
-                        socket_name, (ulong)pid ) < 0)
-            {
-              log_error ("out of core\n");
-              kill (pid, SIGTERM);
-              exit (1);
-            }
-	  if (opt.ssh_support)
+          /* Create the SSH info string if enabled. */
+	  if (ssh_support)
 	    {
 	      if (asprintf (&infostr_ssh_sock, "SSH_AUTH_SOCK=%s",
 			    socket_name_ssh) < 0)
@@ -1154,8 +1314,8 @@ main (int argc, char **argv )
 		  kill (pid, SIGTERM);
 		  exit (1);
 		}
-	      if (asprintf (&infostr_ssh_pid, "SSH_AGENT_PID=%u",
-			    pid) < 0)
+	      if (asprintf (&infostr_ssh_valid, "gnupg_SSH_AUTH_SOCK_by=%lu",
+			    (unsigned long)getpid()) < 0)
 		{
 		  log_error ("out of core\n");
 		  kill (pid, SIGTERM);
@@ -1165,50 +1325,17 @@ main (int argc, char **argv )
 
           *socket_name = 0; /* Don't let cleanup() remove the socket -
                                the child should do this from now on */
-	  if (opt.ssh_support)
+	  if (opt.extra_socket)
+	    *socket_name_extra = 0;
+	  if (opt.browser_socket)
+	    *socket_name_browser = 0;
+	  if (ssh_support)
 	    *socket_name_ssh = 0;
-
-          if (env_file_name)
-            {
-              FILE *fp;
-
-              fp = fopen (env_file_name, "w");
-              if (!fp)
-                log_error (_("error creating `%s': %s\n"),
-                             env_file_name, strerror (errno));
-              else
-                {
-                  fputs (infostr, fp);
-                  putc ('\n', fp);
-                  if (opt.ssh_support)
-                    {
-                      fputs (infostr_ssh_sock, fp);
-                      putc ('\n', fp);
-                      fputs (infostr_ssh_pid, fp);
-                      putc ('\n', fp);
-                    }
-                  fclose (fp);
-                }
-            }
-
 
           if (argc)
             { /* Run the program given on the commandline.  */
-              if (putenv (infostr))
-                {
-                  log_error ("failed to set environment: %s\n",
-                             strerror (errno) );
-                  kill (pid, SIGTERM );
-                  exit (1);
-                }
-              if (opt.ssh_support && putenv (infostr_ssh_sock))
-                {
-                  log_error ("failed to set environment: %s\n",
-                             strerror (errno) );
-                  kill (pid, SIGTERM );
-                  exit (1);
-                }
-              if (opt.ssh_support && putenv (infostr_ssh_pid))
+              if (ssh_support && (putenv (infostr_ssh_sock)
+                                  || putenv (infostr_ssh_valid)))
                 {
                   log_error ("failed to set environment: %s\n",
                              strerror (errno) );
@@ -1234,30 +1361,24 @@ main (int argc, char **argv )
                  shell's eval to set it */
               if (csh_style)
                 {
-                  *strchr (infostr, '=') = ' ';
-                  printf ("setenv %s;\n", infostr);
-		  if (opt.ssh_support)
+		  if (ssh_support)
 		    {
 		      *strchr (infostr_ssh_sock, '=') = ' ';
-		      printf ("setenv %s;\n", infostr_ssh_sock);
-		      *strchr (infostr_ssh_pid, '=') = ' ';
-		      printf ("setenv %s;\n", infostr_ssh_pid);
+		      es_printf ("setenv %s;\n", infostr_ssh_sock);
 		    }
                 }
               else
                 {
-                  printf ( "%s; export GPG_AGENT_INFO;\n", infostr);
-		  if (opt.ssh_support)
+		  if (ssh_support)
 		    {
-		      printf ("%s; export SSH_AUTH_SOCK;\n", infostr_ssh_sock);
-		      printf ("%s; export SSH_AGENT_PID;\n", infostr_ssh_pid);
+		      es_printf ("%s; export SSH_AUTH_SOCK;\n",
+                                 infostr_ssh_sock);
 		    }
                 }
-              xfree (infostr);
-	      if (opt.ssh_support)
+	      if (ssh_support)
 		{
 		  xfree (infostr_ssh_sock);
-		  xfree (infostr_ssh_pid);
+		  xfree (infostr_ssh_valid);
 		}
               exit (0);
             }
@@ -1282,7 +1403,7 @@ main (int argc, char **argv )
                   if ( ! close (i)
                        && open ("/dev/null", i? O_WRONLY : O_RDONLY) == -1)
                     {
-                      log_error ("failed to open `%s': %s\n",
+                      log_error ("failed to open '%s': %s\n",
                                  "/dev/null", strerror (errno));
                       cleanup ();
                       exit (1);
@@ -1297,7 +1418,7 @@ main (int argc, char **argv )
             }
 
           log_get_prefix (&oldflags);
-          log_set_prefix (NULL, oldflags | JNLIB_LOG_RUN_DETACHED);
+          log_set_prefix (NULL, oldflags | GPGRT_LOG_RUN_DETACHED);
           opt.running_detached = 1;
         }
 
@@ -1318,7 +1439,7 @@ main (int argc, char **argv )
 #endif /*!HAVE_W32_SYSTEM*/
 
       log_info ("%s %s started\n", strusage(11), strusage(13) );
-      handle_connections (fd, opt.ssh_support ? fd_ssh : GNUPG_INVALID_FD);
+      handle_connections (fd, fd_extra, fd_browser, fd_ssh);
       assuan_sock_close (fd);
     }
 
@@ -1326,10 +1447,18 @@ main (int argc, char **argv )
 }
 
 
+/* Exit entry point.  This function should be called instead of a
+   plain exit.  */
 void
 agent_exit (int rc)
 {
   /*FIXME: update_random_seed_file();*/
+
+  /* We run our cleanup handler because that may close cipher contexts
+     stored in secure memory and thus this needs to be done before we
+     explicitly terminate secure memory.  */
+  cleanup ();
+
 #if 1
   /* at this time a bit annoying */
   if (opt.debug & DBG_MEMSTAT_VALUE)
@@ -1346,6 +1475,93 @@ agent_exit (int rc)
 }
 
 
+/* This is our callback function for gcrypt progress messages.  It is
+   set once at startup and dispatches progress messages to the
+   corresponding threads of the agent.  */
+static void
+agent_libgcrypt_progress_cb (void *data, const char *what, int printchar,
+                             int current, int total)
+{
+  struct progress_dispatch_s *dispatch;
+  npth_t mytid = npth_self ();
+
+  (void)data;
+
+  for (dispatch = progress_dispatch_list; dispatch; dispatch = dispatch->next)
+    if (dispatch->ctrl && dispatch->tid == mytid)
+      break;
+  if (dispatch && dispatch->cb)
+    dispatch->cb (dispatch->ctrl, what, printchar, current, total);
+}
+
+
+/* If a progress dispatcher callback has been associated with the
+ * current connection unregister it.  */
+static void
+unregister_progress_cb (void)
+{
+  struct progress_dispatch_s *dispatch;
+  npth_t mytid = npth_self ();
+
+  for (dispatch = progress_dispatch_list; dispatch; dispatch = dispatch->next)
+    if (dispatch->ctrl && dispatch->tid == mytid)
+      break;
+  if (dispatch)
+    {
+      dispatch->ctrl = NULL;
+      dispatch->cb = NULL;
+    }
+}
+
+
+/* Setup a progress callback CB for the current connection.  Using a
+ * CB of NULL disables the callback.  */
+void
+agent_set_progress_cb (void (*cb)(ctrl_t ctrl, const char *what,
+                                  int printchar, int current, int total),
+                       ctrl_t ctrl)
+{
+  struct progress_dispatch_s *dispatch, *firstfree;
+  npth_t mytid = npth_self ();
+
+  firstfree = NULL;
+  for (dispatch = progress_dispatch_list; dispatch; dispatch = dispatch->next)
+    {
+      if (dispatch->ctrl && dispatch->tid == mytid)
+        break;
+      if (!dispatch->ctrl && !firstfree)
+        firstfree = dispatch;
+    }
+  if (!dispatch) /* None allocated: Reuse or allocate a new one.  */
+    {
+      if (firstfree)
+        {
+          dispatch = firstfree;
+        }
+      else if ((dispatch = xtrycalloc (1, sizeof *dispatch)))
+        {
+          dispatch->next = progress_dispatch_list;
+          progress_dispatch_list = dispatch;
+        }
+      else
+        {
+          log_error ("error allocating new progress dispatcher slot: %s\n",
+                     gpg_strerror (gpg_error_from_syserror ()));
+          return;
+        }
+      dispatch->ctrl = ctrl;
+      dispatch->tid = mytid;
+    }
+
+  dispatch->cb = cb;
+}
+
+
+/* Each thread has its own local variables conveyed by a control
+   structure usually identified by an argument named CTRL.  This
+   function is called immediately after allocating the control
+   structure.  Its purpose is to setup the default values for that
+   structure.  Note that some values may have already been set.  */
 static void
 agent_init_default_ctrl (ctrl_t ctrl)
 {
@@ -1368,18 +1584,55 @@ agent_init_default_ctrl (ctrl_t ctrl)
     xfree (ctrl->lc_messages);
   ctrl->lc_messages = default_lc_messages? xtrystrdup (default_lc_messages)
                                     /**/ : NULL;
+  ctrl->cache_ttl_opt_preset = CACHE_TTL_OPT_PRESET;
 }
 
 
+/* Release all resources allocated by default in the control
+   structure.  This is the counterpart to agent_init_default_ctrl.  */
 static void
 agent_deinit_default_ctrl (ctrl_t ctrl)
 {
+  unregister_progress_cb ();
   session_env_release (ctrl->session_env);
 
   if (ctrl->lc_ctype)
     xfree (ctrl->lc_ctype);
   if (ctrl->lc_messages)
     xfree (ctrl->lc_messages);
+}
+
+
+/* Because the ssh protocol does not send us information about the
+   current TTY setting, we use this function to use those from startup
+   or those explicitly set.  This is also used for the restricted mode
+   where we ignore requests to change the environment.  */
+gpg_error_t
+agent_copy_startup_env (ctrl_t ctrl)
+{
+  static const char *names[] =
+    {"GPG_TTY", "DISPLAY", "TERM", "XAUTHORITY", "PINENTRY_USER_DATA", NULL};
+  gpg_error_t err = 0;
+  int idx;
+  const char *value;
+
+  for (idx=0; !err && names[idx]; idx++)
+      if ((value = session_env_getenv (opt.startup_env, names[idx])))
+      err = session_env_setenv (ctrl->session_env, names[idx], value);
+
+  if (!err && !ctrl->lc_ctype && opt.startup_lc_ctype)
+    if (!(ctrl->lc_ctype = xtrystrdup (opt.startup_lc_ctype)))
+      err = gpg_error_from_syserror ();
+
+  if (!err && !ctrl->lc_messages && opt.startup_lc_messages)
+    if (!(ctrl->lc_messages = xtrystrdup (opt.startup_lc_messages)))
+      err = gpg_error_from_syserror ();
+
+  if (err)
+    log_error ("error setting default session environment: %s\n",
+               gpg_strerror (err));
+
+  return err;
 }
 
 
@@ -1406,7 +1659,7 @@ reread_configuration (void)
   fp = fopen (config_filename, "r");
   if (!fp)
     {
-      log_info (_("option file `%s': %s\n"),
+      log_info (_("option file '%s': %s\n"),
                 config_filename, strerror(errno) );
       return;
     }
@@ -1425,6 +1678,7 @@ reread_configuration (void)
         parse_rereadable_options (&pargs, 1);
     }
   fclose (fp);
+  finalize_rereadable_options ();
   set_debug ();
 }
 
@@ -1453,18 +1707,18 @@ get_agent_ssh_socket_name (void)
 /* Under W32, this function returns the handle of the scdaemon
    notification event.  Calling it the first time creates that
    event.  */
-#ifdef HAVE_W32_SYSTEM
+#if defined(HAVE_W32_SYSTEM) && !defined(HAVE_W32CE_SYSTEM)
 void *
 get_agent_scd_notify_event (void)
 {
-  static HANDLE the_event;
+  static HANDLE the_event = INVALID_HANDLE_VALUE;
 
-  if (!the_event)
+  if (the_event == INVALID_HANDLE_VALUE)
     {
       HANDLE h, h2;
       SECURITY_ATTRIBUTES sa = { sizeof (SECURITY_ATTRIBUTES), NULL, TRUE};
 
-      /* We need to use manual reset evet object due to the way our
+      /* We need to use a manual reset event object due to the way our
          w32-pth wait function works: If we would use an automatic
          reset event we are not able to figure out which handle has
          been signaled because at the time we single out the signaled
@@ -1488,52 +1742,30 @@ get_agent_scd_notify_event (void)
         }
     }
 
-  log_debug  ("returning notify handle %p\n", the_event);
   return the_event;
 }
-#endif /*HAVE_W32_SYSTEM*/
+#endif /*HAVE_W32_SYSTEM && !HAVE_W32CE_SYSTEM*/
 
 
 
-/* Create a name for the socket.  With USE_STANDARD_SOCKET given as
-   true using STANDARD_NAME in the home directory or if given as
-   false from the mkdir type name TEMPLATE.  In the latter case a
-   unique name in a unique new directory will be created.  In both
-   cases check for valid characters as well as against a maximum
-   allowed length for a unix domain socket is done.  The function
-   terminates the process in case of an error.  Returns: Pointer to an
-   allocated string with the absolute name of the socket used.  */
+/* Create a name for the socket in the home directory as using
+   STANDARD_NAME.  We also check for valid characters as well as
+   against a maximum allowed length for a unix domain socket is done.
+   The function terminates the process in case of an error.  Returns:
+   Pointer to an allocated string with the absolute name of the socket
+   used.  */
 static char *
-create_socket_name (char *standard_name, char *template)
+create_socket_name (char *standard_name, int with_homedir)
 {
-  char *name, *p;
+  char *name;
 
-  if (opt.use_standard_socket)
+  if (with_homedir)
     name = make_filename (opt.homedir, standard_name, NULL);
   else
-    {
-      name = xstrdup (template);
-      p = strrchr (name, '/');
-      if (!p)
-	BUG ();
-      *p = 0;
-      if (!mkdtemp (name))
-	{
-	  log_error (_("can't create directory `%s': %s\n"),
-		     name, strerror (errno));
-	  agent_exit (2);
-	}
-      *p = '/';
-    }
-
+    name = make_filename (standard_name, NULL);
   if (strchr (name, PATHSEP_C))
     {
-      log_error (("`%s' are not allowed in the socket name\n"), PATHSEP_S);
-      agent_exit (2);
-    }
-  if (strlen (name) + 1 >= DIMof (struct sockaddr_un, sun_path) )
-    {
-      log_error (_("name of socket too long\n"));
+      log_error (("'%s' are not allowed in the socket name\n"), PATHSEP_S);
       agent_exit (2);
     }
   return name;
@@ -1542,82 +1774,117 @@ create_socket_name (char *standard_name, char *template)
 
 
 /* Create a Unix domain socket with NAME.  Returns the file descriptor
-   or terminates the process in case of an error.  Not that this
-   function needs to be used for the regular socket first and only
-   then for the ssh socket.  */
+   or terminates the process in case of an error.  Note that this
+   function needs to be used for the regular socket first (indicated
+   by PRIMARY) and only then for the extra and the ssh sockets.  If
+   the socket has been redirected the name of the real socket is
+   stored as a malloced string at R_REDIR_NAME.  If CYGWIN is set a
+   Cygwin compatible socket is created (Windows only). */
 static gnupg_fd_t
-create_server_socket (char *name, int is_ssh, assuan_sock_nonce_t *nonce)
+create_server_socket (char *name, int primary, int cygwin,
+                      char **r_redir_name, assuan_sock_nonce_t *nonce)
 {
-  struct sockaddr_un *serv_addr;
+  struct sockaddr *addr;
+  struct sockaddr_un *unaddr;
   socklen_t len;
   gnupg_fd_t fd;
   int rc;
+
+  xfree (*r_redir_name);
+  *r_redir_name = NULL;
 
   fd = assuan_sock_new (AF_UNIX, SOCK_STREAM, 0);
   if (fd == ASSUAN_INVALID_FD)
     {
       log_error (_("can't create socket: %s\n"), strerror (errno));
+      *name = 0; /* Inhibit removal of the socket by cleanup(). */
       agent_exit (2);
     }
 
-  serv_addr = xmalloc (sizeof (*serv_addr));
-  memset (serv_addr, 0, sizeof *serv_addr);
-  serv_addr->sun_family = AF_UNIX;
-  if (strlen (name) + 1 >= sizeof (serv_addr->sun_path))
+  if (cygwin)
+    assuan_sock_set_flag (fd, "cygwin", 1);
+
+  unaddr = xmalloc (sizeof *unaddr);
+  addr = (struct sockaddr*)unaddr;
+
+  {
+    int redirected;
+
+    if (assuan_sock_set_sockaddr_un (name, addr, &redirected))
+      {
+        if (errno == ENAMETOOLONG)
+          log_error (_("socket name '%s' is too long\n"), name);
+        else
+          log_error ("error preparing socket '%s': %s\n",
+                     name, gpg_strerror (gpg_error_from_syserror ()));
+        *name = 0; /* Inhibit removal of the socket by cleanup(). */
+        agent_exit (2);
+      }
+    if (redirected)
+      {
+        *r_redir_name = xstrdup (unaddr->sun_path);
+        if (opt.verbose)
+          log_info ("redirecting socket '%s' to '%s'\n", name, *r_redir_name);
+      }
+  }
+
+  len = SUN_LEN (unaddr);
+  rc = assuan_sock_bind (fd, addr, len);
+
+  /* Our error code mapping on W32CE returns EEXIST thus we also test
+     for this. */
+  if (rc == -1
+      && (errno == EADDRINUSE
+#ifdef HAVE_W32_SYSTEM
+          || errno == EEXIST
+#endif
+          ))
     {
-      log_error (_("socket name `%s' is too long\n"), name);
-      agent_exit (2);
-    }
-  strcpy (serv_addr->sun_path, name);
-  len = SUN_LEN (serv_addr);
-  rc = assuan_sock_bind (fd, (struct sockaddr*) serv_addr, len);
-  if (opt.use_standard_socket && rc == -1 && errno == EADDRINUSE)
-    {
-      /* Check whether a gpg-agent is already running on the standard
-         socket.  We do this test only if this is not the ssh socket.
-         For ssh we assume that a test for gpg-agent has already been
-         done and reuse the requested ssh socket.  Testing the
-         ssh-socket is not possible because at this point, though we
-         know the new Assuan socket, the Assuan server and thus the
-         ssh-agent server is not yet operational.  This would lead to
-         a hang.  */
-      if (!is_ssh && !check_for_running_agent (1, 1))
+      /* Check whether a gpg-agent is already running.  We do this
+         test only if this is the primary socket.  For secondary
+         sockets we assume that a test for gpg-agent has already been
+         done and reuse the requested socket.  Testing the ssh-socket
+         is not possible because at this point, though we know the new
+         Assuan socket, the Assuan server and thus the ssh-agent
+         server is not yet operational; this would lead to a hang.  */
+      if (primary && !check_for_running_agent (1))
         {
+          log_set_prefix (NULL, GPGRT_LOG_WITH_PREFIX);
+          log_set_file (NULL);
           log_error (_("a gpg-agent is already running - "
                        "not starting a new one\n"));
           *name = 0; /* Inhibit removal of the socket by cleanup(). */
           assuan_sock_close (fd);
           agent_exit (2);
         }
-      remove (name);
-      rc = assuan_sock_bind (fd, (struct sockaddr*) serv_addr, len);
+      gnupg_remove (unaddr->sun_path);
+      rc = assuan_sock_bind (fd, addr, len);
     }
-  if (rc != -1
-      && (rc=assuan_sock_get_nonce ((struct sockaddr*)serv_addr, len, nonce)))
+  if (rc != -1 && (rc=assuan_sock_get_nonce (addr, len, nonce)))
     log_error (_("error getting nonce for the socket\n"));
   if (rc == -1)
     {
       /* We use gpg_strerror here because it allows us to get strings
          for some W32 socket error codes.  */
-      log_error (_("error binding socket to `%s': %s\n"),
-		 serv_addr->sun_path,
-                 gpg_strerror (gpg_error_from_errno (errno)));
+      log_error (_("error binding socket to '%s': %s\n"),
+		 unaddr->sun_path,
+                 gpg_strerror (gpg_error_from_syserror ()));
 
       assuan_sock_close (fd);
-      if (opt.use_standard_socket)
-        *name = 0; /* Inhibit removal of the socket by cleanup(). */
+      *name = 0; /* Inhibit removal of the socket by cleanup(). */
       agent_exit (2);
     }
 
   if (listen (FD2INT(fd), 5 ) == -1)
     {
       log_error (_("listen() failed: %s\n"), strerror (errno));
+      *name = 0; /* Inhibit removal of the socket by cleanup(). */
       assuan_sock_close (fd);
       agent_exit (2);
     }
 
   if (opt.verbose)
-    log_info (_("listening on socket `%s'\n"), serv_addr->sun_path);
+    log_info (_("listening on socket '%s'\n"), unaddr->sun_path);
 
   return fd;
 }
@@ -1635,17 +1902,11 @@ create_private_keys_directory (const char *home)
   fname = make_filename (home, GNUPG_PRIVATE_KEYS_DIR, NULL);
   if (stat (fname, &statbuf) && errno == ENOENT)
     {
-#ifdef HAVE_W32_SYSTEM  /*FIXME: Setup proper permissions.  */
-      if (!CreateDirectory (fname, NULL))
-        log_error (_("can't create directory `%s': %s\n"),
-                   fname, w32_strerror (-1) );
-#else
-      if (mkdir (fname, S_IRUSR|S_IWUSR|S_IXUSR ))
-        log_error (_("can't create directory `%s': %s\n"),
+      if (gnupg_mkdir (fname, "-rwx"))
+        log_error (_("can't create directory '%s': %s\n"),
                    fname, strerror (errno) );
-#endif
       else if (!opt.quiet)
-        log_info (_("directory `%s' created\n"), fname);
+        log_info (_("directory '%s' created\n"), fname);
     }
   xfree (fname);
 }
@@ -1680,29 +1941,23 @@ create_directories (void)
 #endif
                )
             {
-#ifdef HAVE_W32_SYSTEM
-              if (!CreateDirectory (home, NULL))
-                log_error (_("can't create directory `%s': %s\n"),
-                           home, w32_strerror (-1) );
-#else
-              if (mkdir (home, S_IRUSR|S_IWUSR|S_IXUSR ))
-                log_error (_("can't create directory `%s': %s\n"),
+              if (gnupg_mkdir (home, "-rwx"))
+                log_error (_("can't create directory '%s': %s\n"),
                            home, strerror (errno) );
-#endif
               else
                 {
                   if (!opt.quiet)
-                    log_info (_("directory `%s' created\n"), home);
+                    log_info (_("directory '%s' created\n"), home);
                   create_private_keys_directory (home);
                 }
             }
         }
       else
-        log_error (_("stat() failed for `%s': %s\n"), home, strerror (errno));
+        log_error (_("stat() failed for '%s': %s\n"), home, strerror (errno));
     }
   else if ( !S_ISDIR(statbuf.st_mode))
     {
-      log_error (_("can't use `%s' as home directory\n"), home);
+      log_error (_("can't use '%s' as home directory\n"), home);
     }
   else /* exists and is a directory. */
     {
@@ -1734,23 +1989,22 @@ handle_tick (void)
       if (kill (parent_pid, 0))
         {
           shutdown_pending = 2;
-          if (!opt.quiet)
-            {
-              log_info ("parent process died - shutting down\n");
-              log_info ("%s %s stopped\n", strusage(11), strusage(13) );
-            }
+          log_info ("parent process died - shutting down\n");
+          log_info ("%s %s stopped\n", strusage(11), strusage(13) );
           cleanup ();
           agent_exit (0);
         }
     }
 #endif /*HAVE_W32_SYSTEM*/
 
-  /* Code to be run every minute.  */
-  if (last_minute + 60 <= time (NULL))
+  /* Code to be run from time to time.  */
+#if CHECK_OWN_SOCKET_INTERVAL > 0
+  if (last_minute + CHECK_OWN_SOCKET_INTERVAL <= time (NULL))
     {
       check_own_socket ();
       last_minute = time (NULL);
     }
+#endif
 
 }
 
@@ -1762,12 +2016,18 @@ agent_sighup_action (void)
 {
   log_info ("SIGHUP received - "
             "re-reading configuration and flushing cache\n");
+
   agent_flush_cache ();
   reread_configuration ();
   agent_reload_trustlist ();
+  /* We flush the module name cache so that after installing a
+     "pinentry" binary that one can be used in case the
+     "pinentry-basic" fallback was in use.  */
+  gnupg_module_name_flush_some ();
 }
 
 
+/* A helper function to handle SIGUSR2.  */
 static void
 agent_sigusr2_action (void)
 {
@@ -1778,6 +2038,9 @@ agent_sigusr2_action (void)
 }
 
 
+#ifndef HAVE_W32_SYSTEM
+/* The signal handler for this program.  It is expected to be run in
+   its own trhead and not in the context of a signal handler.  */
 static void
 handle_signal (int signo)
 {
@@ -1790,7 +2053,9 @@ handle_signal (int signo)
 
     case SIGUSR1:
       log_info ("SIGUSR1 received - printing internal information:\n");
-      pth_ctrl (PTH_CTRL_DUMPSTATE, log_get_stream ());
+      /* Fixme: We need to see how to integrate pth dumping into our
+         logging system.  */
+      /* pth_ctrl (PTH_CTRL_DUMPSTATE, log_get_stream ()); */
       agent_query_dump_state ();
       agent_scd_dump_state ();
       break;
@@ -1803,8 +2068,8 @@ handle_signal (int signo)
       if (!shutdown_pending)
         log_info ("SIGTERM received - shutting down ...\n");
       else
-        log_info ("SIGTERM received - still %ld running threads\n",
-                  pth_ctrl( PTH_CTRL_GETTHREADS ));
+        log_info ("SIGTERM received - still %i open connections\n",
+		  active_connections);
       shutdown_pending++;
       if (shutdown_pending > 2)
         {
@@ -1826,7 +2091,7 @@ handle_signal (int signo)
       log_info ("signal %d received - no action defined\n", signo);
     }
 }
-
+#endif
 
 /* Check the nonce on a new connection.  This is a NOP unless we we
    are using our Unix domain socket emulation under Windows.  */
@@ -1866,9 +2131,6 @@ putty_message_proc (HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
   if (msg != WM_COPYDATA)
     {
-      /* pth_leave (); */
-      /* log_debug ("putty loop: received WM_%u\n", msg ); */
-      /* pth_enter (); */
       return DefWindowProc (hwnd, msg, wparam, lparam);
     }
 
@@ -1879,25 +2141,25 @@ putty_message_proc (HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
   if (!cds->cbData || mapfile[cds->cbData - 1])
     return 0;  /* Ignore empty and non-properly terminated strings.  */
 
-  if (DBG_ASSUAN)
+  if (DBG_IPC)
     {
-      pth_leave ();
+      npth_protect ();
       log_debug ("ssh map file '%s'", mapfile);
-      pth_enter ();
+      npth_unprotect ();
     }
 
   maphd = OpenFileMapping (FILE_MAP_ALL_ACCESS, FALSE, mapfile);
-  if (DBG_ASSUAN)
+  if (DBG_IPC)
     {
-      pth_leave ();
+      npth_protect ();
       log_debug ("ssh map handle %p\n", maphd);
-      pth_enter ();
+      npth_unprotect ();
     }
 
   if (!maphd || maphd == INVALID_HANDLE_VALUE)
     return 0;
 
-  pth_leave ();
+  npth_protect ();
 
   mysid = w32_get_user_sid ();
   if (!mysid)
@@ -1916,7 +2178,7 @@ putty_message_proc (HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
       goto leave;
     }
 
-  if (DBG_ASSUAN)
+  if (DBG_IPC)
     {
       char *sidstr;
 
@@ -1937,7 +2199,7 @@ putty_message_proc (HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
     }
 
   data = MapViewOfFile (maphd, FILE_MAP_ALL_ACCESS, 0, 0, 0);
-  if (DBG_ASSUAN)
+  if (DBG_IPC)
     log_debug ("ssh IPC buffer at %p\n", data);
   if (!data)
     goto leave;
@@ -1975,7 +2237,7 @@ putty_message_proc (HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
   xfree (mysid);
   CloseHandle (maphd);
 
-  pth_enter ();
+  npth_unprotect ();
 
   return ret;
 }
@@ -1995,18 +2257,18 @@ putty_message_thread (void *arg)
   (void)arg;
 
   if (opt.verbose)
-    log_info ("putty message loop thread 0x%lx started\n", pth_thread_id ());
+    log_info ("putty message loop thread started\n");
 
-  /* The message loop runs as thread independet from out Pth system.
-     This also meand that we need to make sure that we switch back to
+  /* The message loop runs as thread independent from our nPth system.
+     This also means that we need to make sure that we switch back to
      our system before calling any no-windows function.  */
-  pth_enter ();
+  npth_unprotect ();
 
   /* First create a window to make sure that a message queue exists
      for this thread.  */
   if (!RegisterClass (&wndwclass))
     {
-      pth_leave ();
+      npth_protect ();
       log_error ("error registering Pageant window class");
       return NULL;
     }
@@ -2018,7 +2280,7 @@ putty_message_thread (void *arg)
                          NULL);         /* lpParm     */
   if (!hwnd)
     {
-      pth_leave ();
+      npth_protect ();
       log_error ("error creating Pageant window");
       return NULL;
     }
@@ -2029,38 +2291,85 @@ putty_message_thread (void *arg)
       DispatchMessage(&msg);
     }
 
-  /* Back to Pth.  */
-  pth_leave ();
+  /* Back to nPth.  */
+  npth_protect ();
 
   if (opt.verbose)
-    log_info ("putty message loop thread 0x%lx stopped\n", pth_thread_id ());
+    log_info ("putty message loop thread stopped\n");
   return NULL;
 }
 #endif /*HAVE_W32_SYSTEM*/
 
 
-/* This is the standard connection thread's main function.  */
 static void *
-start_connection_thread (void *arg)
+do_start_connection_thread (ctrl_t ctrl)
 {
-  ctrl_t ctrl = arg;
-
-  if (check_nonce (ctrl, &socket_nonce))
-    return NULL;
-
   agent_init_default_ctrl (ctrl);
   if (opt.verbose)
     log_info (_("handler 0x%lx for fd %d started\n"),
-              pth_thread_id (), FD2INT(ctrl->thread_startup.fd));
+              (unsigned long) npth_self(), FD2INT(ctrl->thread_startup.fd));
 
   start_command_handler (ctrl, GNUPG_INVALID_FD, ctrl->thread_startup.fd);
   if (opt.verbose)
     log_info (_("handler 0x%lx for fd %d terminated\n"),
-              pth_thread_id (), FD2INT(ctrl->thread_startup.fd));
+              (unsigned long) npth_self(), FD2INT(ctrl->thread_startup.fd));
 
   agent_deinit_default_ctrl (ctrl);
   xfree (ctrl);
   return NULL;
+}
+
+
+/* This is the standard connection thread's main function.  */
+static void *
+start_connection_thread_std (void *arg)
+{
+  ctrl_t ctrl = arg;
+
+  if (check_nonce (ctrl, &socket_nonce))
+    {
+      log_error ("handler 0x%lx nonce check FAILED\n",
+                 (unsigned long) npth_self());
+      return NULL;
+    }
+
+  return do_start_connection_thread (ctrl);
+}
+
+
+/* This is the extra socket connection thread's main function.  */
+static void *
+start_connection_thread_extra (void *arg)
+{
+  ctrl_t ctrl = arg;
+
+  if (check_nonce (ctrl, &socket_nonce_extra))
+    {
+      log_error ("handler 0x%lx nonce check FAILED\n",
+                 (unsigned long) npth_self());
+      return NULL;
+    }
+
+  ctrl->restricted = 1;
+  return do_start_connection_thread (ctrl);
+}
+
+
+/* This is the browser socket connection thread's main function.  */
+static void *
+start_connection_thread_browser (void *arg)
+{
+  ctrl_t ctrl = arg;
+
+  if (check_nonce (ctrl, &socket_nonce_browser))
+    {
+      log_error ("handler 0x%lx nonce check FAILED\n",
+                 (unsigned long) npth_self());
+      return NULL;
+    }
+
+  ctrl->restricted = 2;
+  return do_start_connection_thread (ctrl);
 }
 
 
@@ -2076,12 +2385,12 @@ start_connection_thread_ssh (void *arg)
   agent_init_default_ctrl (ctrl);
   if (opt.verbose)
     log_info (_("ssh handler 0x%lx for fd %d started\n"),
-              pth_thread_id (), FD2INT(ctrl->thread_startup.fd));
+              (unsigned long) npth_self(), FD2INT(ctrl->thread_startup.fd));
 
   start_command_handler_ssh (ctrl, ctrl->thread_startup.fd);
   if (opt.verbose)
     log_info (_("ssh handler 0x%lx for fd %d terminated\n"),
-              pth_thread_id (), FD2INT(ctrl->thread_startup.fd));
+              (unsigned long) npth_self(), FD2INT(ctrl->thread_startup.fd));
 
   agent_deinit_default_ctrl (ctrl);
   xfree (ctrl);
@@ -2092,61 +2401,62 @@ start_connection_thread_ssh (void *arg)
 /* Connection handler loop.  Wait for connection requests and spawn a
    thread after accepting a connection.  */
 static void
-handle_connections (gnupg_fd_t listen_fd, gnupg_fd_t listen_fd_ssh)
+handle_connections (gnupg_fd_t listen_fd,
+                    gnupg_fd_t listen_fd_extra,
+                    gnupg_fd_t listen_fd_browser,
+                    gnupg_fd_t listen_fd_ssh)
 {
-  pth_attr_t tattr;
-  pth_event_t ev, time_ev;
-  sigset_t sigs;
-  int signo;
+  npth_attr_t tattr;
   struct sockaddr_un paddr;
   socklen_t plen;
   fd_set fdset, read_fdset;
   int ret;
   gnupg_fd_t fd;
   int nfd;
+  int saved_errno;
+  struct timespec abstime;
+  struct timespec curtime;
+  struct timespec timeout;
+#ifdef HAVE_W32_SYSTEM
+  HANDLE events[2];
+  unsigned int events_set;
+#endif
+  struct {
+    const char *name;
+    void *(*func) (void *arg);
+    gnupg_fd_t l_fd;
+  } listentbl[] = {
+    { "std",     start_connection_thread_std   },
+    { "extra",   start_connection_thread_extra },
+    { "browser", start_connection_thread_browser },
+    { "ssh",    start_connection_thread_ssh   }
+  };
 
-  tattr = pth_attr_new();
-  pth_attr_set (tattr, PTH_ATTR_JOINABLE, 0);
-  pth_attr_set (tattr, PTH_ATTR_STACK_SIZE, 256*1024);
 
-#ifndef HAVE_W32_SYSTEM /* fixme */
-  /* Make sure that the signals we are going to handle are not blocked
-     and create an event object for them.  We also set the default
-     action to ignore because we use an Pth event to get notified
-     about signals.  This avoids that the default action is taken in
-     case soemthing goes wrong within Pth.  The problem might also be
-     a Pth bug.  */
-  sigemptyset (&sigs );
-  {
-    static const int mysigs[] = { SIGHUP, SIGUSR1, SIGUSR2, SIGINT, SIGTERM };
-    struct sigaction sa;
-    int i;
+  ret = npth_attr_init(&tattr);
+  if (ret)
+    log_fatal ("error allocating thread attributes: %s\n",
+	       strerror (ret));
+  npth_attr_setdetachstate (&tattr, NPTH_CREATE_DETACHED);
 
-    for (i=0; i < DIM (mysigs); i++)
-      {
-        sigemptyset (&sa.sa_mask);
-        sa.sa_handler = SIG_IGN;
-        sa.sa_flags = 0;
-        sigaction (mysigs[i], &sa, NULL);
-
-        sigaddset (&sigs, mysigs[i]);
-      }
-  }
-
-  pth_sigmask (SIG_UNBLOCK, &sigs, NULL);
-  ev = pth_event (PTH_EVENT_SIGS, &sigs, &signo);
+#ifndef HAVE_W32_SYSTEM
+  npth_sigev_init ();
+  npth_sigev_add (SIGHUP);
+  npth_sigev_add (SIGUSR1);
+  npth_sigev_add (SIGUSR2);
+  npth_sigev_add (SIGINT);
+  npth_sigev_add (SIGTERM);
+  npth_sigev_fini ();
 #else
-# ifdef PTH_EVENT_HANDLE
-  sigs = 0;
-  ev = pth_event (PTH_EVENT_HANDLE, get_agent_scd_notify_event ());
-  signo = 0;
-# else
+# ifdef HAVE_W32CE_SYSTEM
   /* Use a dummy event. */
   sigs = 0;
   ev = pth_event (PTH_EVENT_SIGS, &sigs, &signo);
+# else
+  events[0] = get_agent_scd_notify_event ();
+  events[1] = INVALID_HANDLE_VALUE;
 # endif
 #endif
-  time_ev = NULL;
 
   /* On Windows we need to fire up a separate thread to listen for
      requests from Putty (an SSH client), so we can replace Putty's
@@ -2154,11 +2464,12 @@ handle_connections (gnupg_fd_t listen_fd, gnupg_fd_t listen_fd_ssh)
 #ifdef HAVE_W32_SYSTEM
   if (putty_support)
     {
-      pth_attr_set (tattr, PTH_ATTR_NAME, "putty message loop");
-      if (!pth_spawn (tattr, putty_message_thread, NULL))
+      npth_t thread;
+
+      ret = npth_create (&thread, &tattr, putty_message_thread, NULL);
+      if (ret)
         {
-          log_error ("error spawning putty message loop: %s\n",
-                     strerror (errno) );
+          log_error ("error spawning putty message loop: %s\n", strerror (ret));
         }
     }
 #endif /*HAVE_W32_SYSTEM*/
@@ -2170,6 +2481,18 @@ handle_connections (gnupg_fd_t listen_fd, gnupg_fd_t listen_fd_ssh)
   FD_ZERO (&fdset);
   FD_SET (FD2INT (listen_fd), &fdset);
   nfd = FD2INT (listen_fd);
+  if (listen_fd_extra != GNUPG_INVALID_FD)
+    {
+      FD_SET ( FD2INT(listen_fd_extra), &fdset);
+      if (FD2INT (listen_fd_extra) > nfd)
+        nfd = FD2INT (listen_fd_extra);
+    }
+  if (listen_fd_browser != GNUPG_INVALID_FD)
+    {
+      FD_SET ( FD2INT(listen_fd_browser), &fdset);
+      if (FD2INT (listen_fd_browser) > nfd)
+        nfd = FD2INT (listen_fd_browser);
+    }
   if (listen_fd_ssh != GNUPG_INVALID_FD)
     {
       FD_SET ( FD2INT(listen_fd_ssh), &fdset);
@@ -2177,15 +2500,20 @@ handle_connections (gnupg_fd_t listen_fd, gnupg_fd_t listen_fd_ssh)
         nfd = FD2INT (listen_fd_ssh);
     }
 
+  listentbl[0].l_fd = listen_fd;
+  listentbl[1].l_fd = listen_fd_extra;
+  listentbl[2].l_fd = listen_fd_browser;
+  listentbl[3].l_fd = listen_fd_ssh;
+
+  npth_clock_gettime (&abstime);
+  abstime.tv_sec += TIMERTICK_INTERVAL;
+
   for (;;)
     {
-      /* Make sure that our signals are not blocked.  */
-      pth_sigmask (SIG_UNBLOCK, &sigs, NULL);
-
       /* Shutdown test.  */
       if (shutdown_pending)
         {
-          if (pth_ctrl (PTH_CTRL_GETTHREADS) == 1)
+          if (active_connections == 0)
             break; /* ready */
 
           /* Do not accept new connections but keep on running the
@@ -2193,176 +2521,107 @@ handle_connections (gnupg_fd_t listen_fd, gnupg_fd_t listen_fd_ssh)
           FD_ZERO (&fdset);
 	}
 
-      /* Create a timeout event if needed.  To help with power saving
-         we syncronize the ticks to the next full second.  */
-      if (!time_ev)
-        {
-          pth_time_t nexttick;
-
-          nexttick = pth_timeout (TIMERTICK_INTERVAL, 0);
-          if (nexttick.tv_usec > 10)  /* Use a 10 usec threshhold.  */
-            {
-              nexttick.tv_sec++;
-              nexttick.tv_usec = 0;
-            }
-          time_ev = pth_event (PTH_EVENT_TIME, nexttick);
-        }
-
       /* POSIX says that fd_set should be implemented as a structure,
          thus a simple assignment is fine to copy the entire set.  */
       read_fdset = fdset;
 
-      if (time_ev)
-        pth_event_concat (ev, time_ev, NULL);
-      ret = pth_select_ev (nfd+1, &read_fdset, NULL, NULL, NULL, ev);
-      if (time_ev)
-        pth_event_isolate (time_ev);
-
-      if (ret == -1)
+      npth_clock_gettime (&curtime);
+      if (!(npth_timercmp (&curtime, &abstime, <)))
 	{
-          if (pth_event_occurred (ev)
-              || (time_ev && pth_event_occurred (time_ev)))
-            {
-              if (pth_event_occurred (ev))
-                {
-#if defined(HAVE_W32_SYSTEM) && defined(PTH_EVENT_HANDLE)
-                  agent_sigusr2_action ();
+	  /* Timeout.  */
+	  handle_tick ();
+	  npth_clock_gettime (&abstime);
+	  abstime.tv_sec += TIMERTICK_INTERVAL;
+	}
+      npth_timersub (&abstime, &curtime, &timeout);
+
+#ifndef HAVE_W32_SYSTEM
+      ret = npth_pselect (nfd+1, &read_fdset, NULL, NULL, &timeout,
+                          npth_sigev_sigmask ());
+      saved_errno = errno;
+
+      {
+        int signo;
+        while (npth_sigev_get_pending (&signo))
+          handle_signal (signo);
+      }
 #else
-                  handle_signal (signo);
+      ret = npth_eselect (nfd+1, &read_fdset, NULL, NULL, &timeout,
+                          events, &events_set);
+      saved_errno = errno;
+
+      /* This is valid even if npth_eselect returns an error.  */
+      if (events_set & 1)
+	agent_sigusr2_action ();
 #endif
-                }
-              if (time_ev && pth_event_occurred (time_ev))
-                {
-                  pth_event_free (time_ev, PTH_FREE_ALL);
-                  time_ev = NULL;
-                  handle_tick ();
-                }
-              continue;
-            }
-          log_error (_("pth_select failed: %s - waiting 1s\n"),
-                     strerror (errno));
-          pth_sleep (1);
+
+      if (ret == -1 && saved_errno != EINTR)
+	{
+          log_error (_("npth_pselect failed: %s - waiting 1s\n"),
+                     strerror (saved_errno));
+          npth_sleep (1);
           continue;
 	}
+      if (ret <= 0)
+	/* Interrupt or timeout.  Will be handled when calculating the
+	   next timeout.  */
+	continue;
 
-      if (pth_event_occurred (ev))
+      if (!shutdown_pending)
         {
-#if defined(HAVE_W32_SYSTEM) && defined(PTH_EVENT_HANDLE)
-          agent_sigusr2_action ();
-#else
-          handle_signal (signo);
-#endif
-        }
-
-      if (time_ev && pth_event_occurred (time_ev))
-        {
-          pth_event_free (time_ev, PTH_FREE_ALL);
-          time_ev = NULL;
-          handle_tick ();
-        }
-
-
-      /* We now might create new threads and because we don't want any
-         signals (as we are handling them here) to be delivered to a
-         new thread.  Thus we need to block those signals. */
-      pth_sigmask (SIG_BLOCK, &sigs, NULL);
-
-      if (!shutdown_pending && FD_ISSET (FD2INT (listen_fd), &read_fdset))
-	{
+          int idx;
           ctrl_t ctrl;
+          npth_t thread;
 
-          plen = sizeof paddr;
-	  fd = INT2FD (pth_accept (FD2INT(listen_fd),
-                                   (struct sockaddr *)&paddr, &plen));
-	  if (fd == GNUPG_INVALID_FD)
-	    {
-	      log_error ("accept failed: %s\n", strerror (errno));
-	    }
-          else if ( !(ctrl = xtrycalloc (1, sizeof *ctrl)) )
+          for (idx=0; idx < DIM(listentbl); idx++)
             {
-              log_error ("error allocating connection control data: %s\n",
-                         strerror (errno) );
-              assuan_sock_close (fd);
-            }
-          else if ( !(ctrl->session_env = session_env_new ()) )
-            {
-              log_error ("error allocating session environment block: %s\n",
-                         strerror (errno) );
-              xfree (ctrl);
-              assuan_sock_close (fd);
-            }
-          else
-            {
-              char threadname[50];
+              if (listentbl[idx].l_fd == GNUPG_INVALID_FD)
+                continue;
+              if (!FD_ISSET (FD2INT (listentbl[idx].l_fd), &read_fdset))
+                continue;
 
-              snprintf (threadname, sizeof threadname-1,
-                        "conn fd=%d (gpg)", FD2INT(fd));
-              threadname[sizeof threadname -1] = 0;
-              pth_attr_set (tattr, PTH_ATTR_NAME, threadname);
-              ctrl->thread_startup.fd = fd;
-              if (!pth_spawn (tattr, start_connection_thread, ctrl))
+              plen = sizeof paddr;
+              fd = INT2FD (npth_accept (FD2INT(listentbl[idx].l_fd),
+                                        (struct sockaddr *)&paddr, &plen));
+              if (fd == GNUPG_INVALID_FD)
                 {
-                  log_error ("error spawning connection handler: %s\n",
-                             strerror (errno) );
-                  assuan_sock_close (fd);
-                  xfree (ctrl);
+                  log_error ("accept failed for %s: %s\n",
+                             listentbl[idx].name, strerror (errno));
                 }
-            }
-          fd = GNUPG_INVALID_FD;
-	}
-
-      if (!shutdown_pending && listen_fd_ssh != GNUPG_INVALID_FD
-          && FD_ISSET ( FD2INT (listen_fd_ssh), &read_fdset))
-	{
-          ctrl_t ctrl;
-
-          plen = sizeof paddr;
-	  fd = INT2FD(pth_accept (FD2INT(listen_fd_ssh),
-                                  (struct sockaddr *)&paddr, &plen));
-	  if (fd == GNUPG_INVALID_FD)
-	    {
-	      log_error ("accept failed for ssh: %s\n", strerror (errno));
-	    }
-          else if ( !(ctrl = xtrycalloc (1, sizeof *ctrl)) )
-            {
-              log_error ("error allocating connection control data: %s\n",
-                         strerror (errno) );
-              assuan_sock_close (fd);
-            }
-          else if ( !(ctrl->session_env = session_env_new ()) )
-            {
-              log_error ("error allocating session environment block: %s\n",
-                         strerror (errno) );
-              xfree (ctrl);
-              assuan_sock_close (fd);
-            }
-          else
-            {
-              char threadname[50];
-
-              agent_init_default_ctrl (ctrl);
-              snprintf (threadname, sizeof threadname-1,
-                        "conn fd=%d (ssh)", FD2INT(fd));
-              threadname[sizeof threadname -1] = 0;
-              pth_attr_set (tattr, PTH_ATTR_NAME, threadname);
-              ctrl->thread_startup.fd = fd;
-              if (!pth_spawn (tattr, start_connection_thread_ssh, ctrl) )
+              else if ( !(ctrl = xtrycalloc (1, sizeof *ctrl)))
                 {
-                  log_error ("error spawning ssh connection handler: %s\n",
-                             strerror (errno) );
+                  log_error ("error allocating connection data for %s: %s\n",
+                             listentbl[idx].name, strerror (errno) );
                   assuan_sock_close (fd);
-                  xfree (ctrl);
                 }
+              else if ( !(ctrl->session_env = session_env_new ()))
+                {
+                  log_error ("error allocating session env block for %s: %s\n",
+                             listentbl[idx].name, strerror (errno) );
+                  xfree (ctrl);
+                  assuan_sock_close (fd);
+                }
+              else
+                {
+                  ctrl->thread_startup.fd = fd;
+                  ret = npth_create (&thread, &tattr,
+                                     listentbl[idx].func, ctrl);
+                  if (ret)
+                    {
+                      log_error ("error spawning connection handler for %s:"
+                                 " %s\n", listentbl[idx].name, strerror (ret));
+                      assuan_sock_close (fd);
+                      xfree (ctrl);
+                    }
+                }
+              fd = GNUPG_INVALID_FD;
             }
-          fd = GNUPG_INVALID_FD;
-	}
+        }
     }
 
-  pth_event_free (ev, PTH_FREE_ALL);
-  if (time_ev)
-    pth_event_free (time_ev, PTH_FREE_ALL);
   cleanup ();
   log_info (_("%s %s stopped\n"), strusage(11), strusage(13));
+  npth_attr_destroy (&tattr);
 }
 
 
@@ -2448,104 +2707,58 @@ check_own_socket_thread (void *arg)
 
 /* Check whether we are still listening on our own socket.  In case
    another gpg-agent process started after us has taken ownership of
-   our socket, we woul linger around without any real taks.  Thus we
+   our socket, we would linger around without any real task.  Thus we
    better check once in a while whether we are really needed.  */
 static void
 check_own_socket (void)
 {
   char *sockname;
-  pth_attr_t tattr;
+  npth_t thread;
+  npth_attr_t tattr;
+  int err;
 
-  if (!opt.use_standard_socket)
-    return; /* This check makes only sense in standard socket mode.  */
+  if (disable_check_own_socket)
+    return;
 
   if (check_own_socket_running || shutdown_pending)
     return;  /* Still running or already shutting down.  */
 
-  sockname = make_filename (opt.homedir, "S.gpg-agent", NULL);
+  sockname = make_filename (opt.homedir, GPG_AGENT_SOCK_NAME, NULL);
   if (!sockname)
     return; /* Out of memory.  */
 
-  tattr = pth_attr_new();
-  pth_attr_set (tattr, PTH_ATTR_JOINABLE, 0);
-  pth_attr_set (tattr, PTH_ATTR_STACK_SIZE, 256*1024);
-  pth_attr_set (tattr, PTH_ATTR_NAME, "check-own-socket");
-
-  if (!pth_spawn (tattr, check_own_socket_thread, sockname))
-      log_error ("error spawning check_own_socket_thread: %s\n",
-                 strerror (errno) );
-  pth_attr_destroy (tattr);
+  err = npth_attr_init (&tattr);
+  if (err)
+    return;
+  npth_attr_setdetachstate (&tattr, NPTH_CREATE_DETACHED);
+  err = npth_create (&thread, &tattr, check_own_socket_thread, sockname);
+  if (err)
+    log_error ("error spawning check_own_socket_thread: %s\n", strerror (err));
+  npth_attr_destroy (&tattr);
 }
 
 
 
 /* Figure out whether an agent is available and running. Prints an
-   error if not.  If SILENT is true, no messages are printed.  Usually
-   started with MODE 0.  Returns 0 if the agent is running. */
+   error if not.  If SILENT is true, no messages are printed.
+   Returns 0 if the agent is running. */
 static int
-check_for_running_agent (int silent, int mode)
+check_for_running_agent (int silent)
 {
-  int rc;
-  char *infostr, *p;
+  gpg_error_t err;
+  char *sockname;
   assuan_context_t ctx = NULL;
-  int prot, pid;
 
-  if (!mode)
+  sockname = make_filename (opt.homedir, GPG_AGENT_SOCK_NAME, NULL);
+
+  err = assuan_new (&ctx);
+  if (!err)
+    err = assuan_socket_connect (ctx, sockname, (pid_t)(-1), 0);
+  xfree (sockname);
+  if (err)
     {
-      infostr = getenv ("GPG_AGENT_INFO");
-      if (!infostr || !*infostr)
-        {
-          if (!check_for_running_agent (silent, 1))
-            return 0; /* Okay, its running on the standard socket. */
-          if (!silent)
-            log_error (_("no gpg-agent running in this session\n"));
-          return -1;
-        }
-
-      infostr = xstrdup (infostr);
-      if ( !(p = strchr (infostr, PATHSEP_C)) || p == infostr)
-        {
-          xfree (infostr);
-          if (!check_for_running_agent (silent, 1))
-            return 0; /* Okay, its running on the standard socket. */
-          if (!silent)
-            log_error (_("malformed GPG_AGENT_INFO environment variable\n"));
-          return -1;
-        }
-
-      *p++ = 0;
-      pid = atoi (p);
-      while (*p && *p != PATHSEP_C)
-        p++;
-      prot = *p? atoi (p+1) : 0;
-      if (prot != 1)
-        {
-          xfree (infostr);
-          if (!silent)
-            log_error (_("gpg-agent protocol version %d is not supported\n"),
-                       prot);
-          if (!check_for_running_agent (silent, 1))
-            return 0; /* Okay, its running on the standard socket. */
-          return -1;
-        }
-    }
-  else /* MODE != 0 */
-    {
-      infostr = make_filename (opt.homedir, "S.gpg-agent", NULL);
-      pid = (pid_t)(-1);
-    }
-
-  rc = assuan_new (&ctx);
-  if (! rc)
-    rc = assuan_socket_connect (ctx, infostr, pid, 0);
-  xfree (infostr);
-  if (rc)
-    {
-      if (!mode && !check_for_running_agent (silent, 1))
-        return 0; /* Okay, its running on the standard socket. */
-
-      if (!mode && !silent)
-        log_error ("can't connect to the agent: %s\n", gpg_strerror (rc));
+      if (!silent)
+        log_error (_("no gpg-agent running in this session\n"));
 
       if (ctx)
 	assuan_release (ctx);

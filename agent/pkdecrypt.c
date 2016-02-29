@@ -32,17 +32,20 @@
 
 /* DECRYPT the stuff in ciphertext which is expected to be a S-Exp.
    Try to get the key from CTRL and write the decoded stuff back to
-   OUTFP. */
+   OUTFP.   The padding information is stored at R_PADDING with -1
+   for not known.  */
 int
 agent_pkdecrypt (ctrl_t ctrl, const char *desc_text,
                  const unsigned char *ciphertext, size_t ciphertextlen,
-                 membuf_t *outbuf) 
+                 membuf_t *outbuf, int *r_padding)
 {
   gcry_sexp_t s_skey = NULL, s_cipher = NULL, s_plain = NULL;
   unsigned char *shadow_info = NULL;
   int rc;
   char *buf = NULL;
   size_t len;
+
+  *r_padding = -1;
 
   if (!ctrl->have_keygrip)
     {
@@ -64,19 +67,17 @@ agent_pkdecrypt (ctrl_t ctrl, const char *desc_text,
       log_printhex ("keygrip:", ctrl->keygrip, 20);
       log_printhex ("cipher: ", ciphertext, ciphertextlen);
     }
-  rc = agent_key_from_file (ctrl, desc_text,
+  rc = agent_key_from_file (ctrl, NULL, desc_text,
                             ctrl->keygrip, &shadow_info,
-                            CACHE_MODE_NORMAL, NULL, &s_skey);
+                            CACHE_MODE_NORMAL, NULL, &s_skey, NULL);
   if (rc)
     {
-      if (gpg_err_code (rc) == GPG_ERR_ENOENT)
-        rc = gpg_error (GPG_ERR_NO_SECKEY);
-      else
+      if (gpg_err_code (rc) != GPG_ERR_NO_SECKEY)
         log_error ("failed to read the secret key\n");
       goto leave;
     }
 
-  if (!s_skey)
+  if (shadow_info)
     { /* divert operation to the smartcard */
 
       if (!gcry_sexp_canon_len (ciphertext, ciphertextlen, NULL, NULL))
@@ -85,21 +86,17 @@ agent_pkdecrypt (ctrl_t ctrl, const char *desc_text,
           goto leave;
         }
 
-      rc = divert_pkdecrypt (ctrl, ciphertext, shadow_info, &buf, &len );
+      rc = divert_pkdecrypt (ctrl, ciphertext, shadow_info,
+                             &buf, &len, r_padding);
       if (rc)
         {
           log_error ("smartcard decryption failed: %s\n", gpg_strerror (rc));
           goto leave;
         }
 
-      {
-        char tmpbuf[60];
-
-        sprintf (tmpbuf, "(5:value%u:", (unsigned int)len);
-        put_membuf (outbuf, tmpbuf, strlen (tmpbuf));
-        put_membuf (outbuf, buf, len);
-        put_membuf (outbuf, ")", 2);
-      }
+      put_membuf_printf (outbuf, "(5:value%u:", (unsigned int)len);
+      put_membuf (outbuf, buf, len);
+      put_membuf (outbuf, ")", 2);
     }
   else
     { /* No smartcard, but a private key */
@@ -136,7 +133,7 @@ agent_pkdecrypt (ctrl_t ctrl, const char *desc_text,
           put_membuf (outbuf, buf, len);
           put_membuf (outbuf, ")", 2);
         }
-    }      
+    }
 
 
  leave:
@@ -147,5 +144,3 @@ agent_pkdecrypt (ctrl_t ctrl, const char *desc_text,
   xfree (shadow_info);
   return rc;
 }
-
-

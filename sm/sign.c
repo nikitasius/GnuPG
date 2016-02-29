@@ -1,5 +1,6 @@
 /* sign.c - Sign a message
- *	Copyright (C) 2001, 2002, 2003, 2008 Free Software Foundation, Inc.
+ * Copyright (C) 2001, 2002, 2003, 2008,
+ *               2010 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -38,12 +39,12 @@
 static int
 hash_data (int fd, gcry_md_hd_t md)
 {
-  FILE *fp;
+  estream_t fp;
   char buffer[4096];
   int nread;
   int rc = 0;
 
-  fp = fdopen ( dup (fd), "rb");
+  fp = es_fdopen_nc (fd, "rb");
   if (!fp)
     {
       log_error ("fdopen(%d) failed: %s\n", fd, strerror (errno));
@@ -52,40 +53,41 @@ hash_data (int fd, gcry_md_hd_t md)
 
   do
     {
-      nread = fread (buffer, 1, DIM(buffer), fp);
+      nread = es_fread (buffer, 1, DIM(buffer), fp);
       gcry_md_write (md, buffer, nread);
     }
   while (nread);
-  if (ferror (fp))
+  if (es_ferror (fp))
     {
       log_error ("read error on fd %d: %s\n", fd, strerror (errno));
       rc = -1;
     }
-  fclose (fp);
+  es_fclose (fp);
   return rc;
 }
+
 
 static int
 hash_and_copy_data (int fd, gcry_md_hd_t md, ksba_writer_t writer)
 {
   gpg_error_t err;
-  FILE *fp;
+  estream_t fp;
   char buffer[4096];
   int nread;
   int rc = 0;
   int any = 0;
 
-  fp = fdopen ( dup (fd), "rb");
+  fp = es_fdopen_nc (fd, "rb");
   if (!fp)
     {
-      gpg_error_t tmperr = gpg_error (gpg_err_code_from_errno (errno));
+      gpg_error_t tmperr = gpg_error_from_syserror ();
       log_error ("fdopen(%d) failed: %s\n", fd, strerror (errno));
       return tmperr;
     }
 
   do
     {
-      nread = fread (buffer, 1, DIM(buffer), fp);
+      nread = es_fread (buffer, 1, DIM(buffer), fp);
       if (nread)
         {
           any = 1;
@@ -99,18 +101,18 @@ hash_and_copy_data (int fd, gcry_md_hd_t md, ksba_writer_t writer)
         }
     }
   while (nread && !rc);
-  if (ferror (fp))
+  if (es_ferror (fp))
     {
-      rc = gpg_error (gpg_err_code_from_errno (errno));
+      rc = gpg_error_from_syserror ();
       log_error ("read error on fd %d: %s\n", fd, strerror (errno));
     }
-  fclose (fp);
+  es_fclose (fp);
   if (!any)
     {
       /* We can't allow to sign an empty message because it does not
-         make much sense and more seriously, ksba-cms_build has
+         make much sense and more seriously, ksba_cms_build has
          already written the tag for data and now expects an octet
-         string but an octet string of zeize 0 is illegal. */
+         string and an octet string of size 0 is illegal.  */
       log_error ("cannot sign an empty message\n");
       rc = gpg_error (GPG_ERR_NO_DATA);
     }
@@ -209,7 +211,7 @@ get_default_signer (ctrl_t ctrl)
       return cert;
     }
 
-  rc = keydb_classify_name (opt.local_user, &desc);
+  rc = classify_user_id (opt.local_user, &desc, 0);
   if (rc)
     {
       log_error ("failed to find default signer: %s\n", gpg_strerror (rc));
@@ -310,7 +312,7 @@ add_certificate_list (ctrl_t ctrl, ksba_cms_t cms, ksba_cert_t cert)
    be used if the value of this argument is NULL. */
 int
 gpgsm_sign (ctrl_t ctrl, certlist_t signerlist,
-            int data_fd, int detached, FILE *out_fp)
+            int data_fd, int detached, estream_t out_fp)
 {
   int i, rc;
   gpg_error_t err;
@@ -338,7 +340,7 @@ gpgsm_sign (ctrl_t ctrl, certlist_t signerlist,
     }
 
   ctrl->pem_name = "SIGNED MESSAGE";
-  rc = gpgsm_create_writer (&b64writer, ctrl, out_fp, NULL, &writer);
+  rc = gpgsm_create_writer (&b64writer, ctrl, out_fp, &writer);
   if (rc)
     {
       log_error ("can't create writer: %s\n", gpg_strerror (rc));
@@ -501,28 +503,31 @@ gpgsm_sign (ctrl_t ctrl, certlist_t signerlist,
   /* Check whether one of the certificates is qualified.  Note that we
      already validated the certificate and thus the user data stored
      flag must be available. */
-  for (cl=signerlist; cl; cl = cl->next)
+  if (!opt.no_chain_validation)
     {
-      size_t buflen;
-      char buffer[1];
+      for (cl=signerlist; cl; cl = cl->next)
+        {
+          size_t buflen;
+          char buffer[1];
 
-      err = ksba_cert_get_user_data (cl->cert, "is_qualified",
-                                     &buffer, sizeof (buffer), &buflen);
-      if (err || !buflen)
-        {
-          log_error (_("checking for qualified certificate failed: %s\n"),
-                     gpg_strerror (err));
-          rc = err;
-          goto leave;
-        }
-      if (*buffer)
-        err = gpgsm_qualified_consent (ctrl, cl->cert);
-      else
-        err = gpgsm_not_qualified_warning (ctrl, cl->cert);
-      if (err)
-        {
-          rc = err;
-          goto leave;
+          err = ksba_cert_get_user_data (cl->cert, "is_qualified",
+                                         &buffer, sizeof (buffer), &buflen);
+          if (err || !buflen)
+            {
+              log_error (_("checking for qualified certificate failed: %s\n"),
+                         gpg_strerror (err));
+              rc = err;
+              goto leave;
+            }
+          if (*buffer)
+            err = gpgsm_qualified_consent (ctrl, cl->cert);
+          else
+            err = gpgsm_not_qualified_warning (ctrl, cl->cert);
+          if (err)
+            {
+              rc = err;
+              goto leave;
+            }
         }
     }
 
@@ -542,7 +547,7 @@ gpgsm_sign (ctrl_t ctrl, certlist_t signerlist,
       algo = gcry_md_map_name (algoid);
       if (!algo)
         {
-          log_error ("unknown hash algorithm `%s'\n", algoid? algoid:"?");
+          log_error ("unknown hash algorithm '%s'\n", algoid? algoid:"?");
           rc = gpg_error (GPG_ERR_BUG);
           goto leave;
         }

@@ -1,6 +1,6 @@
 /* command-ssh.c - gpg-agent's ssh-agent emulation layer
- * Copyright (C) 2004, 2005, 2006, 2009, 2012 Free Software Foundation, Inc.
- * Copyright (C) 2013 Werner Koch
+ * Copyright (C) 2004-2006, 2009, 2012 Free Software Foundation, Inc.
+ * Copyright (C) 2004-2006, 2009, 2012-2014 Werner Koch
  *
  * This file is part of GnuPG.
  *
@@ -43,7 +43,6 @@
 
 #include "agent.h"
 
-#include "estream.h"
 #include "i18n.h"
 #include "../common/ssh-utils.h"
 
@@ -75,6 +74,8 @@
 #define SSH_DSA_SIGNATURE_ELEMS    2
 #define SPEC_FLAG_USE_PKCS1V2 (1 << 0)
 #define SPEC_FLAG_IS_ECDSA    (1 << 1)
+#define SPEC_FLAG_IS_EdDSA    (1 << 2)  /*(lowercase 'd' on purpose.)*/
+#define SPEC_FLAG_WITH_CERT   (1 << 7)
 
 /* The name of the control file.  */
 #define SSH_CONTROL_FILE_NAME "sshcontrol"
@@ -139,7 +140,7 @@ typedef gpg_error_t (*ssh_key_modifier_t) (const char *elems,
    functions are necessary.  */
 typedef gpg_error_t (*ssh_signature_encoder_t) (ssh_key_type_spec_t *spec,
                                                 estream_t signature_blob,
-						gcry_mpi_t *mpis);
+						gcry_sexp_t sig);
 
 /* Type, which is used for boundling all the algorithm specific
    information together in a single object.  */
@@ -147,6 +148,9 @@ struct ssh_key_type_spec
 {
   /* Algorithm identifier as used by OpenSSH.  */
   const char *ssh_identifier;
+
+  /* Human readable name of the algorithm.  */
+  const char *name;
 
   /* Algorithm identifier as used by GnuPG.  */
   const char *identifier;
@@ -230,13 +234,17 @@ static gpg_error_t ssh_handler_unlock (ctrl_t ctrl,
 static gpg_error_t ssh_key_modifier_rsa (const char *elems, gcry_mpi_t *mpis);
 static gpg_error_t ssh_signature_encoder_rsa (ssh_key_type_spec_t *spec,
                                               estream_t signature_blob,
-                                              gcry_mpi_t *mpis);
+                                              gcry_sexp_t signature);
 static gpg_error_t ssh_signature_encoder_dsa (ssh_key_type_spec_t *spec,
                                               estream_t signature_blob,
-                                              gcry_mpi_t *mpis);
+                                              gcry_sexp_t signature);
 static gpg_error_t ssh_signature_encoder_ecdsa (ssh_key_type_spec_t *spec,
                                                 estream_t signature_blob,
-                                                gcry_mpi_t *mpis);
+                                                gcry_sexp_t signature);
+static gpg_error_t ssh_signature_encoder_eddsa (ssh_key_type_spec_t *spec,
+                                                estream_t signature_blob,
+                                                gcry_sexp_t signature);
+static gpg_error_t ssh_key_extract_comment (gcry_sexp_t key, char **comment);
 
 
 
@@ -267,31 +275,71 @@ static ssh_request_spec_t request_specs[] =
 static ssh_key_type_spec_t ssh_key_types[] =
   {
     {
-      "ssh-rsa", "rsa", "nedupq", "en",   "s",  "nedpqu",
-      ssh_key_modifier_rsa, ssh_signature_encoder_rsa,
-      NULL, 0, SPEC_FLAG_USE_PKCS1V2
+      "ssh-ed25519", "Ed25519", "ecc", "qd",  "q", "rs", "qd",
+      NULL,                 ssh_signature_encoder_eddsa,
+      "Ed25519", 0,               SPEC_FLAG_IS_EdDSA
     },
     {
-      "ssh-dss", "dsa", "pqgyx",  "pqgy", "rs", "pqgyx",
+      "ssh-rsa", "RSA", "rsa", "nedupq", "en",   "s",  "nedpqu",
+      ssh_key_modifier_rsa, ssh_signature_encoder_rsa,
+      NULL, 0,                    SPEC_FLAG_USE_PKCS1V2
+    },
+    {
+      "ssh-dss", "DSA", "dsa", "pqgyx",  "pqgy", "rs", "pqgyx",
       NULL,                 ssh_signature_encoder_dsa,
       NULL, 0, 0
     },
     {
-      "ecdsa-sha2-nistp256", "ecdsa", "qd",  "q", "rs", "qd",
+      "ecdsa-sha2-nistp256", "ECDSA", "ecdsa", "qd",  "q", "rs", "qd",
       NULL,                 ssh_signature_encoder_ecdsa,
       "nistp256", GCRY_MD_SHA256, SPEC_FLAG_IS_ECDSA
     },
     {
-      "ecdsa-sha2-nistp384", "ecdsa", "qd",  "q", "rs", "qd",
+      "ecdsa-sha2-nistp384", "ECDSA", "ecdsa", "qd",  "q", "rs", "qd",
       NULL,                 ssh_signature_encoder_ecdsa,
       "nistp384", GCRY_MD_SHA384, SPEC_FLAG_IS_ECDSA
     },
     {
-      "ecdsa-sha2-nistp521", "ecdsa", "qd",  "q", "rs", "qd",
+      "ecdsa-sha2-nistp521", "ECDSA", "ecdsa", "qd",  "q", "rs", "qd",
       NULL,                 ssh_signature_encoder_ecdsa,
       "nistp521", GCRY_MD_SHA512, SPEC_FLAG_IS_ECDSA
+    },
+    {
+      "ssh-ed25519-cert-v01@openssh.com", "Ed25519",
+      "ecc", "qd",  "q", "rs", "qd",
+      NULL,                 ssh_signature_encoder_eddsa,
+      "Ed25519", 0, SPEC_FLAG_IS_EdDSA | SPEC_FLAG_WITH_CERT
+    },
+    {
+      "ssh-rsa-cert-v01@openssh.com", "RSA",
+      "rsa", "nedupq", "en",   "s",  "nedpqu",
+      ssh_key_modifier_rsa, ssh_signature_encoder_rsa,
+      NULL, 0, SPEC_FLAG_USE_PKCS1V2 | SPEC_FLAG_WITH_CERT
+    },
+    {
+      "ssh-dss-cert-v01@openssh.com", "DSA",
+      "dsa", "pqgyx",  "pqgy", "rs", "pqgyx",
+      NULL,                 ssh_signature_encoder_dsa,
+      NULL, 0, SPEC_FLAG_WITH_CERT | SPEC_FLAG_WITH_CERT
+    },
+    {
+      "ecdsa-sha2-nistp256-cert-v01@openssh.com", "ECDSA",
+      "ecdsa", "qd",  "q", "rs", "qd",
+      NULL,                 ssh_signature_encoder_ecdsa,
+      "nistp256", GCRY_MD_SHA256, SPEC_FLAG_IS_ECDSA | SPEC_FLAG_WITH_CERT
+    },
+    {
+      "ecdsa-sha2-nistp384-cert-v01@openssh.com", "ECDSA",
+      "ecdsa", "qd",  "q", "rs", "qd",
+      NULL,                 ssh_signature_encoder_ecdsa,
+      "nistp384", GCRY_MD_SHA384, SPEC_FLAG_IS_ECDSA | SPEC_FLAG_WITH_CERT
+    },
+    {
+      "ecdsa-sha2-nistp521-cert-v01@openssh.com", "ECDSA",
+      "ecdsa", "qd",  "q", "rs", "qd",
+      NULL,                 ssh_signature_encoder_ecdsa,
+      "nistp521", GCRY_MD_SHA512, SPEC_FLAG_IS_ECDSA | SPEC_FLAG_WITH_CERT
     }
-
   };
 
 
@@ -337,7 +385,20 @@ make_cstring (const char *data, size_t data_n)
   return s;
 }
 
+/* Lookup the ssh-identifier for the ECC curve CURVE_NAME.  Returns
+   NULL if not found.  */
+static const char *
+ssh_identifier_from_curve_name (const char *curve_name)
+{
+  int i;
 
+  for (i = 0; i < DIM (ssh_key_types); i++)
+    if (ssh_key_types[i].curve_name
+        && !strcmp (ssh_key_types[i].curve_name, curve_name))
+      return ssh_key_types[i].ssh_identifier;
+
+  return NULL;
+}
 
 
 /*
@@ -460,6 +521,34 @@ stream_read_data (estream_t stream, unsigned char *buffer, size_t size)
   return err;
 }
 
+/* Skip over SIZE bytes from STREAM.  */
+static gpg_error_t
+stream_read_skip (estream_t stream, size_t size)
+{
+  char buffer[128];
+  size_t bytes_to_read, bytes_read;
+  int ret;
+
+  do
+    {
+      bytes_to_read = size;
+      if (bytes_to_read > sizeof buffer)
+        bytes_to_read = sizeof buffer;
+
+      ret = es_read (stream, buffer, bytes_to_read, &bytes_read);
+      if (ret)
+        return gpg_error_from_syserror ();
+      else if (bytes_read != bytes_to_read)
+        return gpg_error (GPG_ERR_EOF);
+      else
+        size -= bytes_to_read;
+    }
+  while (size);
+
+  return 0;
+}
+
+
 /* Write SIZE bytes from BUFFER to STREAM.  */
 static gpg_error_t
 stream_write_data (estream_t stream, const unsigned char *buffer, size_t size)
@@ -479,7 +568,7 @@ stream_write_data (estream_t stream, const unsigned char *buffer, size_t size)
 /* Read a binary string from STREAM into STRING, store size of string
    in STRING_SIZE.  Append a hidden nul so that the result may
    directly be used as a C string.  Depending on SECURE use secure
-   memory for STRING.  */
+   memory for STRING.  If STRING is NULL do only a dummy read.  */
 static gpg_error_t
 stream_read_string (estream_t stream, unsigned int secure,
 		    unsigned char **string, u32 *string_size)
@@ -488,30 +577,43 @@ stream_read_string (estream_t stream, unsigned int secure,
   unsigned char *buffer = NULL;
   u32 length = 0;
 
+  if (string_size)
+    *string_size = 0;
+
   /* Read string length.  */
   err = stream_read_uint32 (stream, &length);
   if (err)
     goto out;
 
-  /* Allocate space.  */
-  if (secure)
-    buffer = xtrymalloc_secure (length + 1);
-  else
-    buffer = xtrymalloc (length + 1);
-  if (! buffer)
+  if (string)
     {
-      err = gpg_error_from_syserror ();
-      goto out;
+      /* Allocate space.  */
+      if (secure)
+        buffer = xtrymalloc_secure (length + 1);
+      else
+        buffer = xtrymalloc (length + 1);
+      if (! buffer)
+        {
+          err = gpg_error_from_syserror ();
+          goto out;
+        }
+
+      /* Read data.  */
+      err = stream_read_data (stream, buffer, length);
+      if (err)
+        goto out;
+
+      /* Finalize string object.  */
+      buffer[length] = 0;
+      *string = buffer;
+    }
+  else  /* Dummy read requested.  */
+    {
+      err = stream_read_skip (stream, length);
+      if (err)
+        goto out;
     }
 
-  /* Read data.  */
-  err = stream_read_data (stream, buffer, length);
-  if (err)
-    goto out;
-
-  /* Finalize string object.  */
-  buffer[length] = 0;
-  *string = buffer;
   if (string_size)
     *string_size = length;
 
@@ -523,21 +625,70 @@ stream_read_string (estream_t stream, unsigned int secure,
   return err;
 }
 
+
+/* Read a binary string from STREAM and store it as an opaque MPI at
+   R_MPI, adding 0x40 (this is the prefix for EdDSA key in OpenPGP).
+   Depending on SECURE use secure memory.  If the string is too large
+   for key material return an error.  */
+static gpg_error_t
+stream_read_blob (estream_t stream, unsigned int secure, gcry_mpi_t *r_mpi)
+{
+  gpg_error_t err;
+  unsigned char *buffer = NULL;
+  u32 length = 0;
+
+  *r_mpi = NULL;
+
+  /* Read string length.  */
+  err = stream_read_uint32 (stream, &length);
+  if (err)
+    goto leave;
+
+  /* To avoid excessive use of secure memory we check that an MPI is
+     not too large. */
+  if (length > (4096/8) + 8)
+    {
+      log_error (_("ssh keys greater than %d bits are not supported\n"), 4096);
+      err = GPG_ERR_TOO_LARGE;
+      goto leave;
+    }
+
+  /* Allocate space.  */
+  if (secure)
+    buffer = xtrymalloc_secure (length+1);
+  else
+    buffer = xtrymalloc (length+1);
+  if (!buffer)
+    {
+      err = gpg_error_from_syserror ();
+      goto leave;
+    }
+
+  /* Read data.  */
+  err = stream_read_data (stream, buffer + 1, length);
+  if (err)
+    goto leave;
+
+  buffer[0] = 0x40;
+  *r_mpi = gcry_mpi_set_opaque (NULL, buffer, 8*(length+1));
+  buffer = NULL;
+
+ leave:
+  xfree (buffer);
+  return err;
+}
+
+
 /* Read a C-string from STREAM, store copy in STRING.  */
 static gpg_error_t
 stream_read_cstring (estream_t stream, char **string)
 {
-  unsigned char *buffer;
   gpg_error_t err;
+  unsigned char *buffer;
 
   err = stream_read_string (stream, 0, &buffer, NULL);
-  if (err)
-    goto out;
-
-  *string = (char *) buffer;
-
- out:
-
+  if (!err)
+    *string = (char *)buffer;
   return err;
 }
 
@@ -632,6 +783,7 @@ stream_write_mpi (estream_t stream, gcry_mpi_t mpint)
 
   return err;
 }
+
 
 /* Copy data from SRC to DST until EOF is reached.  */
 static gpg_error_t
@@ -751,7 +903,7 @@ open_control_file (ssh_control_file_t *r_cf, int append)
       err = gpg_error_from_syserror ();
       goto leave;
     }
-  /* FIXME: With "a+" we are not able to check whether this will will
+  /* FIXME: With "a+" we are not able to check whether this will
      be created and thus the blurb needs to be written first.  */
   cf->fp = fopen (cf->fname, append? "a+":"r");
   if (!cf->fp && errno == ENOENT)
@@ -760,7 +912,7 @@ open_control_file (ssh_control_file_t *r_cf, int append)
       if (!stream)
         {
           err = gpg_error_from_syserror ();
-          log_error (_("can't create `%s': %s\n"),
+          log_error (_("can't create '%s': %s\n"),
                      cf->fname, gpg_strerror (err));
           goto leave;
         }
@@ -772,7 +924,7 @@ open_control_file (ssh_control_file_t *r_cf, int append)
   if (!cf->fp)
     {
       err = gpg_error_from_syserror ();
-      log_error (_("can't open `%s': %s\n"),
+      log_error (_("can't open '%s': %s\n"),
                  cf->fname, gpg_strerror (err));
       goto leave;
     }
@@ -928,7 +1080,8 @@ search_control_file (ssh_control_file_t cf, const char *hexgrip,
 
   assert (strlen (hexgrip) == 40 );
 
-  *r_disabled = 0;
+  if (r_disabled)
+    *r_disabled = 0;
   if (r_ttl)
     *r_ttl = 0;
   if (r_confirm)
@@ -944,7 +1097,8 @@ search_control_file (ssh_control_file_t cf, const char *hexgrip,
     }
   if (!err)
     {
-      *r_disabled = cf->item.disabled;
+      if (r_disabled)
+        *r_disabled = cf->item.disabled;
       if (r_ttl)
         *r_ttl = cf->item.ttl;
       if (r_confirm)
@@ -961,7 +1115,8 @@ search_control_file (ssh_control_file_t cf, const char *hexgrip,
    general used to add a key received through the ssh-add function.
    We can assume that the user wants to allow ssh using this key. */
 static gpg_error_t
-add_control_entry (ctrl_t ctrl, const char *hexgrip, const char *fmtfpr,
+add_control_entry (ctrl_t ctrl, ssh_key_type_spec_t *spec,
+                   const char *hexgrip, const char *fmtfpr,
                    int ttl, int confirm)
 {
   gpg_error_t err;
@@ -984,9 +1139,10 @@ add_control_entry (ctrl_t ctrl, const char *hexgrip, const char *fmtfpr,
          opened in append mode, we simply need to write to it.  */
       tp = localtime (&atime);
       fprintf (cf->fp,
-               ("# Key added on: %04d-%02d-%02d %02d:%02d:%02d\n"
-                "# Fingerprint:  %s\n"
+               ("# %s key added on: %04d-%02d-%02d %02d:%02d:%02d\n"
+                "# MD5 Fingerprint:  %s\n"
                 "%s %d%s\n"),
+               spec->name,
                1900+tp->tm_year, tp->tm_mon+1, tp->tm_mday,
                tp->tm_hour, tp->tm_min, tp->tm_sec,
                fmtfpr, hexgrip, ttl, confirm? " confirm":"");
@@ -1149,31 +1305,38 @@ mpint_list_free (gcry_mpi_t *mpi_list)
 }
 
 /* Receive key material MPIs from STREAM according to KEY_SPEC;
-   depending on SECRET expect a public key or secret key.  The newly
+   depending on SECRET expect a public key or secret key.  CERT is the
+   certificate blob used if KEY_SPEC indicates the certificate format;
+   it needs to be positioned to the end of the nonce.  The newly
    allocated list of MPIs is stored in MPI_LIST.  Returns usual error
    code.  */
 static gpg_error_t
 ssh_receive_mpint_list (estream_t stream, int secret,
-			ssh_key_type_spec_t key_spec, gcry_mpi_t **mpi_list)
+			ssh_key_type_spec_t *spec, estream_t cert,
+                        gcry_mpi_t **mpi_list)
 {
   const char *elems_public;
   unsigned int elems_n;
   const char *elems;
   int elem_is_secret;
-  gcry_mpi_t *mpis;
-  gpg_error_t err;
+  gcry_mpi_t *mpis = NULL;
+  gpg_error_t err = 0;
   unsigned int i;
 
-  mpis = NULL;
-  err = 0;
-
   if (secret)
-    elems = key_spec.elems_key_secret;
+    elems = spec->elems_key_secret;
   else
-    elems = key_spec.elems_key_public;
+    elems = spec->elems_key_public;
   elems_n = strlen (elems);
+  elems_public = spec->elems_key_public;
 
-  elems_public = key_spec.elems_key_public;
+  /* Check that either noth, CERT and the WITH_CERT flag, are given or
+     none of them.  */
+  if (!(!!(spec->flags & SPEC_FLAG_WITH_CERT) ^ !cert))
+    {
+      err = gpg_error (GPG_ERR_INV_CERT_OBJ);
+      goto out;
+    }
 
   mpis = xtrycalloc (elems_n + 1, sizeof *mpis );
   if (!mpis)
@@ -1186,18 +1349,20 @@ ssh_receive_mpint_list (estream_t stream, int secret,
   for (i = 0; i < elems_n; i++)
     {
       if (secret)
-	elem_is_secret = ! strchr (elems_public, elems[i]);
-      err = stream_read_mpi (stream, elem_is_secret, &mpis[i]);
+	elem_is_secret = !strchr (elems_public, elems[i]);
+
+      if (cert && !elem_is_secret)
+        err = stream_read_mpi (cert, elem_is_secret, &mpis[i]);
+      else
+        err = stream_read_mpi (stream, elem_is_secret, &mpis[i]);
       if (err)
-	break;
+	goto out;
     }
-  if (err)
-    goto out;
 
   *mpi_list = mpis;
+  mpis = NULL;
 
  out:
-
   if (err)
     mpint_list_free (mpis);
 
@@ -1243,15 +1408,63 @@ ssh_key_modifier_rsa (const char *elems, gcry_mpi_t *mpis)
 /* Signature encoder function for RSA.  */
 static gpg_error_t
 ssh_signature_encoder_rsa (ssh_key_type_spec_t *spec,
-                           estream_t signature_blob, gcry_mpi_t *mpis)
+                           estream_t signature_blob,
+                           gcry_sexp_t s_signature)
 {
+  gpg_error_t err = 0;
+  gcry_sexp_t valuelist = NULL;
+  gcry_sexp_t sublist = NULL;
+  gcry_mpi_t sig_value = NULL;
+  gcry_mpi_t *mpis = NULL;
+  const char *elems;
+  size_t elems_n;
+  int i;
+
   unsigned char *data;
   size_t data_n;
-  gpg_error_t err;
   gcry_mpi_t s;
 
-  (void)spec;
+  valuelist = gcry_sexp_nth (s_signature, 1);
+  if (!valuelist)
+    {
+      err = gpg_error (GPG_ERR_INV_SEXP);
+      goto out;
+    }
 
+  elems = spec->elems_signature;
+  elems_n = strlen (elems);
+
+  mpis = xtrycalloc (elems_n + 1, sizeof *mpis);
+  if (!mpis)
+    {
+      err = gpg_error_from_syserror ();
+      goto out;
+    }
+
+  for (i = 0; i < elems_n; i++)
+    {
+      sublist = gcry_sexp_find_token (valuelist, spec->elems_signature + i, 1);
+      if (!sublist)
+	{
+	  err = gpg_error (GPG_ERR_INV_SEXP);
+	  break;
+	}
+
+      sig_value = gcry_sexp_nth_mpi (sublist, 1, GCRYMPI_FMT_USG);
+      if (!sig_value)
+	{
+	  err = gpg_error (GPG_ERR_INTERNAL); /* FIXME?  */
+	  break;
+	}
+      gcry_sexp_release (sublist);
+      sublist = NULL;
+
+      mpis[i] = sig_value;
+    }
+  if (err)
+    goto out;
+
+  /* RSA specific */
   s = mpis[0];
 
   err = gcry_mpi_aprint (GCRYMPI_FMT_USG, &data, &data_n, s);
@@ -1262,7 +1475,9 @@ ssh_signature_encoder_rsa (ssh_key_type_spec_t *spec,
   xfree (data);
 
  out:
-
+  gcry_sexp_release (valuelist);
+  gcry_sexp_release (sublist);
+  mpint_list_free (mpis);
   return err;
 }
 
@@ -1270,17 +1485,63 @@ ssh_signature_encoder_rsa (ssh_key_type_spec_t *spec,
 /* Signature encoder function for DSA.  */
 static gpg_error_t
 ssh_signature_encoder_dsa (ssh_key_type_spec_t *spec,
-                           estream_t signature_blob, gcry_mpi_t *mpis)
+                           estream_t signature_blob,
+                           gcry_sexp_t s_signature)
 {
-  unsigned char buffer[SSH_DSA_SIGNATURE_PADDING * SSH_DSA_SIGNATURE_ELEMS];
-  unsigned char *data;
-  size_t data_n;
-  gpg_error_t err;
+  gpg_error_t err = 0;
+  gcry_sexp_t valuelist = NULL;
+  gcry_sexp_t sublist = NULL;
+  gcry_mpi_t sig_value = NULL;
+  gcry_mpi_t *mpis = NULL;
+  const char *elems;
+  size_t elems_n;
   int i;
 
-  (void)spec;
+  unsigned char buffer[SSH_DSA_SIGNATURE_PADDING * SSH_DSA_SIGNATURE_ELEMS];
+  unsigned char *data = NULL;
+  size_t data_n;
 
-  data = NULL;
+  valuelist = gcry_sexp_nth (s_signature, 1);
+  if (!valuelist)
+    {
+      err = gpg_error (GPG_ERR_INV_SEXP);
+      goto out;
+    }
+
+  elems = spec->elems_signature;
+  elems_n = strlen (elems);
+
+  mpis = xtrycalloc (elems_n + 1, sizeof *mpis);
+  if (!mpis)
+    {
+      err = gpg_error_from_syserror ();
+      goto out;
+    }
+
+  for (i = 0; i < elems_n; i++)
+    {
+      sublist = gcry_sexp_find_token (valuelist, spec->elems_signature + i, 1);
+      if (!sublist)
+	{
+	  err = gpg_error (GPG_ERR_INV_SEXP);
+	  break;
+	}
+
+      sig_value = gcry_sexp_nth_mpi (sublist, 1, GCRYMPI_FMT_USG);
+      if (!sig_value)
+	{
+	  err = gpg_error (GPG_ERR_INTERNAL); /* FIXME?  */
+	  break;
+	}
+      gcry_sexp_release (sublist);
+      sublist = NULL;
+
+      mpis[i] = sig_value;
+    }
+  if (err)
+    goto out;
+
+  /* DSA specific code.  */
 
   /* FIXME: Why this complicated code?  Why collecting boths mpis in a
      buffer instead of writing them out one after the other?  */
@@ -1310,9 +1571,10 @@ ssh_signature_encoder_dsa (ssh_key_type_spec_t *spec,
   err = stream_write_string (signature_blob, buffer, sizeof (buffer));
 
  out:
-
   xfree (data);
-
+  gcry_sexp_release (valuelist);
+  gcry_sexp_release (sublist);
+  mpint_list_free (mpis);
   return err;
 }
 
@@ -1320,15 +1582,62 @@ ssh_signature_encoder_dsa (ssh_key_type_spec_t *spec,
 /* Signature encoder function for ECDSA.  */
 static gpg_error_t
 ssh_signature_encoder_ecdsa (ssh_key_type_spec_t *spec,
-                             estream_t stream, gcry_mpi_t *mpis)
+                             estream_t stream, gcry_sexp_t s_signature)
 {
+  gpg_error_t err = 0;
+  gcry_sexp_t valuelist = NULL;
+  gcry_sexp_t sublist = NULL;
+  gcry_mpi_t sig_value = NULL;
+  gcry_mpi_t *mpis = NULL;
+  const char *elems;
+  size_t elems_n;
+  int i;
+
   unsigned char *data[2] = {NULL, NULL};
   size_t data_n[2];
   size_t innerlen;
-  gpg_error_t err;
-  int i;
 
-  (void)spec;
+  valuelist = gcry_sexp_nth (s_signature, 1);
+  if (!valuelist)
+    {
+      err = gpg_error (GPG_ERR_INV_SEXP);
+      goto out;
+    }
+
+  elems = spec->elems_signature;
+  elems_n = strlen (elems);
+
+  mpis = xtrycalloc (elems_n + 1, sizeof *mpis);
+  if (!mpis)
+    {
+      err = gpg_error_from_syserror ();
+      goto out;
+    }
+
+  for (i = 0; i < elems_n; i++)
+    {
+      sublist = gcry_sexp_find_token (valuelist, spec->elems_signature + i, 1);
+      if (!sublist)
+	{
+	  err = gpg_error (GPG_ERR_INV_SEXP);
+	  break;
+	}
+
+      sig_value = gcry_sexp_nth_mpi (sublist, 1, GCRYMPI_FMT_USG);
+      if (!sig_value)
+	{
+	  err = gpg_error (GPG_ERR_INTERNAL); /* FIXME?  */
+	  break;
+	}
+      gcry_sexp_release (sublist);
+      sublist = NULL;
+
+      mpis[i] = sig_value;
+    }
+  if (err)
+    goto out;
+
+  /* ECDSA specific */
 
   innerlen = 0;
   for (i = 0; i < DIM(data); i++)
@@ -1353,6 +1662,83 @@ ssh_signature_encoder_ecdsa (ssh_key_type_spec_t *spec,
  out:
   for (i = 0; i < DIM(data); i++)
     xfree (data[i]);
+  gcry_sexp_release (valuelist);
+  gcry_sexp_release (sublist);
+  mpint_list_free (mpis);
+  return err;
+}
+
+
+/* Signature encoder function for EdDSA.  */
+static gpg_error_t
+ssh_signature_encoder_eddsa (ssh_key_type_spec_t *spec,
+                             estream_t stream, gcry_sexp_t s_signature)
+{
+  gpg_error_t err = 0;
+  gcry_sexp_t valuelist = NULL;
+  gcry_sexp_t sublist = NULL;
+  const char *elems;
+  size_t elems_n;
+  int i;
+
+  unsigned char *data[2] = {NULL, NULL};
+  size_t data_n[2];
+  size_t totallen = 0;
+
+  valuelist = gcry_sexp_nth (s_signature, 1);
+  if (!valuelist)
+    {
+      err = gpg_error (GPG_ERR_INV_SEXP);
+      goto out;
+    }
+
+  elems = spec->elems_signature;
+  elems_n = strlen (elems);
+
+  if (elems_n != DIM(data))
+    {
+      err = gpg_error (GPG_ERR_INV_SEXP);
+      goto out;
+    }
+
+  for (i = 0; i < DIM(data); i++)
+    {
+      sublist = gcry_sexp_find_token (valuelist, spec->elems_signature + i, 1);
+      if (!sublist)
+	{
+	  err = gpg_error (GPG_ERR_INV_SEXP);
+	  break;
+	}
+
+      data[i] = gcry_sexp_nth_buffer (sublist, 1, &data_n[i]);
+      if (!data[i])
+	{
+	  err = gpg_error (GPG_ERR_INTERNAL); /* FIXME?  */
+	  break;
+	}
+      totallen += data_n[i];
+      gcry_sexp_release (sublist);
+      sublist = NULL;
+    }
+  if (err)
+    goto out;
+
+  err = stream_write_uint32 (stream, totallen);
+  if (err)
+    goto out;
+
+  for (i = 0; i < DIM(data); i++)
+    {
+      err = stream_write_data (stream, data[i], data_n[i]);
+      if (err)
+        goto out;
+    }
+
+ out:
+  for (i = 0; i < DIM(data); i++)
+    xfree (data[i]);
+  gcry_sexp_release (valuelist);
+  gcry_sexp_release (sublist);
   return err;
 }
 
@@ -1371,85 +1757,117 @@ sexp_key_construct (gcry_sexp_t *r_sexp,
 		    const char *curve_name, gcry_mpi_t *mpis,
                     const char *comment)
 {
-  const char *key_identifier[] = { "public-key", "private-key" };
   gpg_error_t err;
   gcry_sexp_t sexp_new = NULL;
   void *formatbuf = NULL;
   void **arg_list = NULL;
-  int arg_idx;
-  estream_t format;
-  const char *elems;
-  size_t elems_n;
-  unsigned int i, j;
+  estream_t format = NULL;
 
-  if (secret)
-    elems = key_spec.elems_sexp_order;
-  else
-    elems = key_spec.elems_key_public;
-  elems_n = strlen (elems);
 
-  format = es_fopenmem (0, "a+b");
-  if (!format)
+  if ((key_spec.flags & SPEC_FLAG_IS_EdDSA))
     {
-      err = gpg_error_from_syserror ();
-      goto out;
-    }
-
-  /* Key identifier, algorithm identifier, mpis, comment, and a NULL
-     as a safeguard. */
-  arg_list = xtrymalloc (sizeof (*arg_list) * (2 + 1 + elems_n + 1 + 1));
-  if (!arg_list)
-    {
-      err = gpg_error_from_syserror ();
-      goto out;
-    }
-  arg_idx = 0;
-
-  es_fputs ("(%s(%s", format);
-  arg_list[arg_idx++] = &key_identifier[secret];
-  arg_list[arg_idx++] = &key_spec.identifier;
-  if (curve_name)
-    {
-      es_fputs ("(curve%s)", format);
-      arg_list[arg_idx++] = &curve_name;
-    }
-
-  for (i = 0; i < elems_n; i++)
-    {
-      es_fprintf (format, "(%c%%m)", elems[i]);
-      if (secret)
-	{
-	  for (j = 0; j < elems_n; j++)
-	    if (key_spec.elems_key_secret[j] == elems[i])
-	      break;
-	}
+      /* It is much easier and more readable to use a separate code
+         path for EdDSA.  */
+      if (!curve_name)
+        err = gpg_error (GPG_ERR_INV_CURVE);
+      else if (!mpis[0] || !gcry_mpi_get_flag (mpis[0], GCRYMPI_FLAG_OPAQUE))
+        err = gpg_error (GPG_ERR_BAD_PUBKEY);
+      else if (secret
+               && (!mpis[1]
+                   || !gcry_mpi_get_flag (mpis[1], GCRYMPI_FLAG_OPAQUE)))
+        err = gpg_error (GPG_ERR_BAD_SECKEY);
+      else if (secret)
+        err = gcry_sexp_build (&sexp_new, NULL,
+                               "(private-key(ecc(curve %s)"
+                               "(flags eddsa)(q %m)(d %m))"
+                               "(comment%s))",
+                               curve_name,
+                               mpis[0], mpis[1],
+                               comment? comment:"");
       else
-	j = i;
-      arg_list[arg_idx++] = &mpis[j];
+        err = gcry_sexp_build (&sexp_new, NULL,
+                               "(public-key(ecc(curve %s)"
+                               "(flags eddsa)(q %m))"
+                               "(comment%s))",
+                               curve_name,
+                               mpis[0],
+                               comment? comment:"");
     }
-  es_fputs (")(comment%s))", format);
-  arg_list[arg_idx++] = &comment;
-  arg_list[arg_idx] = NULL;
-
-  es_putc (0, format);
-  if (es_ferror (format))
+  else
     {
-      err = gpg_error_from_syserror ();
-      goto out;
-    }
-  if (es_fclose_snatch (format, &formatbuf, NULL))
-    {
-      err = gpg_error_from_syserror ();
-      goto out;
-    }
-  format = NULL;
+      const char *key_identifier[] = { "public-key", "private-key" };
+      int arg_idx;
+      const char *elems;
+      size_t elems_n;
+      unsigned int i, j;
 
-  err = gcry_sexp_build_array (&sexp_new, NULL, formatbuf, arg_list);
-  if (err)
-    goto out;
+      if (secret)
+        elems = key_spec.elems_sexp_order;
+      else
+        elems = key_spec.elems_key_public;
+      elems_n = strlen (elems);
 
-  *r_sexp = sexp_new;
-  err = 0;
+      format = es_fopenmem (0, "a+b");
+      if (!format)
+        {
+          err = gpg_error_from_syserror ();
+          goto out;
+        }
+
+      /* Key identifier, algorithm identifier, mpis, comment, and a NULL
+         as a safeguard. */
+      arg_list = xtrymalloc (sizeof (*arg_list) * (2 + 1 + elems_n + 1 + 1));
+      if (!arg_list)
+        {
+          err = gpg_error_from_syserror ();
+          goto out;
+        }
+      arg_idx = 0;
+
+      es_fputs ("(%s(%s", format);
+      arg_list[arg_idx++] = &key_identifier[secret];
+      arg_list[arg_idx++] = &key_spec.identifier;
+      if (curve_name)
+        {
+          es_fputs ("(curve%s)", format);
+          arg_list[arg_idx++] = &curve_name;
+        }
+
+      for (i = 0; i < elems_n; i++)
+        {
+          es_fprintf (format, "(%c%%m)", elems[i]);
+          if (secret)
+            {
+              for (j = 0; j < elems_n; j++)
+                if (key_spec.elems_key_secret[j] == elems[i])
+                  break;
+            }
+          else
+            j = i;
+          arg_list[arg_idx++] = &mpis[j];
+        }
+      es_fputs (")(comment%s))", format);
+      arg_list[arg_idx++] = &comment;
+      arg_list[arg_idx] = NULL;
+
+      es_putc (0, format);
+      if (es_ferror (format))
+        {
+          err = gpg_error_from_syserror ();
+          goto out;
+        }
+      if (es_fclose_snatch (format, &formatbuf, NULL))
+        {
+          err = gpg_error_from_syserror ();
+          goto out;
+        }
+      format = NULL;
+
+      err = gcry_sexp_build_array (&sexp_new, NULL, formatbuf, arg_list);
+    }
+
+  if (!err)
+    *r_sexp = sexp_new;
 
  out:
   es_fclose (format);
@@ -1460,96 +1878,66 @@ sexp_key_construct (gcry_sexp_t *r_sexp,
 }
 
 
-/* This functions breaks up the key contained in the S-Expression SEXP
-   according to KEY_SPEC.  The MPIs are bundled in a newly create
-   list, which is to be stored in MPIS; a newly allocated string
-   holding the curve name may be stored at RCURVE, and a comment will
-   be stored at COMMENT; SECRET will be filled with a boolean flag
-   specifying what kind of key it is.  Returns an error code.  */
+/* This function extracts the key from the s-expression SEXP according
+   to KEY_SPEC and stores it in ssh format at (R_BLOB, R_BLOBLEN).  If
+   WITH_SECRET is true, the secret key parts are also extracted if
+   possible.  Returns 0 on success or an error code.  Note that data
+   stored at R_BLOB must be freed using es_free!  */
 static gpg_error_t
-sexp_key_extract (gcry_sexp_t sexp,
-		  ssh_key_type_spec_t key_spec, int *secret,
-		  gcry_mpi_t **mpis, char **r_curve, char **comment)
+ssh_key_to_blob (gcry_sexp_t sexp, int with_secret,
+                 ssh_key_type_spec_t key_spec,
+                 void **r_blob, size_t *r_blob_size)
 {
   gpg_error_t err = 0;
   gcry_sexp_t value_list = NULL;
   gcry_sexp_t value_pair = NULL;
-  gcry_sexp_t comment_list = NULL;
-  unsigned int i;
-  char *comment_new = NULL;
-  const char *data;
-  size_t data_n;
-  int is_secret;
-  size_t elems_n;
-  const char *elems;
-  gcry_mpi_t *mpis_new = NULL;
-  gcry_mpi_t mpi;
   char *curve_name = NULL;
+  estream_t stream = NULL;
+  void *blob = NULL;
+  size_t blob_size;
+  const char *elems, *p_elems;
+  const char *data;
+  size_t datalen;
 
-  data = gcry_sexp_nth_data (sexp, 0, &data_n);
-  if (! data)
+  *r_blob = NULL;
+  *r_blob_size = 0;
+
+  stream = es_fopenmem (0, "r+b");
+  if (!stream)
+    {
+      err = gpg_error_from_syserror ();
+      goto out;
+    }
+
+  /* Get the type of the key extpression.  */
+  data = gcry_sexp_nth_data (sexp, 0, &datalen);
+  if (!data)
     {
       err = gpg_error (GPG_ERR_INV_SEXP);
       goto out;
     }
 
-  if ((data_n == 10 && !strncmp (data, "public-key", 10))
-      || (data_n == 21 && !strncmp (data, "protected-private-key", 21))
-      || (data_n == 20 && !strncmp (data, "shadowed-private-key", 20)))
-    {
-      is_secret = 0;
-      elems = key_spec.elems_key_public;
-    }
-  else if (data_n == 11 && !strncmp (data, "private-key", 11))
-    {
-      is_secret = 1;
-      elems = key_spec.elems_key_secret;
-    }
+  if ((datalen == 10 && !strncmp (data, "public-key", 10))
+      || (datalen == 21 && !strncmp (data, "protected-private-key", 21))
+      || (datalen == 20 && !strncmp (data, "shadowed-private-key", 20)))
+    elems = key_spec.elems_key_public;
+  else if (datalen == 11 && !strncmp (data, "private-key", 11))
+    elems = with_secret? key_spec.elems_key_secret : key_spec.elems_key_public;
   else
     {
       err = gpg_error (GPG_ERR_INV_SEXP);
       goto out;
     }
 
-  elems_n = strlen (elems);
-  mpis_new = xtrycalloc (elems_n + 1, sizeof *mpis_new );
-  if (!mpis_new)
-    {
-      err = gpg_error_from_syserror ();
-      goto out;
-    }
-
+  /* Get the algorithm identifier.  */
   value_list = gcry_sexp_find_token (sexp, key_spec.identifier, 0);
-  if (! value_list)
+  if (!value_list)
     {
       err = gpg_error (GPG_ERR_INV_SEXP);
       goto out;
     }
 
-  for (i = 0; i < elems_n; i++)
-    {
-      value_pair = gcry_sexp_find_token (value_list, elems + i, 1);
-      if (! value_pair)
-	{
-	  err = gpg_error (GPG_ERR_INV_SEXP);
-	  break;
-	}
-
-      /* Note that we need to use STD format; i.e. prepend a 0x00 to
-         indicate a positive number if the high bit is set. */
-      mpi = gcry_sexp_nth_mpi (value_pair, 1, GCRYMPI_FMT_STD);
-      if (! mpi)
-	{
-	  err = gpg_error (GPG_ERR_INV_SEXP);
-	  break;
-	}
-      mpis_new[i] = mpi;
-      gcry_sexp_release (value_pair);
-      value_pair = NULL;
-    }
-  if (err)
-    goto out;
-
+  /* Write the ssh algorithm identifier.  */
   if ((key_spec.flags & SPEC_FLAG_IS_ECDSA))
     {
       /* Parse the "curve" parameter.  We currently expect the curve
@@ -1557,7 +1945,9 @@ sexp_key_extract (gcry_sexp_t sexp,
          easily be changed but then we need to find the curve name
          from the parameters using gcry_pk_get_curve.  */
       const char *mapped;
+      const char *sshname;
 
+      gcry_sexp_release (value_pair);
       value_pair = gcry_sexp_find_token (value_list, "curve", 5);
       if (!value_pair)
 	{
@@ -1591,48 +1981,92 @@ sexp_key_extract (gcry_sexp_t sexp,
               goto out;
             }
         }
-      gcry_sexp_release (value_pair);
-      value_pair = NULL;
+
+      sshname = ssh_identifier_from_curve_name (curve_name);
+      if (!sshname)
+        {
+          err = gpg_error (GPG_ERR_UNKNOWN_CURVE);
+          goto out;
+        }
+      err = stream_write_cstring (stream, sshname);
+      if (err)
+        goto out;
+      err = stream_write_cstring (stream, curve_name);
+      if (err)
+        goto out;
     }
-
-  /* We do not require a comment sublist to be present here.  */
-  data = NULL;
-  data_n = 0;
-
-  comment_list = gcry_sexp_find_token (sexp, "comment", 0);
-  if (comment_list)
-    data = gcry_sexp_nth_data (comment_list, 1, &data_n);
-  if (! data)
+  else
     {
-      data = "(none)";
-      data_n = 6;
+      /* Note: This is also used for EdDSA.  */
+      err = stream_write_cstring (stream, key_spec.ssh_identifier);
+      if (err)
+        goto out;
     }
 
-  comment_new = make_cstring (data, data_n);
-  if (! comment_new)
+  /* Write the parameters.  */
+  for (p_elems = elems; *p_elems; p_elems++)
+    {
+      gcry_sexp_release (value_pair);
+      value_pair = gcry_sexp_find_token (value_list, p_elems, 1);
+      if (!value_pair)
+	{
+	  err = gpg_error (GPG_ERR_INV_SEXP);
+	  goto out;
+	}
+      if ((key_spec.flags & SPEC_FLAG_IS_EdDSA))
+        {
+
+          data = gcry_sexp_nth_data (value_pair, 1, &datalen);
+          if (!data)
+            {
+              err = gpg_error (GPG_ERR_INV_SEXP);
+              goto out;
+            }
+          if (*p_elems == 'q' && datalen)
+            { /* Remove the prefix 0x40.  */
+              data++;
+              datalen--;
+            }
+          err = stream_write_string (stream, data, datalen);
+          if (err)
+            goto out;
+        }
+      else
+        {
+          gcry_mpi_t mpi;
+
+          /* Note that we need to use STD format; i.e. prepend a 0x00
+             to indicate a positive number if the high bit is set. */
+          mpi = gcry_sexp_nth_mpi (value_pair, 1, GCRYMPI_FMT_STD);
+          if (!mpi)
+            {
+              err = gpg_error (GPG_ERR_INV_SEXP);
+              goto out;
+            }
+          err = stream_write_mpi (stream, mpi);
+          gcry_mpi_release (mpi);
+          if (err)
+            goto out;
+        }
+    }
+
+  if (es_fclose_snatch (stream, &blob, &blob_size))
     {
       err = gpg_error_from_syserror ();
       goto out;
     }
+  stream = NULL;
 
-  if (secret)
-    *secret = is_secret;
-  *mpis = mpis_new;
-  *comment = comment_new;
-  *r_curve = curve_name;
+  *r_blob = blob;
+  blob = NULL;
+  *r_blob_size = blob_size;
 
  out:
-
   gcry_sexp_release (value_list);
   gcry_sexp_release (value_pair);
-  gcry_sexp_release (comment_list);
-
-  if (err)
-    {
-      xfree (curve_name);
-      xfree (comment_new);
-      mpint_list_free (mpis_new);
-    }
+  xfree (curve_name);
+  es_fclose (stream);
+  es_free (blob);
 
   return err;
 }
@@ -1700,6 +2134,11 @@ ssh_key_type_lookup (const char *ssh_name, const char *name,
   gpg_error_t err;
   unsigned int i;
 
+  /* FIXME: Although this sees to work, it not be correct if the
+     lookup is done via name which might be "ecc" but actually it need
+     to check the flags to see whether it is eddsa or ecdsa.  Maybe
+     the entire parameter controlled logic is too complicated and we
+     would do better by just switching on the ssh_name.  */
   for (i = 0; i < DIM (ssh_key_types); i++)
     if ((ssh_name && (! strcmp (ssh_name, ssh_key_types[i].ssh_identifier)))
 	|| (name && (! strcmp (name, ssh_key_types[i].identifier))))
@@ -1717,23 +2156,6 @@ ssh_key_type_lookup (const char *ssh_name, const char *name,
 }
 
 
-/* Lookup the ssh-identifier for the ECC curve CURVE_NAME.  Returns
-   NULL if not found.  */
-static const char *
-ssh_identifier_from_curve_name (const char *curve_name)
-{
-  int i;
-
-  for (i = 0; i < DIM (ssh_key_types); i++)
-    if (ssh_key_types[i].curve_name
-        && !strcmp (ssh_key_types[i].curve_name, curve_name))
-      return ssh_key_types[i].ssh_identifier;
-
-  return NULL;
-}
-
-
-
 /* Receive a key from STREAM, according to the key specification given
    as KEY_SPEC.  Depending on SECRET, receive a secret or a public
    key.  If READ_COMMENT is true, receive a comment string as well.
@@ -1746,12 +2168,12 @@ ssh_receive_key (estream_t stream, gcry_sexp_t *key_new, int secret,
   gpg_error_t err;
   char *key_type = NULL;
   char *comment = NULL;
+  estream_t cert = NULL;
   gcry_sexp_t key = NULL;
   ssh_key_type_spec_t spec;
   gcry_mpi_t *mpi_list = NULL;
   const char *elems;
   char *curve_name = NULL;
-
 
 
   err = stream_read_cstring (stream, &key_type);
@@ -1762,7 +2184,103 @@ ssh_receive_key (estream_t stream, gcry_sexp_t *key_new, int secret,
   if (err)
     goto out;
 
-  if ((spec.flags & SPEC_FLAG_IS_ECDSA))
+  if ((spec.flags & SPEC_FLAG_WITH_CERT))
+    {
+      /* This is an OpenSSH certificate+private key.  The certificate
+         is an SSH string and which we store in an estream object. */
+      unsigned char *buffer;
+      u32 buflen;
+      char *cert_key_type;
+
+      err = stream_read_string (stream, 0, &buffer, &buflen);
+      if (err)
+        goto out;
+      cert = es_fopenmem_init (0, "rb", buffer, buflen);
+      xfree (buffer);
+      if (!cert)
+        {
+          err = gpg_error_from_syserror ();
+          goto out;
+        }
+
+      /* Check that the key type matches.  */
+      err = stream_read_cstring (cert, &cert_key_type);
+      if (err)
+        goto out;
+      if (strcmp (cert_key_type, key_type) )
+        {
+          xfree (cert_key_type);
+          log_error ("key types in received ssh certificate do not match\n");
+          err = gpg_error (GPG_ERR_INV_CERT_OBJ);
+          goto out;
+        }
+      xfree (cert_key_type);
+
+      /* Skip the nonce.  */
+      err = stream_read_string (cert, 0, NULL, NULL);
+      if (err)
+        goto out;
+    }
+
+  if ((spec.flags & SPEC_FLAG_IS_EdDSA))
+    {
+      /* The format of an EdDSA key is:
+       *   string	key_type ("ssh-ed25519")
+       *   string	public_key
+       *   string	private_key
+       *
+       * Note that the private key is the concatenation of the private
+       * key with the public key.  Thus theres are 64 bytes; however
+       * we only want the real 32 byte private key - Libgcrypt expects
+       * this.
+       */
+      mpi_list = xtrycalloc (3, sizeof *mpi_list);
+      if (!mpi_list)
+        {
+          err = gpg_error_from_syserror ();
+          goto out;
+        }
+
+      err = stream_read_blob (cert? cert : stream, 0, &mpi_list[0]);
+      if (err)
+        goto out;
+      if (secret)
+        {
+          u32 len = 0;
+          unsigned char *buffer;
+
+          /* Read string length.  */
+          err = stream_read_uint32 (stream, &len);
+          if (err)
+            goto out;
+          if (len != 32 && len != 64)
+            {
+              err = gpg_error (GPG_ERR_BAD_SECKEY);
+              goto out;
+            }
+          buffer = xtrymalloc_secure (32);
+          if (!buffer)
+            {
+              err = gpg_error_from_syserror ();
+              goto out;
+            }
+          err = stream_read_data (stream, buffer, 32);
+          if (err)
+            {
+              xfree (buffer);
+              goto out;
+            }
+          mpi_list[1] = gcry_mpi_set_opaque (NULL, buffer, 8*32);
+          buffer = NULL;
+          if (len == 64)
+            {
+              err = stream_read_skip (stream, 32);
+              if (err)
+                goto out;
+            }
+        }
+    }
+  else if ((spec.flags & SPEC_FLAG_IS_ECDSA))
     {
       /* The format of an ECDSA key is:
        *   string	key_type ("ecdsa-sha2-nistp256" |
@@ -1773,12 +2291,14 @@ ssh_receive_key (estream_t stream, gcry_sexp_t *key_new, int secret,
        *   mpint	ecdsa_private
        *
        * Note that we use the mpint reader instead of the string
-       * reader for ecsa_public_key.
+       * reader for ecsa_public_key.  For the certificate variante
+       * ecdsa_curve_name+ecdsa_public_key are replaced by the
+       * certificate.
        */
       unsigned char *buffer;
       const char *mapped;
 
-      err = stream_read_string (stream, 0, &buffer, NULL);
+      err = stream_read_string (cert? cert : stream, 0, &buffer, NULL);
       if (err)
         goto out;
       curve_name = buffer;
@@ -1804,11 +2324,17 @@ ssh_receive_key (estream_t stream, gcry_sexp_t *key_new, int secret,
               goto out;
             }
         }
-  }
 
-  err = ssh_receive_mpint_list (stream, secret, spec, &mpi_list);
-  if (err)
-    goto out;
+      err = ssh_receive_mpint_list (stream, secret, &spec, cert, &mpi_list);
+      if (err)
+        goto out;
+    }
+  else
+    {
+      err = ssh_receive_mpint_list (stream, secret, &spec, cert, &mpi_list);
+      if (err)
+        goto out;
+    }
 
   if (read_comment)
     {
@@ -1829,16 +2355,41 @@ ssh_receive_key (estream_t stream, gcry_sexp_t *key_new, int secret,
 	goto out;
     }
 
-  err = sexp_key_construct (&key, spec, secret, curve_name, mpi_list,
-                            comment? comment:"");
-  if (err)
-    goto out;
+  if ((spec.flags & SPEC_FLAG_IS_EdDSA))
+    {
+      if (secret)
+        {
+          err = gcry_sexp_build (&key, NULL,
+                                 "(private-key(ecc(curve \"Ed25519\")"
+                                 "(flags eddsa)(q %m)(d %m))"
+                                 "(comment%s))",
+                                 mpi_list[0], mpi_list[1],
+                                 comment? comment:"");
+        }
+      else
+        {
+          err = gcry_sexp_build (&key, NULL,
+                                 "(public-key(ecc(curve \"Ed25519\")"
+                                 "(flags eddsa)(q %m))"
+                                 "(comment%s))",
+                                 mpi_list[0],
+                                 comment? comment:"");
+        }
+    }
+  else
+    {
+      err = sexp_key_construct (&key, spec, secret, curve_name, mpi_list,
+                                comment? comment:"");
+      if (err)
+        goto out;
+    }
 
   if (key_spec)
     *key_spec = spec;
   *key_new = key;
 
  out:
+  es_fclose (cert);
   mpint_list_free (mpi_list);
   xfree (curve_name);
   xfree (key_type);
@@ -1847,114 +2398,22 @@ ssh_receive_key (estream_t stream, gcry_sexp_t *key_new, int secret,
   return err;
 }
 
-/* Converts a key of type TYPE, whose key material is given in MPIS,
-   into a newly created binary blob, which is to be stored in
-   BLOB/BLOB_SIZE.  Returns zero on success or an error code.  */
-static gpg_error_t
-ssh_convert_key_to_blob (unsigned char **blob, size_t *blob_size,
-			 ssh_key_type_spec_t *spec,
-                         const char *curve_name, gcry_mpi_t *mpis)
-{
-  unsigned char *blob_new;
-  long int blob_size_new;
-  estream_t stream;
-  gpg_error_t err;
-  unsigned int i;
 
-  *blob = NULL;
-  *blob_size = 0;
-
-  blob_new = NULL;
-  stream = NULL;
-  err = 0;
-
-  stream = es_mopen (NULL, 0, 0, 1, NULL, NULL, "r+");
-  if (! stream)
-    {
-      err = gpg_error_from_syserror ();
-      goto out;
-    }
-
-  if ((spec->flags & SPEC_FLAG_IS_ECDSA) && curve_name)
-    {
-      const char *sshname = ssh_identifier_from_curve_name (curve_name);
-      if (!curve_name)
-        {
-          err = gpg_error (GPG_ERR_UNKNOWN_CURVE);
-          goto out;
-        }
-      err = stream_write_cstring (stream, sshname);
-      if (err)
-        goto out;
-      err = stream_write_cstring (stream, curve_name);
-      if (err)
-        goto out;
-    }
-  else
-    {
-      err = stream_write_cstring (stream, spec->ssh_identifier);
-      if (err)
-        goto out;
-    }
-
-  for (i = 0; mpis[i]; i++)
-    if ((err = stream_write_mpi (stream, mpis[i])))
-      goto out;
-
-  blob_size_new = es_ftell (stream);
-  if (blob_size_new == -1)
-    {
-      err = gpg_error_from_syserror ();
-      goto out;
-    }
-
-  err = es_fseek (stream, 0, SEEK_SET);
-  if (err)
-    goto out;
-
-  blob_new = xtrymalloc (blob_size_new);
-  if (! blob_new)
-    {
-      err = gpg_error_from_syserror ();
-      goto out;
-    }
-
-  err = stream_read_data (stream, blob_new, blob_size_new);
-  if (err)
-    goto out;
-
-  *blob = blob_new;
-  *blob_size = blob_size_new;
-
- out:
-
-  if (stream)
-    es_fclose (stream);
-  if (err)
-    xfree (blob_new);
-
-  return err;
-}
-
-
-/* Write the public key KEY_PUBLIC to STREAM in SSH key format.  If
+/* Write the public key from KEY to STREAM in SSH key format.  If
    OVERRIDE_COMMENT is not NULL, it will be used instead of the
    comment stored in the key.  */
 static gpg_error_t
-ssh_send_key_public (estream_t stream,
-                     gcry_sexp_t key_public,
+ssh_send_key_public (estream_t stream, gcry_sexp_t key,
                      const char *override_comment)
 {
   ssh_key_type_spec_t spec;
-  gcry_mpi_t *mpi_list = NULL;
   char *key_type = NULL;
-  char *curve;
   char *comment = NULL;
-  unsigned char *blob = NULL;
-  size_t blob_n;
+  void *blob = NULL;
+  size_t bloblen;
   gpg_error_t err;
 
-  err = sexp_extract_identifier (key_public, &key_type);
+  err = sexp_extract_identifier (key, &key_type);
   if (err)
     goto out;
 
@@ -1962,31 +2421,35 @@ ssh_send_key_public (estream_t stream,
   if (err)
     goto out;
 
-  err = sexp_key_extract (key_public, spec, NULL, &mpi_list, &curve, &comment);
+  err = ssh_key_to_blob (key, 0, spec, &blob, &bloblen);
   if (err)
     goto out;
 
-  err = ssh_convert_key_to_blob (&blob, &blob_n, &spec, curve, mpi_list);
+  err = stream_write_string (stream, blob, bloblen);
   if (err)
     goto out;
 
-  err = stream_write_string (stream, blob, blob_n);
+  if (override_comment)
+    err = stream_write_cstring (stream, override_comment);
+  else
+    {
+      err = ssh_key_extract_comment (key, &comment);
+      if (err)
+        err = stream_write_cstring (stream, "(none)");
+      else
+        err = stream_write_cstring (stream, comment);
+    }
   if (err)
     goto out;
-
-  err = stream_write_cstring (stream,
-                              override_comment? override_comment : comment);
 
  out:
-
-  mpint_list_free (mpi_list);
-  xfree (curve);
-  xfree (comment);
   xfree (key_type);
-  xfree (blob);
+  xfree (comment);
+  es_free (blob);
 
   return err;
 }
+
 
 /* Read a public key out of BLOB/BLOB_SIZE according to the key
    specification given as KEY_SPEC, storing the new key in KEY_PUBLIC.
@@ -1996,13 +2459,11 @@ ssh_read_key_public_from_blob (unsigned char *blob, size_t blob_size,
 			       gcry_sexp_t *key_public,
 			       ssh_key_type_spec_t *key_spec)
 {
-  estream_t blob_stream;
   gpg_error_t err;
+  estream_t blob_stream;
 
-  err = 0;
-
-  blob_stream = es_mopen (NULL, 0, 0, 1, NULL, NULL, "r+");
-  if (! blob_stream)
+  blob_stream = es_fopenmem (0, "r+b");
+  if (!blob_stream)
     {
       err = gpg_error_from_syserror ();
       goto out;
@@ -2019,10 +2480,7 @@ ssh_read_key_public_from_blob (unsigned char *blob, size_t blob_size,
   err = ssh_receive_key (blob_stream, key_public, 0, 0, key_spec);
 
  out:
-
-  if (blob_stream)
-    es_fclose (blob_stream);
-
+  es_fclose (blob_stream);
   return err;
 }
 
@@ -2041,39 +2499,6 @@ ssh_key_grip (gcry_sexp_t key, unsigned char *buffer)
     }
 
   return 0;
-}
-
-
-/* Converts the secret key KEY_SECRET into a public key, storing it in
-   KEY_PUBLIC.  SPEC is the according key specification.  Returns zero
-   on success or an error code.  */
-static gpg_error_t
-key_secret_to_public (gcry_sexp_t *key_public,
-		      ssh_key_type_spec_t spec, gcry_sexp_t key_secret)
-{
-  char *curve;
-  char *comment;
-  gcry_mpi_t *mpis;
-  gpg_error_t err;
-  int is_secret;
-
-  comment = NULL;
-  mpis = NULL;
-
-  err = sexp_key_extract (key_secret, spec, &is_secret, &mpis,
-                          &curve, &comment);
-  if (err)
-    goto out;
-
-  err = sexp_key_construct (key_public, spec, 0, curve, mpis, comment);
-
- out:
-
-  mpint_list_free (mpis);
-  xfree (comment);
-  xfree (curve);
-
-  return err;
 }
 
 
@@ -2116,7 +2541,7 @@ card_key_available (ctrl_t ctrl, gcry_sexp_t *r_pk, char **cardsn)
     }
   if (err)
     {
-      log_error (_("error getting default authentication keyID of card: %s\n"),
+      log_error (_("no authentication key for ssh on card: %s\n"),
                  gpg_strerror (err));
       xfree (serialno);
       return err;
@@ -2280,7 +2705,7 @@ ssh_handler_request_identities (ctrl_t ctrl,
   key_counter = 0;
   err = 0;
 
-  key_blobs = es_mopen (NULL, 0, 0, 1, NULL, NULL, "r+b");
+  key_blobs = es_fopenmem (0, "r+b");
   if (! key_blobs)
     {
       err = gpg_error_from_syserror ();
@@ -2375,19 +2800,11 @@ ssh_handler_request_identities (ctrl_t ctrl,
           goto out;
       }
 
-      err = key_secret_to_public (&key_public, spec, key_secret);
+      err = ssh_send_key_public (key_blobs, key_secret, NULL);
       if (err)
         goto out;
-
       gcry_sexp_release (key_secret);
       key_secret = NULL;
-
-      err = ssh_send_key_public (key_blobs, key_public, NULL);
-      if (err)
-        goto out;
-
-      gcry_sexp_release (key_public);
-      key_public = NULL;
 
       key_counter++;
     }
@@ -2440,30 +2857,27 @@ data_hash (unsigned char *data, size_t data_n,
   return 0;
 }
 
-/* This function signs the data contained in CTRL, stores the created
-   signature in newly allocated memory in SIG and it's size in SIG_N;
-   SIG_ENCODER is the signature encoder to use.  */
+
+/* This function signs the data described by CTRL. If HASH is is not
+   NULL, (HASH,HASHLEN) overrides the hash stored in CTRL.  This is to
+   allow the use of signature algorithms that implement the hashing
+   internally (e.g. Ed25519).  On success the created signature is
+   stored in ssh format at R_SIG and it's size at R_SIGLEN; the caller
+   must use es_free to releaase this memory.  */
 static gpg_error_t
 data_sign (ctrl_t ctrl, ssh_key_type_spec_t *spec,
-	   unsigned char **sig, size_t *sig_n)
+           const void *hash, size_t hashlen,
+	   unsigned char **r_sig, size_t *r_siglen)
 {
   gpg_error_t err;
   gcry_sexp_t signature_sexp = NULL;
   estream_t stream = NULL;
-  gcry_sexp_t valuelist = NULL;
-  gcry_sexp_t sublist = NULL;
-  gcry_mpi_t sig_value = NULL;
-  unsigned char *sig_blob = NULL;
-  size_t sig_blob_n = 0;
-  int ret;
-  unsigned int i;
-  const char *elems;
-  size_t elems_n;
-  gcry_mpi_t *mpis = NULL;
+  void *blob = NULL;
+  size_t bloblen;
   char hexgrip[40+1];
 
-  *sig = NULL;
-  *sig_n = 0;
+  *r_sig = NULL;
+  *r_siglen = 0;
 
   /* Quick check to see whether we have a valid keygrip and convert it
      to hex.  */
@@ -2495,14 +2909,14 @@ data_sign (ctrl_t ctrl, ssh_key_type_spec_t *spec,
       gcry_sexp_release (key);
       if (err)
         goto out;
-      prompt = xtryasprintf (_("An ssh process requested the use of key%%0A"
-                               "  %s%%0A"
-                               "  (%s)%%0A"
-                               "Do you want to allow this?"),
+      prompt = xtryasprintf (L_("An ssh process requested the use of key%%0A"
+                                "  %s%%0A"
+                                "  (%s)%%0A"
+                                "Do you want to allow this?"),
                              fpr, comment? comment:"");
       xfree (fpr);
       gcry_free (comment);
-      err = agent_get_confirmation (ctrl, prompt, _("Allow"), _("Deny"), 0);
+      err = agent_get_confirmation (ctrl, prompt, L_("Allow"), L_("Deny"), 0);
       xfree (prompt);
       if (err)
         goto out;
@@ -2510,24 +2924,18 @@ data_sign (ctrl_t ctrl, ssh_key_type_spec_t *spec,
 
   /* Create signature.  */
   ctrl->use_auth_call = 1;
-  err = agent_pksign_do (ctrl,
-                         _("Please enter the passphrase "
-                           "for the ssh key%%0A  %F%%0A  (%c)"),
+  err = agent_pksign_do (ctrl, NULL,
+                         L_("Please enter the passphrase "
+                            "for the ssh key%%0A  %F%%0A  (%c)"),
                          &signature_sexp,
-                         CACHE_MODE_SSH, ttl_from_sshcontrol);
+                         CACHE_MODE_SSH, ttl_from_sshcontrol,
+                         hash, hashlen);
   ctrl->use_auth_call = 0;
   if (err)
     goto out;
 
-  valuelist = gcry_sexp_nth (signature_sexp, 1);
-  if (! valuelist)
-    {
-      err = gpg_error (GPG_ERR_INV_SEXP);
-      goto out;
-    }
-
-  stream = es_mopen (NULL, 0, 0, 1, NULL, NULL, "r+");
-  if (! stream)
+  stream = es_fopenmem (0, "r+b");
+  if (!stream)
     {
       err = gpg_error_from_syserror ();
       goto out;
@@ -2537,110 +2945,46 @@ data_sign (ctrl_t ctrl, ssh_key_type_spec_t *spec,
   if (err)
     goto out;
 
-  elems = spec->elems_signature;
-  elems_n = strlen (elems);
-
-  mpis = xtrycalloc (elems_n + 1, sizeof *mpis);
-  if (!mpis)
-    {
-      err = gpg_error_from_syserror ();
-      goto out;
-    }
-
-  for (i = 0; i < elems_n; i++)
-    {
-      sublist = gcry_sexp_find_token (valuelist, spec->elems_signature + i, 1);
-      if (! sublist)
-	{
-	  err = gpg_error (GPG_ERR_INV_SEXP);
-	  break;
-	}
-
-      sig_value = gcry_sexp_nth_mpi (sublist, 1, GCRYMPI_FMT_USG);
-      if (! sig_value)
-	{
-	  err = gpg_error (GPG_ERR_INTERNAL); /* FIXME?  */
-	  break;
-	}
-      gcry_sexp_release (sublist);
-      sublist = NULL;
-
-      mpis[i] = sig_value;
-    }
+  err = spec->signature_encoder (spec, stream, signature_sexp);
   if (err)
     goto out;
 
-  err = spec->signature_encoder (spec, stream, mpis);
+  err = es_fclose_snatch (stream, &blob, &bloblen);
   if (err)
     goto out;
+  stream = NULL;
 
-  sig_blob_n = es_ftell (stream);
-  if (sig_blob_n == -1)
-    {
-      err = gpg_error_from_syserror ();
-      goto out;
-    }
-
-  sig_blob = xtrymalloc (sig_blob_n);
-  if (! sig_blob)
-    {
-      err = gpg_error_from_syserror ();
-      goto out;
-    }
-
-  ret = es_fseek (stream, 0, SEEK_SET);
-  if (ret)
-    {
-      err = gpg_error_from_syserror ();
-      goto out;
-    }
-
-  err = stream_read_data (stream, sig_blob, sig_blob_n);
-  if (err)
-    goto out;
-
-  *sig = sig_blob;
-  *sig_n = sig_blob_n;
+  *r_sig = blob; blob = NULL;
+  *r_siglen = bloblen;
 
  out:
-
-  if (err)
-    xfree (sig_blob);
-
-  if (stream)
-    es_fclose (stream);
-  gcry_sexp_release (valuelist);
+  xfree (blob);
+  es_fclose (stream);
   gcry_sexp_release (signature_sexp);
-  gcry_sexp_release (sublist);
-  mpint_list_free (mpis);
 
   return err;
 }
+
 
 /* Handler for the "sign_request" command.  */
 static gpg_error_t
 ssh_handler_sign_request (ctrl_t ctrl, estream_t request, estream_t response)
 {
-  gcry_sexp_t key;
+  gcry_sexp_t key = NULL;
   ssh_key_type_spec_t spec;
   unsigned char hash[MAX_DIGEST_LEN];
   unsigned int hash_n;
   unsigned char key_grip[20];
-  unsigned char *key_blob;
+  unsigned char *key_blob = NULL;
   u32 key_blob_size;
-  unsigned char *data;
-  unsigned char *sig;
+  unsigned char *data = NULL;
+  unsigned char *sig = NULL;
   size_t sig_n;
   u32 data_size;
   u32 flags;
   gpg_error_t err;
   gpg_error_t ret_err;
   int hash_algo;
-
-  key_blob = NULL;
-  data = NULL;
-  sig = NULL;
-  key = NULL;
 
   /* Receive key.  */
 
@@ -2665,42 +3009,48 @@ ssh_handler_sign_request (ctrl_t ctrl, estream_t request, estream_t response)
   hash_algo = spec.hash_algo;
   if (!hash_algo)
     hash_algo = GCRY_MD_SHA1;  /* Use the default.  */
-
-  /* Hash data.  */
-  hash_n = gcry_md_get_algo_dlen (hash_algo);
-  if (! hash_n)
-    {
-      err = gpg_error (GPG_ERR_INTERNAL);
-      goto out;
-    }
-  err = data_hash (data, data_size, hash_algo, hash);
-  if (err)
-    goto out;
+  ctrl->digest.algo = hash_algo;
+  if ((spec.flags & SPEC_FLAG_USE_PKCS1V2))
+    ctrl->digest.raw_value = 0;
+  else
+    ctrl->digest.raw_value = 1;
 
   /* Calculate key grip.  */
   err = ssh_key_grip (key, key_grip);
   if (err)
     goto out;
-
-  /* Sign data.  */
-
-  ctrl->digest.algo = hash_algo;
-  memcpy (ctrl->digest.value, hash, hash_n);
-  ctrl->digest.valuelen = hash_n;
-  if ((spec.flags & SPEC_FLAG_USE_PKCS1V2))
-    ctrl->digest.raw_value = 0;
-  else
-    ctrl->digest.raw_value = 1;
   ctrl->have_keygrip = 1;
   memcpy (ctrl->keygrip, key_grip, 20);
 
-  err = data_sign (ctrl, &spec, &sig, &sig_n);
+  /* Hash data unless we use EdDSA.  */
+  if ((spec.flags & SPEC_FLAG_IS_EdDSA))
+    {
+      ctrl->digest.valuelen = 0;
+    }
+  else
+    {
+      hash_n = gcry_md_get_algo_dlen (hash_algo);
+      if (!hash_n)
+        {
+          err = gpg_error (GPG_ERR_INTERNAL);
+          goto out;
+        }
+      err = data_hash (data, data_size, hash_algo, hash);
+      if (err)
+        goto out;
+      memcpy (ctrl->digest.value, hash, hash_n);
+      ctrl->digest.valuelen = hash_n;
+    }
+
+  /* Sign data.  */
+  if ((spec.flags & SPEC_FLAG_IS_EdDSA))
+    err = data_sign (ctrl, &spec, data, data_size, &sig, &sig_n);
+  else
+    err = data_sign (ctrl, &spec, NULL, 0, &sig, &sig_n);
 
  out:
-
   /* Done.  */
-
-  if (! err)
+  if (!err)
     {
       ret_err = stream_write_byte (response, SSH_RESPONSE_SIGN_RESPONSE);
       if (ret_err)
@@ -2711,6 +3061,8 @@ ssh_handler_sign_request (ctrl_t ctrl, estream_t request, estream_t response)
     }
   else
     {
+      log_error ("ssh sign request failed: %s <%s>\n",
+                 gpg_strerror (err), gpg_strsource (err));
       ret_err = stream_write_byte (response, SSH_RESPONSE_FAILURE);
       if (ret_err)
 	goto leave;
@@ -2721,53 +3073,34 @@ ssh_handler_sign_request (ctrl_t ctrl, estream_t request, estream_t response)
   gcry_sexp_release (key);
   xfree (key_blob);
   xfree (data);
-  xfree (sig);
+  es_free (sig);
 
   return ret_err;
 }
 
+
 /* This function extracts the comment contained in the key
-   S-Expression KEY and stores a copy in COMMENT.  Returns usual error
+   s-expression KEY and stores a copy in COMMENT.  Returns usual error
    code.  */
 static gpg_error_t
-ssh_key_extract_comment (gcry_sexp_t key, char **comment)
+ssh_key_extract_comment (gcry_sexp_t key, char **r_comment)
 {
   gcry_sexp_t comment_list;
-  char *comment_new;
-  const char *data;
-  size_t data_n;
-  gpg_error_t err;
+
+  *r_comment = NULL;
 
   comment_list = gcry_sexp_find_token (key, "comment", 0);
-  if (! comment_list)
-    {
-      err = gpg_error (GPG_ERR_INV_SEXP);
-      goto out;
-    }
+  if (!comment_list)
+    return gpg_error (GPG_ERR_INV_SEXP);
 
-  data = gcry_sexp_nth_data (comment_list, 1, &data_n);
-  if (! data)
-    {
-      err = gpg_error (GPG_ERR_INV_SEXP);
-      goto out;
-    }
-
-  comment_new = make_cstring (data, data_n);
-  if (! comment_new)
-    {
-      err = gpg_error_from_syserror ();
-      goto out;
-    }
-
-  *comment = comment_new;
-  err = 0;
-
- out:
-
+  *r_comment = gcry_sexp_nth_string (comment_list, 1);
   gcry_sexp_release (comment_list);
+  if (!*r_comment)
+    return gpg_error (GPG_ERR_INV_SEXP);
 
-  return err;
+  return 0;
 }
+
 
 /* This function converts the key contained in the S-Expression KEY
    into a buffer, which is protected by the passphrase PASSPHRASE.
@@ -2792,7 +3125,7 @@ ssh_key_to_protected_buffer (gcry_sexp_t key, const char *passphrase,
   gcry_sexp_sprint (key, GCRYSEXP_FMT_CANON, buffer_new, buffer_new_n);
   /* FIXME: guarantee?  */
 
-  err = agent_protect (buffer_new, passphrase, buffer, buffer_n);
+  err = agent_protect (buffer_new, passphrase, buffer, buffer_n, 0);
 
  out:
 
@@ -2805,14 +3138,14 @@ ssh_key_to_protected_buffer (gcry_sexp_t key, const char *passphrase,
 
 /* Callback function to compare the first entered PIN with the one
    currently being entered. */
-static int
+static gpg_error_t
 reenter_compare_cb (struct pin_entry_info_s *pi)
 {
   const char *pin1 = pi->check_cb_arg;
 
   if (!strcmp (pin1, pi->pin))
     return 0; /* okay */
-  return -1;
+  return gpg_error (GPG_ERR_BAD_PASSPHRASE);
 }
 
 
@@ -2822,7 +3155,8 @@ reenter_compare_cb (struct pin_entry_info_s *pi)
    our key storage, don't do anything.  When entering a new key also
    add an entry to the sshcontrol file.  */
 static gpg_error_t
-ssh_identity_register (ctrl_t ctrl, gcry_sexp_t key, int ttl, int confirm)
+ssh_identity_register (ctrl_t ctrl, ssh_key_type_spec_t *spec,
+                       gcry_sexp_t key, int ttl, int confirm)
 {
   gpg_error_t err;
   unsigned char key_grip_raw[20];
@@ -2830,12 +3164,12 @@ ssh_identity_register (ctrl_t ctrl, gcry_sexp_t key, int ttl, int confirm)
   unsigned char *buffer = NULL;
   size_t buffer_n;
   char *description = NULL;
-  const char *description2 = _("Please re-enter this passphrase");
+  const char *description2 = L_("Please re-enter this passphrase");
   char *comment = NULL;
   char *key_fpr = NULL;
   const char *initial_errtext = NULL;
-  unsigned int i;
-  struct pin_entry_info_s *pi = NULL, *pi2;
+  struct pin_entry_info_s *pi = NULL;
+  struct pin_entry_info_s *pi2 = NULL;
 
   err = ssh_key_grip (key, key_grip_raw);
   if (err)
@@ -2855,27 +3189,33 @@ ssh_identity_register (ctrl_t ctrl, gcry_sexp_t key, int ttl, int confirm)
     goto out;
 
   if ( asprintf (&description,
-                 _("Please enter a passphrase to protect"
-                   " the received secret key%%0A"
-                   "   %s%%0A"
-                   "   %s%%0A"
-                   "within gpg-agent's key storage"),
+                 L_("Please enter a passphrase to protect"
+                    " the received secret key%%0A"
+                    "   %s%%0A"
+                    "   %s%%0A"
+                    "within gpg-agent's key storage"),
                  key_fpr, comment ? comment : "") < 0)
     {
       err = gpg_error_from_syserror ();
       goto out;
     }
 
-  pi = gcry_calloc_secure (2, sizeof (*pi) + 100 + 1);
+  pi = gcry_calloc_secure (1, sizeof (*pi) + MAX_PASSPHRASE_LEN + 1);
   if (!pi)
     {
       err = gpg_error_from_syserror ();
       goto out;
     }
-  pi2 = pi + (sizeof *pi + 100 + 1);
-  pi->max_length = 100;
+  pi2 = gcry_calloc_secure (1, sizeof (*pi2) + MAX_PASSPHRASE_LEN + 1);
+  if (!pi2)
+    {
+      err = gpg_error_from_syserror ();
+      goto out;
+    }
+  pi->max_length = MAX_PASSPHRASE_LEN + 1;
   pi->max_tries = 1;
-  pi2->max_length = 100;
+  pi->with_repeat = 1;
+  pi2->max_length = MAX_PASSPHRASE_LEN + 1;
   pi2->max_tries = 1;
   pi2->check_cb = reenter_compare_cb;
   pi2->check_cb_arg = pi->pin;
@@ -2886,14 +3226,15 @@ ssh_identity_register (ctrl_t ctrl, gcry_sexp_t key, int ttl, int confirm)
   if (err)
     goto out;
 
-  /* Unless the passphrase is empty, ask to confirm it.  */
-  if (pi->pin && *pi->pin)
+  /* Unless the passphrase is empty or the pinentry told us that
+     it already did the repetition check, ask to confirm it.  */
+  if (*pi->pin && !pi->repeat_okay)
     {
       err = agent_askpin (ctrl, description2, NULL, NULL, pi2, NULL, 0);
-      if (err == -1)
+      if (gpg_err_code (err) == GPG_ERR_BAD_PASSPHRASE)
 	{ /* The re-entered one did not match and the user did not
 	     hit cancel. */
-	  initial_errtext = _("does not match - try again");
+	  initial_errtext = L_("does not match - try again");
 	  goto next_try;
 	}
     }
@@ -2908,18 +3249,19 @@ ssh_identity_register (ctrl_t ctrl, gcry_sexp_t key, int ttl, int confirm)
     goto out;
 
   /* Cache this passphrase. */
-  for (i = 0; i < 20; i++)
-    sprintf (key_grip + 2 * i, "%02X", key_grip_raw[i]);
-
+  bin2hex (key_grip_raw, 20, key_grip);
   err = agent_put_cache (key_grip, CACHE_MODE_SSH, pi->pin, ttl);
   if (err)
     goto out;
 
   /* And add an entry to the sshcontrol file.  */
-  err = add_control_entry (ctrl, key_grip, key_fpr, ttl, confirm);
+  err = add_control_entry (ctrl, spec, key_grip, key_fpr, ttl, confirm);
 
 
  out:
+  if (pi2 && pi2->max_length)
+    wipememory (pi2->pin, pi2->max_length);
+  xfree (pi2);
   if (pi && pi->max_length)
     wipememory (pi->pin, pi->max_length);
   xfree (pi);
@@ -2960,6 +3302,7 @@ static gpg_error_t
 ssh_handler_add_identity (ctrl_t ctrl, estream_t request, estream_t response)
 {
   gpg_error_t ret_err;
+  ssh_key_type_spec_t spec;
   gpg_error_t err;
   gcry_sexp_t key;
   unsigned char b;
@@ -2971,7 +3314,7 @@ ssh_handler_add_identity (ctrl_t ctrl, estream_t request, estream_t response)
   ttl = 0;
 
   /* FIXME?  */
-  err = ssh_receive_key (request, &key, 1, 1, NULL);
+  err = ssh_receive_key (request, &key, 1, 1, &spec);
   if (err)
     goto out;
 
@@ -3010,7 +3353,7 @@ ssh_handler_add_identity (ctrl_t ctrl, estream_t request, estream_t response)
   if (err)
     goto out;
 
-  err = ssh_identity_register (ctrl, key, ttl, confirm);
+  err = ssh_identity_register (ctrl, &spec, key, ttl, confirm);
 
  out:
 
@@ -3198,20 +3541,15 @@ static int
 ssh_request_process (ctrl_t ctrl, estream_t stream_sock)
 {
   ssh_request_spec_t *spec;
-  estream_t response;
-  estream_t request;
+  estream_t response = NULL;
+  estream_t request = NULL;
   unsigned char request_type;
   gpg_error_t err;
-  int send_err;
+  int send_err = 0;
   int ret;
-  unsigned char *request_data;
+  unsigned char *request_data = NULL;
   u32 request_data_size;
   u32 response_size;
-
-  request_data = NULL;
-  response = NULL;
-  request = NULL;
-  send_err = 0;
 
   /* Create memory streams for request/response data.  The entire
      request will be stored in secure memory, since it might contain
@@ -3251,9 +3589,9 @@ ssh_request_process (ctrl_t ctrl, estream_t stream_sock)
     }
 
   if (spec->secret_input)
-    request = es_mopen (NULL, 0, 0, 1, realloc_secure, gcry_free, "r+");
+    request = es_mopen (NULL, 0, 0, 1, realloc_secure, gcry_free, "r+b");
   else
-    request = es_mopen (NULL, 0, 0, 1, gcry_realloc, gcry_free, "r+");
+    request = es_mopen (NULL, 0, 0, 1, gcry_realloc, gcry_free, "r+b");
   if (! request)
     {
       err = gpg_error_from_syserror ();
@@ -3270,7 +3608,7 @@ ssh_request_process (ctrl_t ctrl, estream_t stream_sock)
     goto out;
   es_rewind (request);
 
-  response = es_mopen (NULL, 0, 0, 1, NULL, NULL, "r+");
+  response = es_fopenmem (0, "r+b");
   if (! response)
     {
       err = gpg_error_from_syserror ();
@@ -3329,7 +3667,7 @@ ssh_request_process (ctrl_t ctrl, estream_t stream_sock)
  out:
 
   if (err && es_feof (stream_sock))
-    log_error ("error occured while processing request: %s\n",
+    log_error ("error occurred while processing request: %s\n",
 	       gpg_strerror (err));
 
   if (send_err)
@@ -3346,45 +3684,11 @@ ssh_request_process (ctrl_t ctrl, estream_t stream_sock)
 
  leave:
 
-  if (request)
-    es_fclose (request);
-  if (response)
-    es_fclose (response);
-  xfree (request_data);		/* FIXME?  */
+  es_fclose (request);
+  es_fclose (response);
+  xfree (request_data);
 
   return !!err;
-}
-
-
-/* Because the ssh protocol does not send us information about the the
-   current TTY setting, we use this function to use those from startup
-   or those explictly set.  */
-static gpg_error_t
-setup_ssh_env (ctrl_t ctrl)
-{
-  static const char *names[] =
-    {"GPG_TTY", "DISPLAY", "TERM", "XAUTHORITY", "PINENTRY_USER_DATA", NULL};
-  gpg_error_t err = 0;
-  int idx;
-  const char *value;
-
-  for (idx=0; !err && names[idx]; idx++)
-      if ((value = session_env_getenv (opt.startup_env, names[idx])))
-      err = session_env_setenv (ctrl->session_env, names[idx], value);
-
-  if (!err && !ctrl->lc_ctype && opt.startup_lc_ctype)
-    if (!(ctrl->lc_ctype = xtrystrdup (opt.startup_lc_ctype)))
-      err = gpg_error_from_syserror ();
-
-  if (!err && !ctrl->lc_messages && opt.startup_lc_messages)
-    if (!(ctrl->lc_messages = xtrystrdup (opt.startup_lc_messages)))
-      err = gpg_error_from_syserror ();
-
-  if (err)
-    log_error ("error setting default session environment: %s\n",
-               gpg_strerror (err));
-
-  return err;
 }
 
 
@@ -3396,7 +3700,7 @@ start_command_handler_ssh (ctrl_t ctrl, gnupg_fd_t sock_client)
   gpg_error_t err;
   int ret;
 
-  err = setup_ssh_env (ctrl);
+  err = agent_copy_startup_env (ctrl);
   if (err)
     goto out;
 
@@ -3459,7 +3763,7 @@ serve_mmapped_ssh_request (ctrl_t ctrl,
   u32 msglen;
   estream_t request_stream, response_stream;
 
-  if (setup_ssh_env (ctrl))
+  if (agent_copy_startup_env (ctrl))
     goto leave; /* Error setting up the environment.  */
 
   if (maxreqlen < 5)

@@ -1,6 +1,6 @@
 /* certlist.c - build list of certificates
  * Copyright (C) 2001, 2003, 2004, 2005, 2007,
- *               2008 Free Software Foundation, Inc.
+ *               2008, 2011 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <unistd.h> 
+#include <unistd.h>
 #include <time.h>
 #include <assert.h>
 
@@ -95,7 +95,7 @@ cert_usage_p (ksba_cert_t cert, int mode)
                     extusemask |= (KSBA_KEYUSAGE_DIGITAL_SIGNATURE
                                    | KSBA_KEYUSAGE_NON_REPUDIATION);
                 }
-              
+
               /* This is a hack to cope with OCSP.  Note that we do
                  not yet fully comply with the requirements and that
                  the entire CRL/OCSP checking thing should undergo a
@@ -108,7 +108,7 @@ cert_usage_p (ksba_cert_t cert, int mode)
             }
           xfree (extkeyusages);
           extkeyusages = NULL;
-          
+
           if (!any_critical)
             extusemask = ~0; /* Reset to the don't care mask. */
         }
@@ -128,12 +128,12 @@ cert_usage_p (ksba_cert_t cert, int mode)
 
     }
   if (err)
-    { 
+    {
       log_error (_("error getting key usage information: %s\n"),
                  gpg_strerror (err));
       xfree (extkeyusages);
       return err;
-    } 
+    }
 
   if (mode == 4)
     {
@@ -146,7 +146,7 @@ cert_usage_p (ksba_cert_t cert, int mode)
 
   if (mode == 5)
     {
-      if (use != ~0 
+      if (use != ~0
           && (have_ocsp_signing
               || (use & (KSBA_KEYUSAGE_KEY_CERT_SIGN
                          |KSBA_KEYUSAGE_CRL_SIGN))))
@@ -210,13 +210,28 @@ gpgsm_cert_use_ocsp_p (ksba_cert_t cert)
 }
 
 
+/* Return true if CERT has the well known private key extension.  */
+int
+gpgsm_cert_has_well_known_private_key (ksba_cert_t cert)
+{
+  int idx;
+  const char *oid;
+
+  for (idx=0; !ksba_cert_get_extension (cert, idx,
+                                        &oid, NULL, NULL, NULL);idx++)
+    if (!strcmp (oid, "1.3.6.1.4.1.11591.2.2.2") )
+      return 1; /* Yes.  */
+  return 0; /* No.  */
+}
+
+
 static int
 same_subject_issuer (const char *subject, const char *issuer, ksba_cert_t cert)
 {
   char *subject2 = ksba_cert_get_subject (cert, 0);
   char *issuer2 = ksba_cert_get_issuer (cert, 0);
   int tmp;
-  
+
   tmp = (subject && subject2
          && !strcmp (subject, subject2)
          && issuer && issuer2
@@ -268,7 +283,7 @@ is_cert_in_certlist (ksba_cert_t cert, certlist_t certlist)
 
 /* Add CERT to the list of certificates at CERTADDR but avoid
    duplicates. */
-int 
+int
 gpgsm_add_cert_to_certlist (ctrl_t ctrl, ksba_cert_t cert,
                             certlist_t *listaddr, int is_encrypt_to)
 {
@@ -301,7 +316,7 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
   KEYDB_HANDLE kh = NULL;
   ksba_cert_t cert = NULL;
 
-  rc = keydb_classify_name (name, &desc);
+  rc = classify_user_id (name, &desc, 0);
   if (!rc)
     {
       kh = keydb_new (0);
@@ -355,7 +370,7 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
           /* We want the error code from the first match in this case. */
           if (rc && wrong_usage)
             rc = wrong_usage;
-          
+
           if (!rc)
             {
               certlist_t dup_certs = NULL;
@@ -367,8 +382,8 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
               else if (!rc)
                 {
                   ksba_cert_t cert2 = NULL;
-                  
-                  /* If this is the first possible duplicate, add the original 
+
+                  /* If this is the first possible duplicate, add the original
                      certificate to our list of duplicates.  */
                   if (!dup_certs)
                     gpgsm_add_cert_to_certlist (ctrl, cert, &dup_certs, 0);
@@ -384,8 +399,8 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
                      keybox).  */
                   if (!keydb_get_cert (kh, &cert2))
                     {
-                      int tmp = (same_subject_issuer (first_subject, 
-                                                      first_issuer, 
+                      int tmp = (same_subject_issuer (first_subject,
+                                                      first_issuer,
                                                       cert2)
                                  && ((gpg_err_code (
                                       secret? gpgsm_cert_use_sign_p (cert2)
@@ -400,7 +415,7 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
                           if (is_cert_in_certlist (cert2, dup_certs))
                             tmp = 1;
                         }
-                      
+
                       ksba_cert_release (cert2);
                       if (tmp)
                         goto next_ambigious;
@@ -416,10 +431,10 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
 
           if (!rc && !is_cert_in_certlist (cert, *listaddr))
             {
-              if (!rc && secret) 
+              if (!rc && secret)
                 {
                   char *p;
-                  
+
                   rc = gpg_error (GPG_ERR_NO_SECKEY);
                   p = gpgsm_get_keygrip_hexstring (cert);
                   if (p)
@@ -437,7 +452,7 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
                   certlist_t cl = xtrycalloc (1, sizeof *cl);
                   if (!cl)
                     rc = out_of_core ();
-                  else 
+                  else
                     {
                       cl->cert = cert; cert = NULL;
                       cl->next = *listaddr;
@@ -448,7 +463,7 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
             }
         }
     }
-  
+
   keydb_release (kh);
   ksba_cert_release (cert);
   return rc == -1? gpg_error (GPG_ERR_NO_PUBKEY): rc;
@@ -480,7 +495,7 @@ gpgsm_find_cert (const char *name, ksba_sexp_t keyid, ksba_cert_t *r_cert)
   KEYDB_HANDLE kh = NULL;
 
   *r_cert = NULL;
-  rc = keydb_classify_name (name, &desc);
+  rc = classify_user_id (name, &desc, 0);
   if (!rc)
     {
       kh = keydb_new (0);
@@ -496,7 +511,7 @@ gpgsm_find_cert (const char *name, ksba_sexp_t keyid, ksba_cert_t *r_cert)
               if (!rc && keyid)
                 {
                   ksba_sexp_t subj;
-                  
+
                   rc = ksba_cert_get_subj_key_id (*r_cert, NULL, &subj);
                   if (!rc)
                     {
@@ -525,7 +540,7 @@ gpgsm_find_cert (const char *name, ksba_sexp_t keyid, ksba_cert_t *r_cert)
               rc = keydb_search (kh, &desc, 1);
               if (rc == -1)
                 rc = 0;
-              else 
+              else
                 {
                   if (!rc)
                     {
@@ -548,8 +563,7 @@ gpgsm_find_cert (const char *name, ksba_sexp_t keyid, ksba_cert_t *r_cert)
             }
         }
     }
-  
+
   keydb_release (kh);
   return rc == -1? gpg_error (GPG_ERR_NO_PUBKEY): rc;
 }
-

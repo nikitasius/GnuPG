@@ -1,45 +1,204 @@
-2011-12-02  Werner Koch  <wk@g10code.com>
+2011-12-01  Werner Koch  <wk@g10code.com>
 
 	NB: ChangeLog files are no longer manually maintained.  Starting
 	on December 1st, 2011 we put change information only in the GIT
 	commit log, and generate a top-level ChangeLog file from logs at
 	"make dist".  See doc/HACKING for details.
 
-2011-08-04  Werner Koch  <wk@g10code.com>
+2011-08-26  Werner Koch  <wk@g10code.com>
 
-	* symcryptrun.c: Include utmp.h for login_tty.
+	* gpgconf-comp.c (gc_component): Mark for translation.  Suggested
+	by Yuri Chornoivan.
 
-	* gpgconf-comp.c (gc_process_gpgconf_conf): Remove unsued var
-	USED_COMPONENTS.
+2011-03-08  Werner Koch  <wk@g10code.com>
 
-2011-01-11  Werner Koch  <wk@g10code.com>
+	* symcryptrun.c [HAVE_UTMP_H]: Include utmp.h.
 
-        * gpgtar.c, gpgtar.h, gpgtar-create.c, gpgtar-extract.c
-        * gpgtar-list.c: New.  Take from GnuPG master and add missing
-	functions.
-	* Makefile.am (bin_PROGRAMS): Add gpgtar.
-	(gpgtar_SOURCES, gpgtar_CFLAGS, gpgtar_LDADD): New.
+2011-02-23  Werner Koch  <wk@g10code.com>
+
+	* gpgconf.c: Add command --kill.
+	* gpgconf-comp.c (gc_component_kill): New.
+	(gpg_agent_runtime_change, scdaemon_runtime_change): Add kill flag.
+
+2011-02-03  Werner Koch  <wk@g10code.com>
+
+	* watchgnupg.c (print_version): Update copyright year.
+
+2010-12-14  Werner Koch  <wk@g10code.com>
+
+	* gpgconf-comp.c (gc_options_gpg_agent, gc_options_scdaemon)
+	(gc_options_gpg, gc_options_gpgsm, gc_options_dirmngr): Define to
+	NULL if corresponding BUILD_WITH_foo is not defined.
+
+2010-12-02  Werner Koch  <wk@g10code.com>
+
+	* no-libgcrypt.c (gcry_cipher_algo_name): New.
+
+2010-11-23  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (gpgconf_LDFLAGS): Add extra_bin_ldflags.
+
+2010-11-17  Marcus Brinkmann  <mb@g10code.com>
+
+	* gogconf.c: Revert accidental debug output commit.
+
+2010-10-27  Werner Koch  <wk@g10code.com>
+
+	* symcryptrun.c (confucius_mktmpdir): Use TMPDIR.
+
+2010-10-14  Werner Koch  <wk@g10code.com>
+
+	* gpg-connect-agent.c: Add option --agent-program.
+
+	* gpg-connect-agent.c (start_agent): Rewrite using the
+	start_new_gpg_agent function.
+
+	* gpgconf-comp.c (gpg_agent_runtime_change): Use gpg-connect-agent
+	on all platforms.
+
+2010-10-06  Werner Koch  <wk@g10code.com>
+
+	* watchgnupg.c (print_version): Add option --time-only.
+
+2010-10-05  Werner Koch  <wk@g10code.com>
+
+	* watchgnupg.c (main): Support TCP and local socket listening.
+	(main): Factor some code out to ..
+	(setup_client): this.
+	(err): New.
+	(client_list): New.
+
+2010-08-25  Werner Koch  <wk@g10code.com>
+
+	* gpgtar-extract.c (create_directory): Add .p7m as known
+	extension.
+
+	* gpgtar.c: Add -t as short option for --list-archive.
+	* gpgtar-extract.c (gpgtar_extract): Use filename "-" for stdin.
+	Fix dirprefix setting.
+	* gpgtar-list.c (gpgtar_list): Ditto.
+
+2010-08-24  Werner Koch  <wk@g10code.com>
+
+	* gpgtar.c (opts): Fix --cms and --openpgp names.
 
 2010-08-23  Werner Koch  <wk@g10code.com>
 
+	* gpgconf-comp.c (GPGNAME) [W32CE]: s/gpg2/gpg/.
+	(get_config_filename) [W32CE]: Adjust absolute file name check.
+
 	* gpgconf-comp.c (retrieve_options_from_program)
-	(retrieve_options_from_file, copy_file): Do not use ferror after a
-	failed fclose.  Note that the stream is in any case invalid after
-	calling fclose and that fclose does set ERRNO.
+	(retrieve_options_from_file, retrieve_options_from_program)
+	(copy_file, gc_process_gpgconf_conf): Do not use es_ferror after a
+	failed es_fclose.  Note that the stream is in any case invalid
+	after calling es_fclose and that es_fclose does set ERRNO.
+
+	* Makefile.am (maybe_commonpth_libs): New.
+	(gpgconf_LDADD): Use it.
+
+2010-08-20  Werner Koch  <wk@g10code.com>
+
+	* gpgconf-comp.c (collect_error_output): Remove extra CRs.
 
 2010-08-19  Werner Koch  <wk@g10code.com>
 
 	* gpgconf.c (main): Fix --check-options.
 
-2010-02-11  Marcus Brinkmann  <marcus@g10code.de>
+	* gpgconf-comp.c (gc_component_check_options): Replace
+	gnupg_spawn_process_fd by gnupg_spawn_process.
+	(retrieve_options_from_program): Ditto.
+	(collect_error_output): Change to use estream.
 
-	From 2009-09-23, 2009-11-04, 2009-11-05, 2009-12-08:
+	* gpgconf-comp.c: Add new backend and component for PINENTRY.
+	(gc_component_check_options): Use --version to test the pinentry.
+	(gc_component_retrieve_options, gc_component_change_options):
+	Ignore the pinentry component.
 
-	* gpg-connect-agent.c (read_and_print_response): Add arg WITHHASH.
-	(getinfo_pid_cb, read_and_print_response)
-	(main): Pass true for WITHHASH for the HELP command.  Update to
-	new Assuan API.  Update use of assuan_socket_connect and
-	assuan_pipe_connect.  Convert posix fd to assuan fd.
+2010-08-16  Werner Koch  <wk@g10code.com>
+
+	* gpgconf.c (get_outfp): Change to use estream.
+	(main): Replace fprintf by es_fprintf.
+	* gpgconf-comp.c (gc_component_list_components)
+	(gc_check_programs, gc_component_list_options)
+	(gc_component_change_options, gc_component_check_options)
+	(list_one_option, gc_process_gpgconf_conf): Replace FILE* args by
+	estream_t.
+
+2010-08-13  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (gpgkey2ssh_LDADD): Add NETLIBS.
+
+2010-08-11  Werner Koch  <wk@g10code.com>
+
+	* gpgtar-create.c (gpgtar_create): Allow "-" for stdout in
+	opt.outfile.  Switch es_stdout to binary mode.
+
+2010-08-09  Werner Koch  <wk@g10code.com>
+
+	* watchgnupg.c: Inlcude in.h and inet.h.
+	(main): Support tcp connections.
+
+	* gpgtar.c (main): Add options -T and --null.
+	* gpgtar-create.c (gpgtar_create): Implement option --null.
+
+2010-07-16  Werner Koch  <wk@g10code.com>
+
+	* gpgtar-create.c: Rewrite to better support W32.
+
+2010-07-01  Werner Koch  <wk@g10code.com>
+
+	* gpgtar.c: Add option --set-filename.
+
+2010-06-24  Werner Koch  <wk@g10code.com>
+
+	* gpgconf-comp.c (gpg_agent_runtime_change)
+	(scdaemon_runtime_change, retrieve_options_from_program): Use HANG
+	option for gnupg_wait_progress.  Fixes regression from 2010-06-09.
+
+2010-06-07  Werner Koch  <wk@g10code.com>
+
+	* gpgtar.c, gpgtar.h, gpgtar-list.c, gpgtar-create.c
+	* gpgtar-extract.c: New.
+	* Makefile.am (commonpth_libs): New.
+	(gpgtar_SOURCES, gpgtar_CFLAGS, gpgtar_LDADD): New.
+	(bin_PROGRAMS) [!W32CE]: Add gpgtar.
+
+2010-04-20  Marcus Brinkmann  <marcus@g10code.de>
+
+	* gpgconf-comp.c (option_check_validity): Use dummy variables to
+	silence gcc warning.
+
+2010-04-14  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (bin_PROGRAMS) [W32CE]: Exclude gpgkey2ssh.
+	(noinst_PROGRAMS) [W32CE]: Don't build them.
+	(pwquery_libs) [W32CE]: Set to empty.
+
+2010-03-25  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (opt_libassuan_libs) [W32CE]: New.
+	(gpgconf_LDADD): Use it.
+
+	* gpgconf-comp.c: Include signal.h only if available.  Use
+	gpg_err_set_errno.
+	(key_matches_user_or_group) [W32CE]: Do not match any user.
+
+2010-03-15  Werner Koch  <wk@g10code.com>
+
+	* gpgconf-comp.c (my_dgettext):
+	s/gettext_select_utf8/gettext_use_utf8/.
+
+2010-03-10  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (common_libs): Remove libjnlib.a.
+
+2010-03-08  Werner Koch  <wk@g10code.com>
+
+	* no-libgcrypt.c (gcry_create_nonce): New.
+
+2010-02-26  Werner Koch  <wk@g10code.com>
+
+	* gpg-connect-agent.c (main): New option --tcp-socket.
 
 2010-01-10  Werner Koch  <wk@g10code.com>
 
@@ -49,9 +208,32 @@
 
 	* applygnupgdefaults (errorfile): Use mktemp.  Fixes bug#1146.
 
+2009-12-08  Marcus Brinkmann  <marcus@g10code.de>
+
+	* gpg-connect-agent.c (main): Convert posix fd to assuan fd.
+
 2009-12-07  Werner Koch  <wk@g10code.com>
 
 	* no-libgcrypt.c (gcry_strdup): Actually copy the string.
+
+2009-11-23  Werner Koch  <wk@g10code.com>
+
+	* gpgconf-comp.c (gc_options_gpg): Add default_pubkey_algo.
+
+2009-11-05  Marcus Brinkmann  <marcus@g10code.de>
+
+	* gpg-connect-agent.c (start_agent): Update use of
+	assuan_socket_connect and assuan_pipe_connect.
+
+2009-11-04  Werner Koch  <wk@g10code.com>
+
+	* gpg-connect-agent.c (read_and_print_response): Add arg WITHHASH.
+	(main): Pass true for WITHHASH for the HELP command.
+
+2009-09-23  Marcus Brinkmann  <marcus@g10code.de>
+
+	* gpg-connect-agent.c (getinfo_pid_cb, read_and_print_response)
+	(main): Update to new Assuan API.
 
 2009-07-21  Werner Koch  <wk@g10code.com>
 
@@ -1087,7 +1269,7 @@
 
 
  Copyright 2003, 2004, 2005, 2006, 2007, 2008,
-	   2009 Free Software Foundation, Inc.
+	   2009, 2010, 2011 Free Software Foundation, Inc.
 
  This file is free software; as a special exception the author gives
  unlimited permission to copy and/or distribute it, with or without
@@ -1096,3 +1278,7 @@
  This file is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+Local Variables:
+buffer-read-only: t
+End:

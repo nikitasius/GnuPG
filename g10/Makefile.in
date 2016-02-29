@@ -15,7 +15,7 @@
 @SET_MAKE@
 
 # Copyright (C) 1998, 1999, 2000, 2001, 2002,
-#               2003, 2006  Free Software Foundation, Inc.
+#               2003, 2006, 2010  Free Software Foundation, Inc.
 #
 # This file is part of GnuPG.
 #
@@ -115,13 +115,14 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 DIST_COMMON = $(top_srcdir)/am/cmacros.am $(srcdir)/Makefile.in \
-	$(srcdir)/Makefile.am $(top_srcdir)/scripts/mkinstalldirs \
-	$(top_srcdir)/scripts/depcomp
+	$(srcdir)/Makefile.am $(top_srcdir)/build-aux/mkinstalldirs \
+	$(srcdir)/gpg.w32-manifest.in $(top_srcdir)/build-aux/depcomp
 @HAVE_DOSISH_SYSTEM_FALSE@am__append_1 = -DGNUPG_BINDIR="\"$(bindir)\""            \
 @HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_LIBEXECDIR="\"$(libexecdir)\""    \
 @HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_LIBDIR="\"$(libdir)/@PACKAGE@\""  \
 @HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_DATADIR="\"$(datadir)/@PACKAGE@\"" \
-@HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_SYSCONFDIR="\"$(sysconfdir)/@PACKAGE@\""
+@HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_SYSCONFDIR="\"$(sysconfdir)/@PACKAGE@\"" \
+@HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_LOCALSTATEDIR="\"$(localstatedir)\""
 
 
 # If a specific protect tool program has been defined, pass its name
@@ -132,55 +133,52 @@ DIST_COMMON = $(top_srcdir)/am/cmacros.am $(srcdir)/Makefile.in \
 @GNUPG_SCDAEMON_PGM_TRUE@am__append_4 = -DGNUPG_DEFAULT_SCDAEMON="\"@GNUPG_SCDAEMON_PGM@\""
 @GNUPG_DIRMNGR_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
 @GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
-bin_PROGRAMS = gpg2$(EXEEXT) gpgv2$(EXEEXT)
-noinst_PROGRAMS = $(am__EXEEXT_1)
-TESTS = $(am__EXEEXT_1)
-@HAVE_W32_SYSTEM_TRUE@am__append_7 = gpg-w32info.o
+@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
+bin_PROGRAMS = gpg2$(EXEEXT) $(am__EXEEXT_1)
+@HAVE_W32CE_SYSTEM_FALSE@am__append_8 = gpgv2
+noinst_PROGRAMS = $(am__EXEEXT_2)
+TESTS = $(am__EXEEXT_2)
+@HAVE_W32_SYSTEM_TRUE@am__append_9 = gpg-w32info.o
 subdir = g10
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/gl/m4/absolute-header.m4 \
-	$(top_srcdir)/gl/m4/alloca.m4 $(top_srcdir)/gl/m4/allocsa.m4 \
-	$(top_srcdir)/gl/m4/eealloc.m4 \
-	$(top_srcdir)/gl/m4/gnulib-comp.m4 \
-	$(top_srcdir)/gl/m4/gnulib-tool.m4 \
-	$(top_srcdir)/gl/m4/mkdtemp.m4 $(top_srcdir)/gl/m4/setenv.m4 \
-	$(top_srcdir)/gl/m4/stdint.m4 $(top_srcdir)/gl/m4/strpbrk.m4 \
-	$(top_srcdir)/gl/m4/unistd_h.m4 $(top_srcdir)/m4/autobuild.m4 \
-	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/estream.m4 \
-	$(top_srcdir)/m4/gettext.m4 $(top_srcdir)/m4/gnupg-pth.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
+	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/m4/gpg-error.m4 $(top_srcdir)/m4/iconv.m4 \
 	$(top_srcdir)/m4/isc-posix.m4 $(top_srcdir)/m4/ksba.m4 \
 	$(top_srcdir)/m4/lcmessage.m4 $(top_srcdir)/m4/ldap.m4 \
 	$(top_srcdir)/m4/lib-ld.m4 $(top_srcdir)/m4/lib-link.m4 \
 	$(top_srcdir)/m4/lib-prefix.m4 $(top_srcdir)/m4/libassuan.m4 \
-	$(top_srcdir)/m4/libcurl.m4 $(top_srcdir)/m4/libgcrypt.m4 \
-	$(top_srcdir)/m4/longdouble.m4 $(top_srcdir)/m4/nls.m4 \
+	$(top_srcdir)/m4/libgcrypt.m4 $(top_srcdir)/m4/nls.m4 \
+	$(top_srcdir)/m4/npth.m4 $(top_srcdir)/m4/ntbtls.m4 \
 	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
-	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/size_max.m4 \
-	$(top_srcdir)/m4/socklen.m4 $(top_srcdir)/m4/sys_socket_h.m4 \
-	$(top_srcdir)/m4/tar-ustar.m4 $(top_srcdir)/m4/xsize.m4 \
+	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
 	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
-mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
+mkinstalldirs = $(SHELL) $(top_srcdir)/build-aux/mkinstalldirs
 CONFIG_HEADER = $(top_builddir)/config.h
-CONFIG_CLEAN_FILES =
+CONFIG_CLEAN_FILES = gpg.w32-manifest
 CONFIG_CLEAN_VPATH_FILES =
+@HAVE_W32CE_SYSTEM_FALSE@am__EXEEXT_1 = gpgv2$(EXEEXT)
 am__installdirs = "$(DESTDIR)$(bindir)"
-am__EXEEXT_1 = t-rmd160$(EXEEXT)
+am__EXEEXT_2 = t-rmd160$(EXEEXT) t-keydb$(EXEEXT) \
+	t-keydb-get-keyblock$(EXEEXT)
 PROGRAMS = $(bin_PROGRAMS) $(noinst_PROGRAMS)
-am__gpg2_SOURCES_DIST = gpg.c server.c gpg.h build-packet.c compress.c \
-	compress-bz2.c filter.h free-packet.c getkey.c keydb.c keydb.h \
-	keyring.c keyring.h seskey.c kbnode.c main.h mainproc.c \
-	armor.c mdfilter.c textfilter.c progress.c misc.c rmd160.c \
-	rmd160.h options.h openfile.c keyid.c packet.h parse-packet.c \
-	cpr.c plaintext.c sig-check.c keylist.c pkglue.c pkglue.h \
-	pkclist.c skclist.c pubkey-enc.c passphrase.c seckey-cert.c \
-	encr-data.c cipher.c encode.c sign.c verify.c revoke.c \
-	decrypt.c keyedit.c dearmor.c import.c export.c trustdb.c \
-	trustdb.h tdbdump.c tdbio.c tdbio.h delkey.c keygen.c \
-	helptext.c keyserver.c keyserver-internal.h photoid.c \
-	photoid.h call-agent.c call-agent.h card-util.c exec.c exec.h
+am__gpg2_SOURCES_DIST = gpg.c server.c gpg.h dek.h build-packet.c \
+	compress.c compress-bz2.c filter.h free-packet.c getkey.c \
+	keydb.c keydb.h keyring.c keyring.h seskey.c kbnode.c main.h \
+	mainproc.c armor.c mdfilter.c textfilter.c progress.c misc.c \
+	rmd160.c rmd160.h options.h openfile.c keyid.c packet.h \
+	parse-packet.c cpr.c plaintext.c sig-check.c keylist.c \
+	pkglue.c pkglue.h ecdh.c pkclist.c skclist.c pubkey-enc.c \
+	passphrase.c decrypt.c decrypt-data.c cipher.c encrypt.c \
+	sign.c verify.c revoke.c keyedit.c dearmor.c import.c export.c \
+	migrate.c delkey.c keygen.c helptext.c keyserver.c \
+	keyserver-internal.h call-dirmngr.c call-dirmngr.h photoid.c \
+	photoid.h call-agent.c call-agent.h trust.c trustdb.c \
+	trustdb.h tdbdump.c tdbio.c tdbio.h tofu.h tofu.c sqlite.c \
+	sqlite.h card-util.c exec.c exec.h
 @ENABLE_BZIP2_SUPPORT_TRUE@am__objects_1 = compress-bz2.$(OBJEXT)
 am__objects_2 = build-packet.$(OBJEXT) compress.$(OBJEXT) \
 	$(am__objects_1) free-packet.$(OBJEXT) getkey.$(OBJEXT) \
@@ -190,37 +188,74 @@ am__objects_2 = build-packet.$(OBJEXT) compress.$(OBJEXT) \
 	misc.$(OBJEXT) rmd160.$(OBJEXT) openfile.$(OBJEXT) \
 	keyid.$(OBJEXT) parse-packet.$(OBJEXT) cpr.$(OBJEXT) \
 	plaintext.$(OBJEXT) sig-check.$(OBJEXT) keylist.$(OBJEXT) \
-	pkglue.$(OBJEXT)
+	pkglue.$(OBJEXT) ecdh.$(OBJEXT)
+@NO_TRUST_MODELS_FALSE@am__objects_3 = trustdb.$(OBJEXT) \
+@NO_TRUST_MODELS_FALSE@	tdbdump.$(OBJEXT) tdbio.$(OBJEXT)
+@USE_TOFU_TRUE@am__objects_4 = tofu.$(OBJEXT) sqlite.$(OBJEXT)
+@ENABLE_CARD_SUPPORT_TRUE@am__objects_5 = card-util.$(OBJEXT)
 am_gpg2_OBJECTS = gpg.$(OBJEXT) server.$(OBJEXT) $(am__objects_2) \
 	pkclist.$(OBJEXT) skclist.$(OBJEXT) pubkey-enc.$(OBJEXT) \
-	passphrase.$(OBJEXT) seckey-cert.$(OBJEXT) encr-data.$(OBJEXT) \
-	cipher.$(OBJEXT) encode.$(OBJEXT) sign.$(OBJEXT) \
-	verify.$(OBJEXT) revoke.$(OBJEXT) decrypt.$(OBJEXT) \
-	keyedit.$(OBJEXT) dearmor.$(OBJEXT) import.$(OBJEXT) \
-	export.$(OBJEXT) trustdb.$(OBJEXT) tdbdump.$(OBJEXT) \
-	tdbio.$(OBJEXT) delkey.$(OBJEXT) keygen.$(OBJEXT) \
-	helptext.$(OBJEXT) keyserver.$(OBJEXT) photoid.$(OBJEXT) \
-	call-agent.$(OBJEXT) card-util.$(OBJEXT) exec.$(OBJEXT)
+	passphrase.$(OBJEXT) decrypt.$(OBJEXT) decrypt-data.$(OBJEXT) \
+	cipher.$(OBJEXT) encrypt.$(OBJEXT) sign.$(OBJEXT) \
+	verify.$(OBJEXT) revoke.$(OBJEXT) keyedit.$(OBJEXT) \
+	dearmor.$(OBJEXT) import.$(OBJEXT) export.$(OBJEXT) \
+	migrate.$(OBJEXT) delkey.$(OBJEXT) keygen.$(OBJEXT) \
+	helptext.$(OBJEXT) keyserver.$(OBJEXT) call-dirmngr.$(OBJEXT) \
+	photoid.$(OBJEXT) call-agent.$(OBJEXT) trust.$(OBJEXT) \
+	$(am__objects_3) $(am__objects_4) $(am__objects_5) \
+	exec.$(OBJEXT)
 gpg2_OBJECTS = $(am_gpg2_OBJECTS)
 am__DEPENDENCIES_1 =
 am__DEPENDENCIES_2 = $(needed_libs) ../common/libgpgrl.a \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1)
 gpg2_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(resource_objs)
-am__gpgv2_SOURCES_DIST = gpgv.c gpg.h build-packet.c compress.c \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(resource_objs) $(am__DEPENDENCIES_1)
+gpg2_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(gpg2_LDFLAGS) $(LDFLAGS) \
+	-o $@
+am__gpgv2_SOURCES_DIST = gpgv.c gpg.h dek.h build-packet.c compress.c \
 	compress-bz2.c filter.h free-packet.c getkey.c keydb.c keydb.h \
 	keyring.c keyring.h seskey.c kbnode.c main.h mainproc.c \
 	armor.c mdfilter.c textfilter.c progress.c misc.c rmd160.c \
 	rmd160.h options.h openfile.c keyid.c packet.h parse-packet.c \
 	cpr.c plaintext.c sig-check.c keylist.c pkglue.c pkglue.h \
-	verify.c
+	ecdh.c verify.c
 am_gpgv2_OBJECTS = gpgv.$(OBJEXT) $(am__objects_2) verify.$(OBJEXT)
 gpgv2_OBJECTS = $(am_gpgv2_OBJECTS)
 gpgv2_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) $(resource_objs)
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) $(resource_objs) \
+	$(am__DEPENDENCIES_1)
+gpgv2_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(gpgv2_LDFLAGS) \
+	$(LDFLAGS) -o $@
+am__t_keydb_SOURCES_DIST = t-keydb.c test-stubs.c gpg.h dek.h \
+	build-packet.c compress.c compress-bz2.c filter.h \
+	free-packet.c getkey.c keydb.c keydb.h keyring.c keyring.h \
+	seskey.c kbnode.c main.h mainproc.c armor.c mdfilter.c \
+	textfilter.c progress.c misc.c rmd160.c rmd160.h options.h \
+	openfile.c keyid.c packet.h parse-packet.c cpr.c plaintext.c \
+	sig-check.c keylist.c pkglue.c pkglue.h ecdh.c
+am_t_keydb_OBJECTS = t-keydb.$(OBJEXT) test-stubs.$(OBJEXT) \
+	$(am__objects_2)
+t_keydb_OBJECTS = $(am_t_keydb_OBJECTS)
+t_keydb_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1)
+am__t_keydb_get_keyblock_SOURCES_DIST = t-keydb-get-keyblock.c \
+	test-stubs.c gpg.h dek.h build-packet.c compress.c \
+	compress-bz2.c filter.h free-packet.c getkey.c keydb.c keydb.h \
+	keyring.c keyring.h seskey.c kbnode.c main.h mainproc.c \
+	armor.c mdfilter.c textfilter.c progress.c misc.c rmd160.c \
+	rmd160.h options.h openfile.c keyid.c packet.h parse-packet.c \
+	cpr.c plaintext.c sig-check.c keylist.c pkglue.c pkglue.h \
+	ecdh.c
+am_t_keydb_get_keyblock_OBJECTS = t-keydb-get-keyblock.$(OBJEXT) \
+	test-stubs.$(OBJEXT) $(am__objects_2)
+t_keydb_get_keyblock_OBJECTS = $(am_t_keydb_get_keyblock_OBJECTS)
+t_keydb_get_keyblock_DEPENDENCIES = $(am__DEPENDENCIES_2) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
 am_t_rmd160_OBJECTS = t-rmd160.$(OBJEXT) rmd160.$(OBJEXT)
 t_rmd160_OBJECTS = $(am_t_rmd160_OBJECTS)
 t_rmd160_DEPENDENCIES = $(am__DEPENDENCIES_1)
@@ -237,7 +272,7 @@ am__v_at_ = $(am__v_at_@AM_DEFAULT_V@)
 am__v_at_0 = @
 am__v_at_1 = 
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
-depcomp = $(SHELL) $(top_srcdir)/scripts/depcomp
+depcomp = $(SHELL) $(top_srcdir)/build-aux/depcomp
 am__depfiles_maybe = depfiles
 am__mv = mv -f
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
@@ -252,9 +287,11 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(gpg2_SOURCES) $(gpgv2_SOURCES) $(t_rmd160_SOURCES)
+SOURCES = $(gpg2_SOURCES) $(gpgv2_SOURCES) $(t_keydb_SOURCES) \
+	$(t_keydb_get_keyblock_SOURCES) $(t_rmd160_SOURCES)
 DIST_SOURCES = $(am__gpg2_SOURCES_DIST) $(am__gpgv2_SOURCES_DIST) \
-	$(t_rmd160_SOURCES)
+	$(am__t_keydb_SOURCES_DIST) \
+	$(am__t_keydb_get_keyblock_SOURCES_DIST) $(t_rmd160_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -302,11 +339,7 @@ am__tty_colors = { \
   fi; \
 }
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
-ABSOLUTE_STDINT_H = @ABSOLUTE_STDINT_H@
 ACLOCAL = @ACLOCAL@
-ADNSLIBS = @ADNSLIBS@
-ALLOCA = @ALLOCA@
-ALLOCA_H = @ALLOCA_H@
 AMTAR = @AMTAR@
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
 AR = @AR@
@@ -314,16 +347,12 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
-BITSIZEOF_PTRDIFF_T = @BITSIZEOF_PTRDIFF_T@
-BITSIZEOF_SIG_ATOMIC_T = @BITSIZEOF_SIG_ATOMIC_T@
-BITSIZEOF_SIZE_T = @BITSIZEOF_SIZE_T@
-BITSIZEOF_WCHAR_T = @BITSIZEOF_WCHAR_T@
-BITSIZEOF_WINT_T = @BITSIZEOF_WINT_T@
 BUILD_FILEVERSION = @BUILD_FILEVERSION@
 BUILD_HOSTNAME = @BUILD_HOSTNAME@
 BUILD_INCLUDED_LIBINTL = @BUILD_INCLUDED_LIBINTL@
 BUILD_REVISION = @BUILD_REVISION@
 BUILD_TIMESTAMP = @BUILD_TIMESTAMP@
+BUILD_VERSION = @BUILD_VERSION@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CC_FOR_BUILD = @CC_FOR_BUILD@
@@ -339,39 +368,25 @@ ECHO_C = @ECHO_C@
 ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
+ENCFS = @ENCFS@
 EXEEXT = @EXEEXT@
-FAQPROG = @FAQPROG@
+FUSERMOUNT = @FUSERMOUNT@
 GETTEXT_MACRO_VERSION = @GETTEXT_MACRO_VERSION@
 GMSGFMT = @GMSGFMT@
 GMSGFMT_015 = @GMSGFMT_015@
 GNUPG_AGENT_PGM = @GNUPG_AGENT_PGM@
+GNUPG_DIRMNGR_LDAP_PGM = @GNUPG_DIRMNGR_LDAP_PGM@
 GNUPG_DIRMNGR_PGM = @GNUPG_DIRMNGR_PGM@
 GNUPG_PINENTRY_PGM = @GNUPG_PINENTRY_PGM@
 GNUPG_PROTECT_TOOL_PGM = @GNUPG_PROTECT_TOOL_PGM@
 GNUPG_SCDAEMON_PGM = @GNUPG_SCDAEMON_PGM@
-GPGKEYS_CURL = @GPGKEYS_CURL@
-GPGKEYS_FINGER = @GPGKEYS_FINGER@
-GPGKEYS_HKP = @GPGKEYS_HKP@
-GPGKEYS_KDNS = @GPGKEYS_KDNS@
 GPGKEYS_LDAP = @GPGKEYS_LDAP@
-GPGKEYS_MAILTO = @GPGKEYS_MAILTO@
 GPG_ERROR_CFLAGS = @GPG_ERROR_CFLAGS@
 GPG_ERROR_CONFIG = @GPG_ERROR_CONFIG@
 GPG_ERROR_LIBS = @GPG_ERROR_LIBS@
 GPG_ERROR_MT_CFLAGS = @GPG_ERROR_MT_CFLAGS@
 GPG_ERROR_MT_LIBS = @GPG_ERROR_MT_LIBS@
 GREP = @GREP@
-HAVE_INTTYPES_H = @HAVE_INTTYPES_H@
-HAVE_LONG_LONG_INT = @HAVE_LONG_LONG_INT@
-HAVE_SIGNED_SIG_ATOMIC_T = @HAVE_SIGNED_SIG_ATOMIC_T@
-HAVE_SIGNED_WCHAR_T = @HAVE_SIGNED_WCHAR_T@
-HAVE_SIGNED_WINT_T = @HAVE_SIGNED_WINT_T@
-HAVE_STDINT_H = @HAVE_STDINT_H@
-HAVE_SYS_BITYPES_H = @HAVE_SYS_BITYPES_H@
-HAVE_SYS_INTTYPES_H = @HAVE_SYS_INTTYPES_H@
-HAVE_SYS_TYPES_H = @HAVE_SYS_TYPES_H@
-HAVE_UNSIGNED_LONG_LONG_INT = @HAVE_UNSIGNED_LONG_LONG_INT@
-HAVE_WCHAR_H = @HAVE_WCHAR_H@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -382,19 +397,18 @@ INTL_MACOSX_LIBS = @INTL_MACOSX_LIBS@
 KSBA_CFLAGS = @KSBA_CFLAGS@
 KSBA_CONFIG = @KSBA_CONFIG@
 KSBA_LIBS = @KSBA_LIBS@
+LBER_LIBS = @LBER_LIBS@
 LDAPLIBS = @LDAPLIBS@
 LDAP_CPPFLAGS = @LDAP_CPPFLAGS@
 LDFLAGS = @LDFLAGS@
 LIBASSUAN_CFLAGS = @LIBASSUAN_CFLAGS@
 LIBASSUAN_CONFIG = @LIBASSUAN_CONFIG@
 LIBASSUAN_LIBS = @LIBASSUAN_LIBS@
-LIBCURL = @LIBCURL@
-LIBCURL_CPPFLAGS = @LIBCURL_CPPFLAGS@
 LIBGCRYPT_CFLAGS = @LIBGCRYPT_CFLAGS@
 LIBGCRYPT_CONFIG = @LIBGCRYPT_CONFIG@
 LIBGCRYPT_LIBS = @LIBGCRYPT_LIBS@
-LIBGNU_LIBDEPS = @LIBGNU_LIBDEPS@
-LIBGNU_LTLIBDEPS = @LIBGNU_LTLIBDEPS@
+LIBGNUTLS_CFLAGS = @LIBGNUTLS_CFLAGS@
+LIBGNUTLS_LIBS = @LIBGNUTLS_LIBS@
 LIBICONV = @LIBICONV@
 LIBINTL = @LIBINTL@
 LIBOBJS = @LIBOBJS@
@@ -413,6 +427,12 @@ MSGFMT = @MSGFMT@
 MSGFMT_015 = @MSGFMT_015@
 MSGMERGE = @MSGMERGE@
 NETLIBS = @NETLIBS@
+NPTH_CFLAGS = @NPTH_CFLAGS@
+NPTH_CONFIG = @NPTH_CONFIG@
+NPTH_LIBS = @NPTH_LIBS@
+NTBTLS_CFLAGS = @NTBTLS_CFLAGS@
+NTBTLS_CONFIG = @NTBTLS_CONFIG@
+NTBTLS_LIBS = @NTBTLS_LIBS@
 OBJEXT = @OBJEXT@
 PACKAGE = @PACKAGE@
 PACKAGE_BUGREPORT = @PACKAGE_BUGREPORT@
@@ -424,37 +444,30 @@ PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
 PERL = @PERL@
+PKG_CONFIG = @PKG_CONFIG@
+PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
+PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 POSUB = @POSUB@
-PTH_CFLAGS = @PTH_CFLAGS@
-PTH_CONFIG = @PTH_CONFIG@
-PTH_LIBS = @PTH_LIBS@
-PTRDIFF_T_SUFFIX = @PTRDIFF_T_SUFFIX@
 RANLIB = @RANLIB@
-SED = @SED@
 SENDMAIL = @SENDMAIL@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 SHRED = @SHRED@
-SIG_ATOMIC_T_SUFFIX = @SIG_ATOMIC_T_SUFFIX@
-SIZE_T_SUFFIX = @SIZE_T_SUFFIX@
-STDINT_H = @STDINT_H@
+SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
+SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
 SYSROOT = @SYSROOT@
 SYS_SOCKET_H = @SYS_SOCKET_H@
 TAR = @TAR@
-UNISTD_H = @UNISTD_H@
 USE_INCLUDED_LIBINTL = @USE_INCLUDED_LIBINTL@
 USE_NLS = @USE_NLS@
 VERSION = @VERSION@
 W32SOCKLIBS = @W32SOCKLIBS@
-WCHAR_T_SUFFIX = @WCHAR_T_SUFFIX@
 WINDRES = @WINDRES@
-WINT_T_SUFFIX = @WINT_T_SUFFIX@
 XGETTEXT = @XGETTEXT@
 XGETTEXT_015 = @XGETTEXT_015@
 XGETTEXT_EXTRA_OPTIONS = @XGETTEXT_EXTRA_OPTIONS@
 ZLIBS = @ZLIBS@
-_libcurl_config = @_libcurl_config@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
 abs_top_builddir = @abs_top_builddir@
@@ -505,23 +518,50 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-EXTRA_DIST = options.skel ChangeLog-2011 gpg-w32info.rc
-AM_CPPFLAGS = -I$(top_srcdir)/gl -I$(top_srcdir)/common \
-	-I$(top_srcdir)/include -I$(top_srcdir)/intl \
-	-DLOCALEDIR=\"$(localedir)\" $(am__append_1) $(am__append_2) \
-	$(am__append_3) $(am__append_4) $(am__append_5) \
-	$(am__append_6)
-resource_objs = $(am__append_7)
+EXTRA_DIST = options.skel dirmngr-conf.skel distsigkey.gpg \
+	     ChangeLog-2011 gpg-w32info.rc \
+	     gpg.w32-manifest.in test.c t-keydb-keyring.kbx \
+	     t-keydb-get-keyblock.gpg
+
+
+# NB: AM_CFLAGS may also be used by tools running on the build
+# platform to create source files.
+AM_CPPFLAGS = -I$(top_srcdir)/common -DLOCALEDIR=\"$(localedir)\" \
+	$(am__append_1) $(am__append_2) $(am__append_3) \
+	$(am__append_4) $(am__append_5) $(am__append_6) \
+	$(am__append_7)
+@HAVE_W32CE_SYSTEM_FALSE@extra_sys_libs = 
+
+# Under Windows we use LockFileEx.  WindowsCE provides this only on
+# the WindowsMobile 6 platform and thus we need to use the coredll6
+# import library.  We also want to use a stacksize of 256k instead of
+# the 2MB which is the default with cegcc.  256k is the largest stack
+# we use with pth.
+@HAVE_W32CE_SYSTEM_TRUE@extra_sys_libs = -lcoredll6
+@HAVE_W32CE_SYSTEM_FALSE@extra_bin_ldflags = 
+@HAVE_W32CE_SYSTEM_TRUE@extra_bin_ldflags = -Wl,--stack=0x40000
+resource_objs = $(am__append_9)
 
 # Convenience macros
 libcommon = ../common/libcommon.a
 libcommonpth = ../common/libcommonpth.a
-AM_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS) $(LIBASSUAN_CFLAGS)
-needed_libs = $(libcommon) ../jnlib/libjnlib.a ../gl/libgnu.a
+libcommontls = ../common/libcommontls.a
+libcommontlsnpth = ../common/libcommontlsnpth.a
+AM_CFLAGS = $(SQLITE3_CFLAGS) $(LIBGCRYPT_CFLAGS) \
+            $(LIBASSUAN_CFLAGS) $(GPG_ERROR_CFLAGS)
+
+needed_libs = ../kbx/libkeybox.a $(libcommon)
 @ENABLE_BZIP2_SUPPORT_FALSE@bzip2_source = 
 @ENABLE_BZIP2_SUPPORT_TRUE@bzip2_source = compress-bz2.c
+@ENABLE_CARD_SUPPORT_FALSE@card_source = 
+@ENABLE_CARD_SUPPORT_TRUE@card_source = card-util.c
+@NO_TRUST_MODELS_FALSE@trust_source = trustdb.c trustdb.h tdbdump.c tdbio.c tdbio.h
+@NO_TRUST_MODELS_TRUE@trust_source = 
+@USE_TOFU_FALSE@tofu_source = 
+@USE_TOFU_TRUE@tofu_source = tofu.h tofu.c sqlite.c sqlite.h
 common_source = \
 	      gpg.h             \
+	      dek.h             \
 	      build-packet.c	\
 	      compress.c	\
 	      $(bzip2_source)	\
@@ -549,7 +589,8 @@ common_source = \
 	      plaintext.c	\
 	      sig-check.c	\
 	      keylist.c 	\
-	      pkglue.c pkglue.h
+	      pkglue.c pkglue.h \
+	      ecdh.c
 
 gpg2_SOURCES = gpg.c		\
 	      server.c          \
@@ -558,31 +599,28 @@ gpg2_SOURCES = gpg.c		\
 	      skclist.c 	\
 	      pubkey-enc.c	\
 	      passphrase.c	\
-	      seckey-cert.c	\
-	      encr-data.c	\
+	      decrypt.c 	\
+	      decrypt-data.c	\
 	      cipher.c		\
-	      encode.c		\
+	      encrypt.c		\
 	      sign.c		\
 	      verify.c		\
 	      revoke.c		\
-	      decrypt.c 	\
 	      keyedit.c 	\
 	      dearmor.c 	\
 	      import.c		\
 	      export.c		\
-	      trustdb.c 	\
-	      trustdb.h 	\
-	      tdbdump.c 	\
-	      tdbio.c		\
-	      tdbio.h		\
+	      migrate.c         \
 	      delkey.c		\
 	      keygen.c          \
 	      helptext.c        \
 	      keyserver.c       \
 	      keyserver-internal.h \
+	      call-dirmngr.c call-dirmngr.h \
 	      photoid.c photoid.h \
 	      call-agent.c call-agent.h \
-	      card-util.c \
+	      trust.c $(trust_source) $(tofu_source) \
+	      $(card_source) \
 	      exec.c exec.h
 
 gpgv2_SOURCES = gpgv.c           \
@@ -597,19 +635,32 @@ gpgv2_SOURCES = gpgv.c           \
 #	       ks-db.h \
 #	       $(common_source)
 LDADD = $(needed_libs) ../common/libgpgrl.a \
-         $(ZLIBS) $(DNSLIBS) $(LIBREADLINE) \
-         $(LIBINTL) $(CAPLIBS) $(NETLIBS)
+         $(ZLIBS) $(LIBINTL) $(CAPLIBS) $(NETLIBS)
 
-gpg2_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) \
-	     $(LIBICONV) $(resource_objs)
+gpg2_LDADD = $(LDADD) $(SQLITE3_LIBS) $(LIBGCRYPT_LIBS) $(LIBREADLINE) \
+             $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) \
+	     $(LIBICONV) $(resource_objs) $(extra_sys_libs)
 
-gpgv2_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
-	      $(LIBICONV) $(resource_objs)
+gpg2_LDFLAGS = $(extra_bin_ldflags)
+gpgv2_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
+              $(GPG_ERROR_LIBS) \
+	      $(LIBICONV) $(resource_objs) $(extra_sys_libs)
 
+gpgv2_LDFLAGS = $(extra_bin_ldflags)
 t_common_ldadd = 
-module_tests = t-rmd160
+module_tests = t-rmd160 t-keydb t-keydb-get-keyblock
 t_rmd160_SOURCES = t-rmd160.c rmd160.c
 t_rmd160_LDADD = $(t_common_ldadd)
+t_keydb_SOURCES = t-keydb.c test-stubs.c $(common_source)
+t_keydb_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
+	      $(LIBICONV) $(t_common_ldadd)
+
+t_keydb_get_keyblock_SOURCES = t-keydb-get-keyblock.c test-stubs.c \
+	      $(common_source)
+
+t_keydb_get_keyblock_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
+	      $(LIBICONV) $(t_common_ldadd)
+
 all: all-am
 
 .SUFFIXES:
@@ -645,6 +696,8 @@ $(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
 $(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
+gpg.w32-manifest: $(top_builddir)/config.status $(srcdir)/gpg.w32-manifest.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 install-binPROGRAMS: $(bin_PROGRAMS)
 	@$(NORMAL_INSTALL)
 	@list='$(bin_PROGRAMS)'; test -n "$(bindir)" || list=; \
@@ -693,11 +746,19 @@ clean-noinstPROGRAMS:
 
 gpg2$(EXEEXT): $(gpg2_OBJECTS) $(gpg2_DEPENDENCIES) $(EXTRA_gpg2_DEPENDENCIES) 
 	@rm -f gpg2$(EXEEXT)
-	$(AM_V_CCLD)$(LINK) $(gpg2_OBJECTS) $(gpg2_LDADD) $(LIBS)
+	$(AM_V_CCLD)$(gpg2_LINK) $(gpg2_OBJECTS) $(gpg2_LDADD) $(LIBS)
 
 gpgv2$(EXEEXT): $(gpgv2_OBJECTS) $(gpgv2_DEPENDENCIES) $(EXTRA_gpgv2_DEPENDENCIES) 
 	@rm -f gpgv2$(EXEEXT)
-	$(AM_V_CCLD)$(LINK) $(gpgv2_OBJECTS) $(gpgv2_LDADD) $(LIBS)
+	$(AM_V_CCLD)$(gpgv2_LINK) $(gpgv2_OBJECTS) $(gpgv2_LDADD) $(LIBS)
+
+t-keydb$(EXEEXT): $(t_keydb_OBJECTS) $(t_keydb_DEPENDENCIES) $(EXTRA_t_keydb_DEPENDENCIES) 
+	@rm -f t-keydb$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(t_keydb_OBJECTS) $(t_keydb_LDADD) $(LIBS)
+
+t-keydb-get-keyblock$(EXEEXT): $(t_keydb_get_keyblock_OBJECTS) $(t_keydb_get_keyblock_DEPENDENCIES) $(EXTRA_t_keydb_get_keyblock_DEPENDENCIES) 
+	@rm -f t-keydb-get-keyblock$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(t_keydb_get_keyblock_OBJECTS) $(t_keydb_get_keyblock_LDADD) $(LIBS)
 
 t-rmd160$(EXEEXT): $(t_rmd160_OBJECTS) $(t_rmd160_DEPENDENCIES) $(EXTRA_t_rmd160_DEPENDENCIES) 
 	@rm -f t-rmd160$(EXEEXT)
@@ -712,16 +773,18 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/armor.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/build-packet.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/call-agent.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/call-dirmngr.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/card-util.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cipher.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/compress-bz2.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/compress.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cpr.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dearmor.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/decrypt-data.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/decrypt.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/delkey.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/encode.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/encr-data.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ecdh.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/encrypt.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/exec.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/export.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/free-packet.Po@am__quote@
@@ -740,6 +803,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyserver.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mainproc.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mdfilter.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/migrate.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/misc.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/openfile.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/parse-packet.Po@am__quote@
@@ -752,16 +816,21 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pubkey-enc.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/revoke.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/rmd160.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/seckey-cert.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/server.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/seskey.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sig-check.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sign.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/skclist.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sqlite.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-keydb-get-keyblock.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-keydb.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-rmd160.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tdbdump.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tdbio.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test-stubs.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/textfilter.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tofu.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/trust.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/trustdb.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/verify.Po@am__quote@
 
@@ -992,6 +1061,7 @@ distclean-generic:
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
 	@echo "it deletes files that may require special tools to rebuild."
+@HAVE_W32CE_SYSTEM_FALSE@install-exec-hook:
 clean: clean-am
 
 clean-am: clean-binPROGRAMS clean-generic clean-noinstPROGRAMS \
@@ -1022,7 +1092,8 @@ install-dvi: install-dvi-am
 install-dvi-am:
 
 install-exec-am: install-binPROGRAMS
-
+	@$(NORMAL_INSTALL)
+	$(MAKE) $(AM_MAKEFLAGS) install-exec-hook
 install-html: install-html-am
 
 install-html-am:
@@ -1062,7 +1133,7 @@ ps-am:
 
 uninstall-am: uninstall-binPROGRAMS uninstall-local
 
-.MAKE: check-am install-am install-strip
+.MAKE: check-am install-am install-exec-am install-strip
 
 .PHONY: CTAGS GTAGS TAGS all all-am check check-TESTS check-am clean \
 	clean-binPROGRAMS clean-generic clean-noinstPROGRAMS \
@@ -1070,18 +1141,20 @@ uninstall-am: uninstall-binPROGRAMS uninstall-local
 	distclean-generic distclean-tags distdir dvi dvi-am html \
 	html-am info info-am install install-am install-binPROGRAMS \
 	install-data install-data-am install-data-local install-dvi \
-	install-dvi-am install-exec install-exec-am install-html \
-	install-html-am install-info install-info-am install-man \
-	install-pdf install-pdf-am install-ps install-ps-am \
-	install-strip installcheck installcheck-am installdirs \
-	maintainer-clean maintainer-clean-generic mostlyclean \
-	mostlyclean-compile mostlyclean-generic pdf pdf-am ps ps-am \
-	tags tags-am uninstall uninstall-am uninstall-binPROGRAMS \
-	uninstall-local
+	install-dvi-am install-exec install-exec-am install-exec-hook \
+	install-html install-html-am install-info install-info-am \
+	install-man install-pdf install-pdf-am install-ps \
+	install-ps-am install-strip installcheck installcheck-am \
+	installdirs maintainer-clean maintainer-clean-generic \
+	mostlyclean mostlyclean-compile mostlyclean-generic pdf pdf-am \
+	ps ps-am tags tags-am uninstall uninstall-am \
+	uninstall-binPROGRAMS uninstall-local
 
 
 @HAVE_W32_SYSTEM_TRUE@.rc.o:
 @HAVE_W32_SYSTEM_TRUE@	$(WINDRES) $(DEFAULT_INCLUDES) $(INCLUDES) "$<" "$@"
+
+@HAVE_W32_SYSTEM_TRUE@gpg-w32info.o : gpg.w32-manifest
 
 $(PROGRAMS): $(needed_libs) ../common/libgpgrl.a
 
@@ -1089,9 +1162,20 @@ install-data-local:
 	$(mkinstalldirs) $(DESTDIR)$(pkgdatadir)
 	$(INSTALL_DATA) $(srcdir)/options.skel \
 				$(DESTDIR)$(pkgdatadir)/gpg-conf.skel
+	$(INSTALL_DATA) $(srcdir)/dirmngr-conf.skel \
+				$(DESTDIR)$(pkgdatadir)/dirmngr-conf.skel
+	$(INSTALL_DATA) $(srcdir)/distsigkey.gpg \
+				$(DESTDIR)$(pkgdatadir)/distsigkey.gpg
 
 uninstall-local:
 	-@rm $(DESTDIR)$(pkgdatadir)/gpg-conf.skel
+	-@rm $(DESTDIR)$(pkgdatadir)/dirmngr-conf.skel
+	-@rm $(DESTDIR)$(pkgdatadir)/distsigkey.gpg
+
+# There has never been a gpg for WindowsCE, thus we don't need a gpg2 here
+@HAVE_W32CE_SYSTEM_TRUE@install-exec-hook:
+@HAVE_W32CE_SYSTEM_TRUE@	mv -f $(DESTDIR)$(bindir)/gpg2$(EXEEXT) \
+@HAVE_W32CE_SYSTEM_TRUE@              $(DESTDIR)$(bindir)/gpg$(EXEEXT)
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

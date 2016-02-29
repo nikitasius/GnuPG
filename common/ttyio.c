@@ -1,15 +1,25 @@
 /* ttyio.c -  tty i/O functions
  * Copyright (C) 1998,1999,2000,2001,2002,2003,2004,2006,2007,
- *               2009 Free Software Foundation, Inc.
+ *               2009, 2010 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -24,20 +34,25 @@
 #include <string.h>
 #include <stdarg.h>
 #include <unistd.h>
-#ifdef HAVE_TCGETATTR
-# include <termios.h>
-#else
-# ifdef HAVE_TERMIO_H
-   /* Simulate termios with termio.  */
-#  include <termio.h>
-#  define termios termio
-#  define tcsetattr ioctl
-#  define TCSAFLUSH TCSETAF
-#  define tcgetattr(A,B) ioctl(A,TCGETA,B)
-#  define HAVE_TCGETATTR
-# endif
+
+#if defined(HAVE_W32_SYSTEM) && !defined(HAVE_W32CE_SYSTEM)
+# define USE_W32_CONSOLE 1
 #endif
-#ifdef _WIN32 /* use the odd Win32 functions */
+
+#ifdef HAVE_TCGETATTR
+#include <termios.h>
+#else
+#ifdef HAVE_TERMIO_H
+/* simulate termios with termio */
+#include <termio.h>
+#define termios termio
+#define tcsetattr ioctl
+#define TCSAFLUSH TCSETAF
+#define tcgetattr(A,B) ioctl(A,TCGETA,B)
+#define HAVE_TCGETATTR
+#endif
+#endif
+#ifdef USE_W32_CONSOLE
 # ifdef HAVE_WINSOCK2_H
 #  include <winsock2.h>
 # endif
@@ -51,12 +66,12 @@
 
 #include "util.h"
 #include "ttyio.h"
-#include "estream-printf.h"
 #include "common-defs.h"
 
 #define CONTROL_D ('D' - 'A' + 1)
 
-#ifdef _WIN32 /* use the odd Win32 functions */
+
+#ifdef USE_W32_CONSOLE
 static struct {
     HANDLE in, out;
 } con;
@@ -119,8 +134,8 @@ tty_get_ttyname (void)
       got_name = 1;
     }
 #endif /*HAVE_CTERMID*/
-  /* Assume the standard tty on memory error or when tehre is no
-     certmid. */
+  /* Assume the standard tty on memory error or when there is no
+     ctermid. */
   return name? name : "/dev/tty";
 }
 
@@ -144,7 +159,7 @@ init_ttyfp(void)
     if( initialized )
 	return;
 
-#if defined(_WIN32)
+#if defined(USE_W32_CONSOLE)
     {
 	SECURITY_ATTRIBUTES sa;
 
@@ -172,10 +187,12 @@ init_ttyfp(void)
     ttyfp = stdout; /* Fixme: replace by the real functions: see wklib */
     if (my_rl_init_stream)
       my_rl_init_stream (ttyfp);
+#elif defined (HAVE_W32CE_SYSTEM)
+    ttyfp = stderr;
 #else
     ttyfp = batchmode? stderr : fopen (tty_get_ttyname (), "r+");
     if( !ttyfp ) {
-	log_error("cannot open `%s': %s\n", tty_get_ttyname (),
+	log_error("cannot open '%s': %s\n", tty_get_ttyname (),
                   strerror(errno) );
 	exit(2);
     }
@@ -220,7 +237,7 @@ tty_printf( const char *fmt, ... )
 	init_ttyfp();
 
     va_start( arg_ptr, fmt ) ;
-#ifdef _WIN32
+#ifdef USE_W32_CONSOLE
     {
         char *buf = NULL;
         int n;
@@ -248,14 +265,14 @@ tty_printf( const char *fmt, ... )
 /* Same as tty_printf but if FP is not NULL, behave like a regular
    fprintf. */
 void
-tty_fprintf (FILE *fp, const char *fmt, ... )
+tty_fprintf (estream_t fp, const char *fmt, ... )
 {
   va_list arg_ptr;
 
   if (fp)
     {
       va_start (arg_ptr, fmt) ;
-      vfprintf (fp, fmt, arg_ptr );
+      es_vfprintf (fp, fmt, arg_ptr );
       va_end (arg_ptr);
       return;
     }
@@ -263,83 +280,131 @@ tty_fprintf (FILE *fp, const char *fmt, ... )
   if (no_terminal)
     return;
 
-  if( !initialized )
-    init_ttyfp();
+  if (!initialized)
+    init_ttyfp ();
 
-    va_start( arg_ptr, fmt ) ;
-#ifdef _WIN32
-    {
-        char *buf = NULL;
-        int n;
-	DWORD nwritten;
+  va_start (arg_ptr, fmt);
+#ifdef USE_W32_CONSOLE
+  {
+    char *buf = NULL;
+    int n;
+    DWORD nwritten;
 
-	n = vasprintf(&buf, fmt, arg_ptr);
-	if( !buf )
-	    log_bug("vasprintf() failed\n");
+    n = vasprintf(&buf, fmt, arg_ptr);
+    if (!buf)
+      log_bug("vasprintf() failed\n");
 
-	if( !WriteConsoleA( con.out, buf, n, &nwritten, NULL ) )
-	    log_fatal("WriteConsole failed: rc=%d", (int)GetLastError() );
-	if( n != nwritten )
-	    log_fatal("WriteConsole failed: %d != %d\n", n, (int)nwritten );
-	last_prompt_len += n;
-        xfree (buf);
-    }
+    if (!WriteConsoleA( con.out, buf, n, &nwritten, NULL ))
+      log_fatal("WriteConsole failed: rc=%d", (int)GetLastError() );
+    if (n != nwritten)
+      log_fatal("WriteConsole failed: %d != %d\n", n, (int)nwritten );
+    last_prompt_len += n;
+    xfree (buf);
+  }
 #else
-    last_prompt_len += vfprintf(ttyfp,fmt,arg_ptr) ;
-    fflush(ttyfp);
+  last_prompt_len += vfprintf(ttyfp,fmt,arg_ptr) ;
+  fflush(ttyfp);
 #endif
-    va_end(arg_ptr);
+  va_end(arg_ptr);
 }
 
 
 /****************
- * Print a string, but filter all control characters out.
+ * Print a string, but filter all control characters out.  If FP is
+ * not NULL print to that stream instead to the tty.
  */
 void
-tty_print_string ( const byte *p, size_t n )
+tty_print_string (estream_t fp, const byte *p, size_t n )
 {
-    if (no_terminal)
+    if (no_terminal && !fp)
 	return;
 
-    if( !initialized )
+    if( !initialized & !fp)
 	init_ttyfp();
 
-#ifdef _WIN32
+#ifdef USE_W32_CONSOLE
     /* not so effective, change it if you want */
-    for( ; n; n--, p++ )
-	if( iscntrl( *p ) ) {
-	    if( *p == '\n' )
-		tty_printf("\\n");
-	    else if( !*p )
-		tty_printf("\\0");
-	    else
-		tty_printf("\\x%02x", *p);
-	}
-	else
-	    tty_printf("%c", *p);
+    if (fp)
+      {
+        for( ; n; n--, p++ )
+          {
+            if( iscntrl( *p ) )
+              {
+                if( *p == '\n' )
+                  tty_fprintf (fp, "\\n");
+                else if( !*p )
+                  tty_fprintf (fp, "\\0");
+                else
+                  tty_fprintf (fp, "\\x%02x", *p);
+              }
+            else
+              tty_fprintf (fp, "%c", *p);
+          }
+      }
+    else
+      {
+        for( ; n; n--, p++ )
+          {
+            if( iscntrl( *p ) )
+              {
+                if( *p == '\n' )
+                  tty_printf ("\\n");
+                else if( !*p )
+                  tty_printf ("\\0");
+                else
+                  tty_printf ("\\x%02x", *p);
+              }
+            else
+              tty_printf ("%c", *p);
+          }
+      }
 #else
-    for( ; n; n--, p++ )
-	if( iscntrl( *p ) ) {
-	    putc('\\', ttyfp);
-	    if( *p == '\n' )
-		putc('n', ttyfp);
-	    else if( !*p )
-		putc('0', ttyfp);
-	    else
-		fprintf(ttyfp, "x%02x", *p );
-	}
-	else
-	    putc(*p, ttyfp);
+    if (fp)
+      {
+        for( ; n; n--, p++ )
+          {
+            if (iscntrl (*p))
+              {
+                es_putc ('\\', fp);
+                if ( *p == '\n' )
+                  es_putc ('n', fp);
+                else if ( !*p )
+                  es_putc ('0', fp);
+                else
+                  es_fprintf (fp, "x%02x", *p);
+              }
+            else
+              es_putc (*p, fp);
+          }
+      }
+    else
+      {
+        for (; n; n--, p++)
+          {
+            if (iscntrl (*p))
+              {
+                putc ('\\', ttyfp);
+                if ( *p == '\n' )
+                  putc ('n', ttyfp);
+                else if ( !*p )
+                  putc ('0', ttyfp);
+                else
+                  fprintf (ttyfp, "x%02x", *p );
+              }
+            else
+              putc (*p, ttyfp);
+          }
+      }
 #endif
 }
 
 void
-tty_print_utf8_string2( const byte *p, size_t n, size_t max_n )
+tty_print_utf8_string2 (estream_t fp, const byte *p, size_t n, size_t max_n)
 {
     size_t i;
     char *buf;
 
-    if (no_terminal)
+    if (no_terminal && !fp)
 	return;
 
     /* we can handle plain ascii simpler, so check for it first */
@@ -353,21 +418,22 @@ tty_print_utf8_string2( const byte *p, size_t n, size_t max_n )
 	    buf[max_n] = 0;
 	}
 	/*(utf8 conversion already does the control character quoting)*/
-	tty_printf("%s", buf );
-	xfree( buf );
+	tty_fprintf (fp, "%s", buf);
+	xfree (buf);
     }
     else {
 	if( max_n && (n > max_n) ) {
 	    n = max_n;
 	}
-	tty_print_string( p, n );
+	tty_print_string (fp, p, n );
     }
 }
+
 
 void
 tty_print_utf8_string( const byte *p, size_t n )
 {
-    tty_print_utf8_string2( p, n, 0 );
+  tty_print_utf8_string2 (NULL, p, n, 0);
 }
 
 
@@ -398,7 +464,7 @@ do_get( const char *prompt, int hidden )
     buf = xmalloc((n=50));
     i = 0;
 
-#ifdef _WIN32 /* windoze version */
+#ifdef USE_W32_CONSOLE
     if( hidden )
 	SetConsoleMode(con.in, HID_INPMODE );
 
@@ -432,9 +498,17 @@ do_get( const char *prompt, int hidden )
     if( hidden )
 	SetConsoleMode(con.in, DEF_INPMODE );
 
-#elif defined(__riscos__)
+#elif defined(__riscos__) || defined(HAVE_W32CE_SYSTEM)
     do {
+#ifdef HAVE_W32CE_SYSTEM
+      /* Using getchar is not a correct solution but for now it
+         doesn't matter because we have no real console at all.  We
+         should rework this as soon as we have switched this entire
+         module to estream.  */
+        c = getchar();
+#else
         c = riscos_getchar();
+#endif
         if (c == 0xa || c == 0xd) { /* Return || Enter */
             c = (int) '\n';
         } else if (c == 0x8 || c == 0x7f) { /* Backspace || Delete */
@@ -472,7 +546,7 @@ do_get( const char *prompt, int hidden )
         }
     } while (c != '\n');
     i = (i>0) ? i-1 : 0;
-#else /* unix version */
+#else /* Other systems. */
     if( hidden ) {
 #ifdef HAVE_TCGETATTR
 	struct termios term;
@@ -512,7 +586,6 @@ do_get( const char *prompt, int hidden )
 	buf[0] = CONTROL_D;
 	i = 1;
     }
-
 
     if( hidden ) {
 #ifdef HAVE_TCGETATTR
@@ -575,7 +648,7 @@ tty_getf (const char *promptfmt, ... )
   char *answer;
 
   va_start (arg_ptr, promptfmt);
-  if (estream_vasprintf (&prompt, promptfmt, arg_ptr) < 0)
+  if (gpgrt_vasprintf (&prompt, promptfmt, arg_ptr) < 0)
     log_fatal ("estream_vasprintf failed: %s\n", strerror (errno));
   va_end (arg_ptr);
   answer = tty_get (prompt);
@@ -605,7 +678,7 @@ tty_kill_prompt()
 	last_prompt_len = 0;
     if( !last_prompt_len )
 	return;
-#ifdef _WIN32
+#ifdef USE_W32_CONSOLE
     tty_printf("\r%*s\r", last_prompt_len, "");
 #else
     {

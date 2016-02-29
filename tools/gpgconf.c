@@ -1,5 +1,5 @@
 /* gpgconf.c - Configuration utility for GnuPG
- * Copyright (C) 2003, 2007, 2009 Free Software Foundation, Inc.
+ * Copyright (C) 2003, 2007, 2009, 2011 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -26,6 +26,8 @@
 #include "gpgconf.h"
 #include "i18n.h"
 #include "sysutils.h"
+#include "../common/init.h"
+
 
 /* Constants to identify the commands and options. */
 enum cmd_and_opt_values
@@ -49,8 +51,9 @@ enum cmd_and_opt_values
     aListConfig,
     aCheckConfig,
     aListDirs,
+    aLaunch,
+    aKill,
     aReload
-
   };
 
 
@@ -58,7 +61,7 @@ enum cmd_and_opt_values
 static ARGPARSE_OPTS opts[] =
   {
     { 300, NULL, 0, N_("@Commands:\n ") },
-    
+
     { aListComponents, "list-components", 256, N_("list all components") },
     { aCheckPrograms, "check-programs", 256, N_("check all programs") },
     { aListOptions, "list-options", 256, N_("|COMPONENT|list options") },
@@ -67,15 +70,17 @@ static ARGPARSE_OPTS opts[] =
     { aApplyDefaults, "apply-defaults", 256,
       N_("apply global default values") },
     { aListDirs, "list-dirs", 256,
-      N_("get the configuration directories for gpgconf") },
+      N_("get the configuration directories for @GPGCONF@") },
     { aListConfig,   "list-config", 256,
       N_("list global configuration file") },
     { aCheckConfig,   "check-config", 256,
       N_("check global configuration file") },
-    { aReload,        "reload", 256, "@" },
+    { aReload,        "reload", 256, N_("reload all or a given component")},
+    { aLaunch,        "launch", 256, N_("launch a given component")},
+    { aKill,          "kill", 256,   N_("kill a given component")},
 
     { 301, NULL, 0, N_("@\nOptions:\n ") },
-    
+
     { oOutput, "output",    2, N_("use as output file") },
     { oVerbose, "verbose",  0, N_("verbose") },
     { oQuiet, "quiet",      0, N_("quiet") },
@@ -95,18 +100,18 @@ my_strusage( int level )
 
   switch (level)
     {
-    case 11: p = "gpgconf (GnuPG)";
+    case 11: p = "@GPGCONF@ (@GNUPG@)";
       break;
     case 13: p = VERSION; break;
     case 17: p = PRINTABLE_OS_NAME; break;
     case 19: p = _("Please report bugs to <@EMAIL@>.\n"); break;
 
     case 1:
-    case 40: p = _("Usage: gpgconf [options] (-h for help)");
+    case 40: p = _("Usage: @GPGCONF@ [options] (-h for help)");
       break;
     case 41:
-      p = _("Syntax: gpgconf [options]\n"
-            "Manage configuration options for tools of the GnuPG system\n");
+      p = _("Syntax: @GPGCONF@ [options]\n"
+            "Manage configuration options for tools of the @GNUPG@ system\n");
       break;
 
     default: p = NULL; break;
@@ -118,19 +123,19 @@ my_strusage( int level )
 /* Return the fp for the output.  This is usually stdout unless
    --output has been used.  In the latter case this function opens
    that file.  */
-static FILE *
-get_outfp (FILE **fp)
+static estream_t
+get_outfp (estream_t *fp)
 {
   if (!*fp)
     {
       if (opt.outfile)
         {
-          *fp = fopen (opt.outfile, "w");
+          *fp = es_fopen (opt.outfile, "w");
           if (!*fp)
-            gc_error (1, errno, "can not open `%s'", opt.outfile);
+            gc_error (1, errno, "can not open '%s'", opt.outfile);
         }
       else
-        *fp = stdout;
+        *fp = es_stdout;
     }
   return *fp;
 }
@@ -144,15 +149,16 @@ main (int argc, char **argv)
   const char *fname;
   int no_more_options = 0;
   enum cmd_and_opt_values cmd = 0;
-  FILE *outfp = NULL;
+  estream_t outfp = NULL;
 
-  gnupg_reopen_std ("gpgconf");
+  early_system_init ();
+  gnupg_reopen_std (GPGCONF_NAME);
   set_strusage (my_strusage);
-  log_set_prefix ("gpgconf", 1);
+  log_set_prefix (GPGCONF_NAME, 1);
 
   /* Make sure that our subsystems are ready.  */
   i18n_init();
-  init_common_subsystems ();
+  init_common_subsystems (&argc, &argv);
 
   /* Parse the command line. */
   pargs.argc  = &argc;
@@ -181,6 +187,8 @@ main (int argc, char **argv)
         case aListConfig:
         case aCheckConfig:
         case aReload:
+        case aLaunch:
+        case aKill:
 	  cmd = pargs.r_opt;
 	  break;
 
@@ -190,9 +198,19 @@ main (int argc, char **argv)
 
   if (log_get_errorcount (0))
     exit (2);
-  
+
+  /* Print a warning if an argument looks like an option.  */
+  if (!opt.quiet && !(pargs.flags & ARGPARSE_FLAG_STOP_SEEN))
+    {
+      int i;
+
+      for (i=0; i < argc; i++)
+        if (argv[i][0] == '-' && argv[i][1] == '-')
+          log_info (_("Note: '%s' is not considered an option\n"), argv[i]);
+    }
+
   fname = argc ? *argv : NULL;
-  
+
   switch (cmd)
     {
     case aListComponents:
@@ -211,10 +229,10 @@ main (int argc, char **argv)
     case aCheckOptions:
       if (!fname)
 	{
-	  fputs (_("usage: gpgconf [options] "), stderr);
-	  putc ('\n',stderr);
-	  fputs (_("Need one component argument"), stderr);
-	  putc ('\n',stderr);
+	  es_fprintf (es_stderr, _("usage: %s [options] "), GPGCONF_NAME);
+	  es_putc ('\n', es_stderr);
+	  es_fputs (_("Need one component argument"), es_stderr);
+	  es_putc ('\n', es_stderr);
 	  exit (2);
 	}
       else
@@ -222,11 +240,11 @@ main (int argc, char **argv)
 	  int idx = gc_component_find (fname);
 	  if (idx < 0)
 	    {
-	      fputs (_("Component not found"), stderr);
-	      putc ('\n', stderr);
+	      es_fputs (_("Component not found"), es_stderr);
+	      es_putc ('\n', es_stderr);
 	      exit (1);
 	    }
-	  if (cmd == aCheckOptions)
+          if (cmd == aCheckOptions)
 	    gc_component_check_options (idx, get_outfp (&outfp), NULL);
           else
             {
@@ -236,9 +254,46 @@ main (int argc, char **argv)
               if (cmd == aListOptions)
                 gc_component_list_options (idx, get_outfp (&outfp));
               else if (cmd == aChangeOptions)
-                gc_component_change_options (idx, stdin, get_outfp (&outfp));
+                gc_component_change_options (idx, es_stdin, get_outfp (&outfp));
             }
 	}
+      break;
+
+    case aLaunch:
+    case aKill:
+      if (!fname)
+	{
+	  es_fprintf (es_stderr, _("usage: %s [options] "), GPGCONF_NAME);
+	  es_putc ('\n', es_stderr);
+	  es_fputs (_("Need one component argument"), es_stderr);
+	  es_putc ('\n', es_stderr);
+	  exit (2);
+	}
+      else
+        {
+          /* Launch/Kill a given component.  */
+          int idx;
+
+          idx = gc_component_find (fname);
+          if (idx < 0)
+            {
+              es_fputs (_("Component not found"), es_stderr);
+              es_putc ('\n', es_stderr);
+              exit (1);
+            }
+          else if (cmd == aLaunch)
+            {
+              if (gc_component_launch (idx))
+                exit (1);
+            }
+          else
+            {
+              /* We don't error out if the kill failed because this
+                 command should do nothing if the component is not
+                 running.  */
+              gc_component_kill (idx);
+            }
+        }
       break;
 
     case aReload:
@@ -255,8 +310,8 @@ main (int argc, char **argv)
           idx = gc_component_find (fname);
           if (idx < 0)
             {
-              fputs (_("Component not found"), stderr);
-              putc ('\n', stderr);
+              es_fputs (_("Component not found"), es_stderr);
+              es_putc ('\n', es_stderr);
               exit (1);
             }
           else
@@ -279,70 +334,64 @@ main (int argc, char **argv)
     case aApplyDefaults:
       if (fname)
 	{
-	  fputs (_("usage: gpgconf [options] "), stderr);
-	  putc ('\n',stderr);
-	  fputs (_("No argument allowed"), stderr);
-	  putc ('\n',stderr);
+	  es_fprintf (es_stderr, _("usage: %s [options] "), GPGCONF_NAME);
+	  es_putc ('\n', es_stderr);
+	  es_fputs (_("No argument allowed"), es_stderr);
+	  es_putc ('\n', es_stderr);
 	  exit (2);
 	}
       gc_component_retrieve_options (-1);
       if (gc_process_gpgconf_conf (NULL, 1, 1, NULL))
         exit (1);
       break;
-      
+
     case aListDirs:
       /* Show the system configuration directories for gpgconf.  */
       get_outfp (&outfp);
-      fprintf (outfp, "sysconfdir:%s\n",
-	       gc_percent_escape (gnupg_sysconfdir ()));
-      fprintf (outfp, "bindir:%s\n",
-	       gc_percent_escape (gnupg_bindir ()));
-      fprintf (outfp, "libexecdir:%s\n",
-	       gc_percent_escape (gnupg_libexecdir ()));
-      fprintf (outfp, "libdir:%s\n",
-	       gc_percent_escape (gnupg_libdir ()));
-      fprintf (outfp, "datadir:%s\n",
-	       gc_percent_escape (gnupg_datadir ()));
-      fprintf (outfp, "localedir:%s\n",
-	       gc_percent_escape (gnupg_localedir ()));
-      fprintf (outfp, "dirmngr-socket:%s\n",
-	       gc_percent_escape (dirmngr_socket_name ()));
+      es_fprintf (outfp, "sysconfdir:%s\n",
+                  gc_percent_escape (gnupg_sysconfdir ()));
+      es_fprintf (outfp, "bindir:%s\n",
+                  gc_percent_escape (gnupg_bindir ()));
+      es_fprintf (outfp, "libexecdir:%s\n",
+                  gc_percent_escape (gnupg_libexecdir ()));
+      es_fprintf (outfp, "libdir:%s\n",
+                  gc_percent_escape (gnupg_libdir ()));
+      es_fprintf (outfp, "datadir:%s\n",
+                  gc_percent_escape (gnupg_datadir ()));
+      es_fprintf (outfp, "localedir:%s\n",
+                  gc_percent_escape (gnupg_localedir ()));
+
+      if (dirmngr_user_socket_name ())
+        {
+          es_fprintf (outfp, "dirmngr-socket:%s\n",
+                      gc_percent_escape (dirmngr_user_socket_name ()));
+          es_fprintf (outfp, "dirmngr-sys-socket:%s\n",
+                      gc_percent_escape (dirmngr_sys_socket_name ()));
+        }
+      else
+        {
+          es_fprintf (outfp, "dirmngr-socket:%s\n",
+                      gc_percent_escape (dirmngr_sys_socket_name ()));
+        }
+
       {
-        char *infostr = getenv ("GPG_AGENT_INFO");
-
-        if (!infostr || !*infostr)
-          infostr = make_filename (default_homedir (), "S.gpg-agent", NULL);
-        else
-          {
-            char *tmp;
-
-            infostr = xstrdup (infostr);
-            tmp = strchr (infostr, PATHSEP_C);
-            if (!tmp || tmp == infostr)
-              {
-                xfree (infostr);
-                infostr = NULL;
-              }
-            else
-              *tmp = 0;
-          }
-        fprintf (outfp, "agent-socket:%s\n",
-                 infostr? gc_percent_escape (infostr) : "");
-        xfree (infostr);
+        char *tmp = make_filename (default_homedir (),
+                                   GPG_AGENT_SOCK_NAME, NULL);
+        es_fprintf (outfp, "agent-socket:%s\n", gc_percent_escape (tmp));
+        xfree (tmp);
       }
       {
         /* We need to use make_filename to expand a possible "~/".  */
         char *tmp = make_filename (default_homedir (), NULL);
-        fprintf (outfp, "homedir:%s\n", gc_percent_escape (tmp));
+        es_fprintf (outfp, "homedir:%s\n", gc_percent_escape (tmp));
         xfree (tmp);
       }
       break;
     }
 
-  if (outfp && outfp != stdout)
-    if (fclose (outfp))
-      gc_error (1, errno, "error closing `%s'", opt.outfile);
+  if (outfp != es_stdout)
+    if (es_fclose (outfp))
+      gc_error (1, errno, "error closing '%s'", opt.outfile);
 
-  return 0; 
+  return 0;
 }
-

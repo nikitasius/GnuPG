@@ -1,21 +1,90 @@
-2011-12-02  Werner Koch  <wk@g10code.com>
+2011-12-01  Werner Koch  <wk@g10code.com>
 
 	NB: ChangeLog files are no longer manually maintained.  Starting
 	on December 1st, 2011 we put change information only in the GIT
 	commit log, and generate a top-level ChangeLog file from logs at
 	"make dist".  See doc/HACKING for details.
 
-2011-01-13  Werner Koch  <wk@g10code.com>
+2011-10-12  Werner Koch  <wk@g10code.com>
 
+	* gpg.texi: Add a bunch of opindex items.
+
+	* yat2m.c (parse_file): Add hack to allow table indentation.
+
+2011-08-12  Werner Koch  <wk@g10code.com>
+
+	* texi.css: Override some elements.
+	* gnupg-log-tr.png: New.
+	* gnupg.texi:  Use transparent logo.
+
+2011-03-01  Werner Koch  <wk@g10code.com>
+
+	* gpgsm.texi (CSR and certificate creation): New.
+	* gpg.texi (Unattended GPG key generation): New.
+
+2010-10-29  David Shaw  <dshaw@jabberwocky.com>
+
+	* gpg.texi (GPG Configuration Options): Clarify that show-photos
+	doesn't work with --with-colons.  --personal-digest-preferences
+	does not have a default any longer.
+
+2010-10-18  Werner Koch  <wk@g10code.com>
+
+	* DETAILS: Fix description of IMPORT_RES.  Reported by Nicholas Cole.
+
+2010-10-11  Daniel Kahn Gillmor  <dkg@fifthhorseman.net>  (wk)
+
+	* gpg.texi (GPG Configuration Options) <photo-viewer>: Describe %v
+	and %V.
+
+2010-10-05  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (faq.txt faq.html, faq-online): New.
+
+2010-10-04  Werner Koch  <wk@g10code.com>
+
+	* faq.org: New.
 	* FAQ: Make it a static file with a pointer to the online location.
 	* Makefile.am (EXTRA_DIST): Remove faq.raw and faq.html.
 	(FAQ, faq.html): Remove these targets
 
-2010-03-05  Werner Koch  <wk@g10code.com>
+2010-09-28  Werner Koch  <wk@g10code.com>
 
-	* gpg.texi (GPG Configuration Options): Mention that
-	show-uid-validity does only work with public keys.  Noted by
-	Daniel Kahn Gillmor.
+	* Makefile.am (AM_MAKEINFOFLAGS): Add define gpgtwoone.
+
+2010-09-28  David Shaw  <dshaw@jabberwocky.com>
+
+	* gpg.texi (OpenPGP Options): Clarify that --force-v3-sigs
+	disables (not enables) v4 options.  --force-v3-sigs defaults to
+	no.
+
+2010-08-18  Werner Koch  <wk@g10code.com>
+
+	* tools.texi (watchgnupg): Add examples section.
+
+2010-06-10  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (gnupg_TEXINFOS): Add dirmngr.texi.
+	(myman_sources): Ditto.
+	(myman_pages): Add dirmngr and dirmngr-client pages.
+	(noinst_MANS): Move gnupg.7 to man_MANS.
+
+	* gnupg.texi: Include dirmngr.texi and add a menu entry.
+	* dirmngr.texi: New.  Taken from the current SVN of the dirmngr
+	package and adjusted to fit into the GnuPG manual.  Moved
+	dirmngr-cleint stuff to ...
+	* tools.texi (dirmngr-client): ... new.
+
+2009-11-18  Werner Koch  <wk@g10code.com>
+
+	* gpg.texi (GPG Key related Options): Describe
+	--skip-hidden-recipients.
+
+2009-10-19  David Shaw  <dshaw@jabberwocky.com>
+
+	* gpg.texi (GPG Configuration Options): Clarify that ca-cert-file
+	is a generic store, the details of which depend on the underlying
+	libraries.
 
 2009-08-24  David Shaw  <dshaw@jabberwocky.com>
 
@@ -662,7 +731,7 @@
 	* gnupg.texi: Include gpg.texi
 
 	* tools.texi: Add a few @command markups.
-	* gpgsm.texi: Ditto.
+	* gpgsm.texi: Ditto
 	* gpg-agent.texi: Ditto.
 	* scdaemon.texi: Ditto.
 
@@ -787,7 +856,7 @@
 
 	* Makefile.am, gpgsm.texi: New.
 
- Copyright 2002, 2004, 2005, 2006, 2007, 2008 Free Software Foundation, Inc.
+ Copyright 2002, 2004, 2005, 2006, 2007, 2008, 2010 Free Software Foundation, Inc.
 
  This file is free software; as a special exception the author gives
  unlimited permission to copy and/or distribute it, with or without
@@ -796,3 +865,7 @@
  This file is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+Local Variables:
+buffer-read-only: t
+End:

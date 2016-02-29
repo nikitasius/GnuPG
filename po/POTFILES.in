@@ -9,10 +9,12 @@ agent/preset-passphrase.c
 agent/protect-tool.c
 agent/trustlist.c
 agent/findkey.c
-agent/call-pinentry.c
+agent/pksign.c
+agent/cvt-openpgp.c
 
-common/exechelp.c
-common/http.c
+common/exechelp-posix.c
+common/exechelp-w32.c
+common/exechelp-w32ce.c
 common/simple-pwquery.c
 common/sysutils.c
 common/yesno.c
@@ -22,6 +24,12 @@ common/audit.c
 common/helpfile.c
 common/gettime.c
 
+common/argparse.c
+common/logging.c
+common/utf8conv.c
+common/dotlock.c
+
+
 g10/armor.c
 g10/build-packet.c
 g10/call-agent.c
@@ -29,8 +37,8 @@ g10/card-util.c
 g10/dearmor.c
 g10/decrypt.c
 g10/delkey.c
-g10/encode.c
-g10/encr-data.c
+g10/encrypt.c
+g10/decrypt-data.c
 g10/exec.c
 g10/export.c
 g10/getkey.c
@@ -55,7 +63,6 @@ g10/pkclist.c
 g10/plaintext.c
 g10/pubkey-enc.c
 g10/revoke.c
-g10/seckey-cert.c
 g10/seskey.c
 g10/sig-check.c
 g10/sign.c
@@ -63,13 +70,10 @@ g10/skclist.c
 g10/tdbdump.c
 g10/tdbio.c
 g10/textfilter.c
+g10/tofu.c
 g10/trustdb.c
+g10/trust.c
 g10/verify.c
-
-jnlib/argparse.c
-jnlib/logging.c
-jnlib/utf8conv.c
-jnlib/dotlock.c
 
 kbx/kbxutil.c
 
@@ -99,6 +103,22 @@ sm/misc.c
 sm/qualified.c
 sm/sign.c
 sm/verify.c
+
+dirmngr/certcache.c
+dirmngr/crlcache.c
+dirmngr/crlfetch.c
+dirmngr/dirmngr-client.c
+dirmngr/dirmngr.c
+dirmngr/dirmngr_ldap.c
+dirmngr/http.c
+dirmngr/ldap-wrapper-ce.c
+dirmngr/ldap-wrapper.c
+dirmngr/ldap.c
+dirmngr/ldapserver.c
+dirmngr/misc.c
+dirmngr/ocsp.c
+dirmngr/server.c
+dirmngr/validate.c
 
 tools/gpg-connect-agent.c
 tools/gpgconf-comp.c

@@ -1,2 +1,2 @@
 # GnuPG
-This is original GnuPG 2.0.29
+This is original GnuPG 2.1.11

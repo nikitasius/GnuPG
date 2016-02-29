@@ -1,8 +1,10 @@
 Program: GnuPG
 Homepage: https://www.gnupg.org
-Maintainer: Werner Koch <wk@gnupg.org>
-Bug reports: http://bugs.gnupg.org
+Download: ftp://ftp.gnupg.org/gcrypt/gnupg/
+Repository: git://git.gnupg.org/gnupg.git
+Bug reports: https://bugs.gnupg.org
 Security related bug reports: <security@gnupg.org>
+Maintainer: Werner Koch <wk@gnupg.org>
 License: GPLv3+
 
 GnuPG is free software.  See the files COPYING for copying conditions.
@@ -10,11 +12,36 @@ License copyright years may be listed using range notation, e.g.,
 2000-2013, indicating that every year in the range, inclusive, is a
 copyrightable year that would otherwise be listed individually.
 
+List of Copyright holders
+=========================
+
+  Copyright (C) 1997-2016 Werner Koch
+  Copyright (C) 1994-2016 Free Software Foundation, Inc.
+  Copyright (C) 2003-2013,2015-2016 g10 Code GmbH
+  Copyright (C) 2002 Klarälvdalens Datakonsult AB
+  Copyright (C) 1995-1997, 2000-2007 Ulrich Drepper <drepper@gnu.ai.mit.edu>
+  Copyright (C) 1994 X Consortium
+  Copyright (C) 1998 by The Internet Society.
+  Copyright (C) 1998-2004 The OpenLDAP Foundation
+  Copyright (C) 1998-2004 Kurt D. Zeilenga.
+  Copyright (C) 1998-2004 Net Boolean Incorporated.
+  Copyright (C) 2001-2004 IBM Corporation.
+  Copyright (C) 1999-2003 Howard Y.H. Chu.
+  Copyright (C) 1999-2003 Symas Corporation.
+  Copyright (C) 1998-2003 Hallvard B. Furuseth.
+  Copyright (C) 1992-1996 Regents of the University of Michigan.
+
+
 
 Authors with a FSF copyright assignment
 =======================================
 
 Ales Nyakhaychyk <nyakhaychyk@i1fn.linux.by> Translations [be]
+
+Andrey Jivsov <openpgp@brainhub.org>  Assigns past and future changes for ECC.
+    (g10/ecdh.c.  other changes to support ECC)
+
+Ben Kibbey  <bjk@luxsci.net>  Assigns past and future changes.
 
 Birger Langkjer <birger.langkjer@image.dk> Translations [da]
 
@@ -98,8 +125,6 @@ Pavel I. Shajdo <pshajdo@gmail.com> Translations [ru]
 
 Pedro Morais <morais@poli.org> Translations [pt_PT]
 
-Petr Pisar <petr.pisar@atlas.cz> Translations [cs]
-
 Rémi Guyomarch	<rguyom@mail.dotcom.fr> Assigns past and future changes.
     (g10/compress.c, g10/encr-data.c,
      g10/free-packet.c, g10/mdfilter.c, g10/plaintext.c, util/iobuf.c)
@@ -129,12 +154,45 @@ Yosiaki IIDA <iida@ring.gr.jp> Translations [ja]
 
 Yuri Chornoivan, yurchor at ukr dot net: Translations [uk]
 
+Yutaka Niibe   Assigns Past and Future Changes
+     (scd/)
+
 
 Authors with a DCO
 ==================
 
-The list of authors who signed the Developer's Certificate of Origin
-is kept in the GIT master branch's copy of this file.
+Andre Heinecke <aheinecke@intevation.de>
+2014-09-19:4525694.FcpLvWDUFT@esus:
+
+Andreas Schwier <andreas.schwier@cardcontact.de>
+2014-07-22:53CED1D8.1010306@cardcontact.de:
+
+Christian Aistleitner <christian@quelltextlich.at>
+2013-05-26:20130626112332.GA2228@quelltextlich.at:
+
+Damien Goutte-Gattat <dgouttegattat@incenp.org>
+2015-01-17:54BA49AA.2040708@incenp.org:
+
+Daniel Kahn Gillmor <dkg@fifthhorseman.net>
+2014-09-24:87oau6w9q7.fsf@alice.fifthhorseman.net:
+
+Hans of Guardian <hans@guardianproject.info>
+2013-06-26:D84473D7-F3F7-43D5-A9CE-16580B88D574@guardianproject.info:
+
+Jonas Borgström <jonas@borgstrom.se>
+2013-08-29:521F1E7A.5080602@borgstrom.se:
+
+Joshua Rogers <git@internot.info>
+2014-12-22:5497FE75.7010503@internot.info:
+
+Kyle Butt <kylebutt@gmail.com>
+2013-05-29:CAAODAYLbCtqOG6msLLL0UTdASKWT6u2ptxsgUQ1JpusBESBoNQ@mail.gmail.com:
+
+Stefan Tomanek <tomanek@internet-sicherheit.de>
+2014-01-30:20140129234449.GY30808@zirkel.wertarbyte.de:
+
+Werner Koch <wk@gnupg.org>
+2013-03-29:87620ahchj.fsf@vigenere.g10code.de:
 
 
 Other authors
@@ -143,10 +201,6 @@ Other authors
 The need for copyright assignments to the FSF has been waived on
 2013-03-29; the need for copyright disclaimers for translations
 already in December 2012.
-
-The files common/libestream.[ch] are maintained as a separate project
-by g10 Code GmbH.  These files, as used here, are considered part of
-GnuPG.
 
 The RPM specs file scripts/gnupg.spec has been contributed by
 several people.
@@ -162,29 +216,18 @@ Copyright
 =========
 
 GnuPG is distributed under the GNU General Public License, version 3
-or later.  A few files are under the Lesser General Public License, a
-few other files carry the all permissive license note as found at the
-bottom of this file.  Certain files in keyserver/ allow one specific
-exception:
+or later.
 
-  In addition, as a special exception, the Free Software Foundation
-  gives permission to link the code of the keyserver helper tools:
-  gpgkeys_ldap, gpgkeys_curl and gpgkeys_hkp with the OpenSSL
-  project's "OpenSSL" library (or with modified versions of it that
-  use the same license as the "OpenSSL" library), and distribute the
-  linked executables.  You must obey the GNU General Public License
-  in all respects for all of the code used other than "OpenSSL".  If
-  you modify this file, you may extend this exception to your version
-  of the file, but you are not obligated to do so.  If you do not
-  wish to do so, delete this exception statement from your version.
+Note that some files are under a combination of the GNU Lesser General
+Public License, version 3 and the GNU General Public License, version
+2.  A few other files carry the all permissive license note as found
+at the bottom of this file.
 
-Note that the gpgkeys_* binaries are currently installed under the
-name gpg2keys_*.
 
 =========
 
- Copyright 1997-2015 Werner Koch
- Copyright 1998-2013 Free Software Foundation, Inc.
+ Copyright 1998-2016 Free Software Foundation, Inc.
+ Copyright 1997-2016 Werner Koch
 
  This file is free software; as a special exception the author gives
  unlimited permission to copy and/or distribute it, with or without
@@ -193,4 +236,3 @@ name gpg2keys_*.
  This file is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-

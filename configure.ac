@@ -1,7 +1,6 @@
-# configure.ac - for GnuPG 2.0
-# Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-#               2006, 2007, 2008, 2010, 2011,
-#               2012 Free Software Foundation, Inc.
+# configure.ac - for GnuPG 2.1
+# Copyright (C) 1998-2012 Free Software Foundation, Inc.
+# Copyright (C) 1998-2015 Werner Koch
 #
 # This file is part of GnuPG.
 #
@@ -26,74 +25,110 @@ min_automake_version="1.14"
 # (git tag -s gnupg-2.n.m) and run "./autogen.sh --force".  Please
 # bump the version number immediately *after* the release and do
 # another commit and push so that the git magic is able to work.
-m4_define([mym4_version], [2.0.29])
+m4_define([mym4_package],[gnupg])
+m4_define([mym4_major], [2])
+m4_define([mym4_minor], [1])
+m4_define([mym4_micro], [11])
+
+# To start a new development series, i.e a new major or minor number
+# you need to mark an arbitrary commit before the first beta release
+# with an annotated tag.  For example the 2.1 branch starts off with
+# the tag "gnupg-2.1-base".  This is used as the base for counting
+# beta numbers before the first release of a series.
 
 # Below is m4 magic to extract and compute the git revision number,
 # the decimalized short revision number, a beta version string and a
-# flag indicating a development version (mym4_isgit).  Note that the
+# flag indicating a development version (mym4_isbeta).  Note that the
 # m4 processing is done by autoconf and not during the configure run.
-m4_define([mym4_revision],
-          m4_esyscmd([git rev-parse --short HEAD | tr -d '\n\r']))
-m4_define([mym4_revision_dec],
-          m4_esyscmd_s([echo $((0x$(echo ]mym4_revision[|head -c 4)))]))
-m4_define([mym4_betastring],
-          m4_esyscmd_s([git describe --match 'gnupg-2.[0-9].*[0-9]' --long|\
-                        awk -F- '$3!=0{print"-beta"$3}']))
-m4_define([mym4_isgit],m4_if(mym4_betastring,[],[no],[yes]))
-m4_define([mym4_full_version],[mym4_version[]mym4_betastring])
+m4_define([mym4_verslist], m4_split(m4_esyscmd([./autogen.sh --find-version] \
+                           mym4_package mym4_major mym4_minor mym4_micro),[:]))
+m4_define([mym4_isbeta],       m4_argn(2, mym4_verslist))
+m4_define([mym4_version],      m4_argn(4, mym4_verslist))
+m4_define([mym4_revision],     m4_argn(7, mym4_verslist))
+m4_define([mym4_revision_dec], m4_argn(8, mym4_verslist))
+m4_esyscmd([echo ]mym4_version[>VERSION])
+AC_INIT([mym4_package],[mym4_version], [http://bugs.gnupg.org])
 
-AC_INIT([gnupg],[mym4_full_version], [http://bugs.gnupg.org])
-
-NEED_GPG_ERROR_VERSION=1.11
+NEED_GPG_ERROR_VERSION=1.21
 
 NEED_LIBGCRYPT_API=1
-NEED_LIBGCRYPT_VERSION=1.5.0
+NEED_LIBGCRYPT_VERSION=1.6.0
 
 NEED_LIBASSUAN_API=2
-NEED_LIBASSUAN_VERSION=2.0.0
+NEED_LIBASSUAN_VERSION=2.4.1
 
 NEED_KSBA_API=1
-NEED_KSBA_VERSION=1.0.7
+NEED_KSBA_VERSION=1.2.0
 
-development_version=mym4_isgit
+NEED_NTBTLS_API=1
+NEED_NTBTLS_VERSION=0.1.0
+
+NEED_NPTH_API=1
+NEED_NPTH_VERSION=0.91
+
+
+NEED_GNUTLS_VERSION=3.0
+
+NEED_SQLITE_VERSION=3.7
+
+development_version=mym4_isbeta
 PACKAGE=$PACKAGE_NAME
 PACKAGE_GT=${PACKAGE_NAME}2
 VERSION=$PACKAGE_VERSION
 
-AC_CONFIG_AUX_DIR(scripts)
-AC_CONFIG_SRCDIR(sm/gpgsm.c)
-AM_CONFIG_HEADER(config.h)
+AC_CONFIG_AUX_DIR([build-aux])
+AC_CONFIG_SRCDIR([sm/gpgsm.c])
+AC_CONFIG_HEADER([config.h])
 AM_INIT_AUTOMAKE([serial-tests dist-bzip2 no-dist-gzip])
 AC_CANONICAL_HOST
 AB_INIT
 
 AC_GNU_SOURCE
 
+# Before we do anything with the C compiler, we first save the user's
+# CFLAGS (they are restored at the end of the configure script).  This
+# is because some configure checks don't work with -Werror, but we'd
+# like to use -Werror with our build.
+CFLAGS_orig=$CFLAGS
+CFLAGS=
+
 # Some status variables.
 have_gpg_error=no
 have_libgcrypt=no
 have_libassuan=no
 have_ksba=no
-have_pth=no
+have_ntbtls=no
+have_gnutls=no
+have_sqlite=no
+have_npth=no
 have_libusb=no
 have_adns=no
+gnupg_have_ldap="n/a"
 
+use_zip=yes
 use_bzip2=yes
 use_exec=yes
-disable_keyserver_path=no
+use_trust_models=yes
+use_tofu=yes
+card_support=yes
 use_ccid_driver=yes
-use_standard_socket=no
+dirmngr_auto_start=yes
+use_tls_library=no
 large_secmem=no
+show_tor_support=no
+
 
 GNUPG_BUILD_PROGRAM(gpg, yes)
 GNUPG_BUILD_PROGRAM(gpgsm, yes)
-GNUPG_BUILD_PROGRAM(agent, yes)
+# The agent is a required part and can't be disabled anymore.
+build_agent=yes
 GNUPG_BUILD_PROGRAM(scdaemon, yes)
+GNUPG_BUILD_PROGRAM(g13, no)
+GNUPG_BUILD_PROGRAM(dirmngr, yes)
 GNUPG_BUILD_PROGRAM(tools, yes)
 GNUPG_BUILD_PROGRAM(doc, yes)
 GNUPG_BUILD_PROGRAM(symcryptrun, no)
-GNUPG_BUILD_PROGRAM(gpgtar, no)
-
+GNUPG_BUILD_PROGRAM(gpgtar, yes)
 
 AC_SUBST(PACKAGE)
 AC_SUBST(PACKAGE_GT)
@@ -108,6 +143,9 @@ AC_DEFINE_UNQUOTED(NEED_LIBGCRYPT_VERSION, "$NEED_LIBGCRYPT_VERSION",
                                        [Required version of Libgcrypt])
 AC_DEFINE_UNQUOTED(NEED_KSBA_VERSION, "$NEED_KSBA_VERSION",
                                        [Required version of Libksba])
+AC_DEFINE_UNQUOTED(NEED_NTBTLS_VERSION, "$NEED_NTBTLS_VERSION",
+                                       [Required version of NTBTLS])
+
 
 
 # The default is to use the modules from this package and the few
@@ -158,13 +196,33 @@ show_gnupg_protect_tool_pgm="(default)"
 test -n "$GNUPG_PROTECT_TOOL_PGM" \
       && show_gnupg_protect_tool_pgm="$GNUPG_PROTECT_TOOL_PGM"
 
+AC_ARG_WITH(dirmngr-ldap-pgm,
+    [  --with-dirmngr-ldap-pgm=PATH  Use PATH as the default for the dirmnge ldap wrapper)],
+          GNUPG_DIRMNGR_LDAP_PGM="$withval", GNUPG_DIRMNGR_LDAP_PGM="" )
+AC_SUBST(GNUPG_DIRMNGR_LDAP_PGM)
+AM_CONDITIONAL(GNUPG_DIRMNGR_LDAP_PGM, test -n "$GNUPG_DIRMNGR_LDAP_PGM")
+show_gnupg_dirmngr_ldap_pgm="(default)"
+test -n "$GNUPG_DIRMNGR_LDAP_PGM" \
+      && show_gnupg_dirmngr_ldap_pgm="$GNUPG_DIRMNGR_LDAP_PGM"
 
-# Some folks want to use only the agent from this packet.  Make it
-# easier for them by providing the configure option
-# --enable-only-agent.
-AC_ARG_ENABLE(agent-only,
-    AC_HELP_STRING([--enable-agent-only],[build only the gpg-agent]),
-    build_agent_only=$enableval)
+#
+# On some platforms gpg2 is usually installed as gpg without using a
+# symlink.  For correct operation of gpgconf it needs to know the
+# installed name of gpg.  This option sets "gpg2"'s installed name to
+# just "gpg".  Note that it might be required to rename gpg2 to gpg
+# manually after the build process.
+#
+AC_ARG_ENABLE(gpg2-is-gpg,
+    AC_HELP_STRING([--enable-gpg2-is-gpg],[Set installed name of gpg2 to gpg]),
+    gpg2_is_gpg=$enableval)
+if test "$gpg2_is_gpg" = "yes"; then
+   name_of_installed_gpg=gpg
+else
+   name_of_installed_gpg=gpg2
+fi
+AC_DEFINE_UNQUOTED(NAME_OF_INSTALLED_GPG, "$name_of_installed_gpg",
+                   [The name of the installed GPG tool])
+
 
 # SELinux support includes tracking of sensitive files to avoid
 # leaking their contents through processing these files by gpg itself
@@ -190,6 +248,67 @@ fi
 AC_DEFINE_UNQUOTED(SECMEM_BUFFER_SIZE,$SECMEM_BUFFER_SIZE,
                    [Size of secure memory buffer])
 
+AC_MSG_CHECKING([whether to enable trust models])
+AC_ARG_ENABLE(trust-models,
+              AC_HELP_STRING([--disable-trust-models],
+                             [disable all trust models except "always"]),
+              use_trust_models=$enableval)
+AC_MSG_RESULT($use_trust_models)
+if test "$use_trust_models" = no ; then
+    AC_DEFINE(NO_TRUST_MODELS, 1,
+             [Define to include only trust-model always])
+fi
+
+AC_MSG_CHECKING([whether to enable TOFU])
+AC_ARG_ENABLE(tofu,
+                AC_HELP_STRING([--disable-tofu],
+                               [disable the TOFU trust model]),
+              use_tofu=$enableval, use_tofu=yes)
+AC_MSG_RESULT($use_tofu)
+
+
+
+#
+# Options to disable algorithm
+#
+
+GNUPG_GPG_DISABLE_ALGO([rsa],[RSA public key])
+# Elgamal is a MUST algorithm
+# DSA is a MUST algorithm
+GNUPG_GPG_DISABLE_ALGO([ecdh],[ECDH public key])
+GNUPG_GPG_DISABLE_ALGO([ecdsa],[ECDSA public key])
+GNUPG_GPG_DISABLE_ALGO([eddsa],[EdDSA public key])
+
+GNUPG_GPG_DISABLE_ALGO([idea],[IDEA cipher])
+# 3DES is a MUST algorithm
+GNUPG_GPG_DISABLE_ALGO([cast5],[CAST5 cipher])
+GNUPG_GPG_DISABLE_ALGO([blowfish],[BLOWFISH cipher])
+GNUPG_GPG_DISABLE_ALGO([aes128],[AES128 cipher])
+GNUPG_GPG_DISABLE_ALGO([aes192],[AES192 cipher])
+GNUPG_GPG_DISABLE_ALGO([aes256],[AES256 cipher])
+GNUPG_GPG_DISABLE_ALGO([twofish],[TWOFISH cipher])
+GNUPG_GPG_DISABLE_ALGO([camellia128],[CAMELLIA128 cipher])
+GNUPG_GPG_DISABLE_ALGO([camellia192],[CAMELLIA192 cipher])
+GNUPG_GPG_DISABLE_ALGO([camellia256],[CAMELLIA256 cipher])
+
+GNUPG_GPG_DISABLE_ALGO([md5],[MD5 hash])
+# SHA1 is a MUST algorithm
+GNUPG_GPG_DISABLE_ALGO([rmd160],[RIPE-MD160 hash])
+GNUPG_GPG_DISABLE_ALGO([sha224],[SHA-224 hash])
+# SHA256 is a MUST algorithm for GnuPG.
+GNUPG_GPG_DISABLE_ALGO([sha384],[SHA-384 hash])
+GNUPG_GPG_DISABLE_ALGO([sha512],[SHA-512 hash])
+
+
+# Allow disabling of zip support.
+# This is in general not a good idea because according to rfc4880 OpenPGP
+# implementations SHOULD support ZLIB.
+AC_MSG_CHECKING([whether to enable the ZIP and ZLIB compression algorithm])
+AC_ARG_ENABLE(zip,
+   AC_HELP_STRING([--disable-zip],
+                  [disable the ZIP and ZLIB compression algorithm]),
+   use_zip=$enableval)
+AC_MSG_RESULT($use_zip)
 
 # Allow disabling of bzib2 support.
 # It is defined only after we confirm the library is available later
@@ -232,61 +351,6 @@ if test "$use_exec" = yes ; then
         fi],withval=no)
     AC_MSG_RESULT($withval)
   fi
-
-  AC_MSG_CHECKING([whether to enable external keyserver helpers])
-  AC_ARG_ENABLE(keyserver-helpers,
-      [  --disable-keyserver-helpers  disable all external keyserver support],
-      [if test "$enableval" = no ; then
-         AC_DEFINE(DISABLE_KEYSERVER_HELPERS,1,
-                  [define to disable keyserver helpers])
-      fi],enableval=yes)
-  gnupg_cv_enable_keyserver_helpers=$enableval
-  AC_MSG_RESULT($enableval)
-
-  if test "$gnupg_cv_enable_keyserver_helpers" = yes ; then
-    # LDAP is defined only after we confirm the library is available later
-    AC_MSG_CHECKING([whether LDAP keyserver support is requested])
-    AC_ARG_ENABLE(ldap,
-      AC_HELP_STRING([--disable-ldap],[disable LDAP keyserver interface only]),
-      try_ldap=$enableval, try_ldap=yes)
-    AC_MSG_RESULT($try_ldap)
-
-    AC_MSG_CHECKING([whether HKP keyserver support is requested])
-    AC_ARG_ENABLE(hkp,
-      AC_HELP_STRING([--disable-hkp],[disable HKP keyserver interface only]),
-      try_hkp=$enableval, try_hkp=yes)
-    AC_MSG_RESULT($try_hkp)
-
-    AC_MSG_CHECKING([whether finger key fetching support is requested])
-    AC_ARG_ENABLE(finger,
-      AC_HELP_STRING([--disable-finger],
-        [disable finger key fetching interface only]),
-      try_finger=$enableval, try_finger=yes)
-    AC_MSG_RESULT($try_finger)
-
-    AC_MSG_CHECKING([whether generic object key fetching support is requested])
-    AC_ARG_ENABLE(generic,
-      AC_HELP_STRING([--disable-generic],
-        [disable generic object key fetching interface only]),
-      try_generic=$enableval, try_generic=yes)
-    AC_MSG_RESULT($try_generic)
-
-    AC_MSG_CHECKING([whether email keyserver support is requested])
-    AC_ARG_ENABLE(mailto,
-      AC_HELP_STRING([--enable-mailto],
-	[enable email keyserver interface only]),
-      try_mailto=$enableval, try_mailto=no)
-    AC_MSG_RESULT($try_mailto)
-  fi
-
-  AC_MSG_CHECKING([whether keyserver exec-path is enabled])
-  AC_ARG_ENABLE(keyserver-path,
-      AC_HELP_STRING([--disable-keyserver-path],
-           [disable the exec-path option for keyserver helpers]),
-           [if test "$enableval" = no ; then
-              disable_keyserver_path=yes
-           fi],enableval=yes)
-  AC_MSG_RESULT($enableval)
 fi
 
 
@@ -324,6 +388,19 @@ AC_ARG_WITH(capabilities,
 [use_capabilities="$withval"],[use_capabilities=no])
 AC_MSG_RESULT($use_capabilities)
 
+#
+# Check whether to disable the card support
+AC_MSG_CHECKING([whether smartcard support is requested])
+AC_ARG_ENABLE(card-support,
+              AC_HELP_STRING([--disable-card-support],
+                             [disable smartcard support]),
+              card_support=$enableval)
+AC_MSG_RESULT($card_support)
+if test "$card_support" = yes ; then
+  AC_DEFINE(ENABLE_CARD_SUPPORT,1,[Define to include smartcard support])
+else
+  build_scdaemon=no
+fi
 
 #
 # Allow disabling of internal CCID support.
@@ -335,6 +412,17 @@ AC_ARG_ENABLE(ccid-driver,
                              [disable the internal CCID driver]),
               use_ccid_driver=$enableval)
 AC_MSG_RESULT($use_ccid_driver)
+
+AC_MSG_CHECKING([whether to auto start dirmngr])
+AC_ARG_ENABLE(dirmngr-auto-start,
+              AC_HELP_STRING([--disable-dirmngr-auto-start],
+                             [disable auto starting of the dirmngr]),
+              dirmngr_auto_start=$enableval)
+AC_MSG_RESULT($dirmngr_auto_start)
+if test "$dirmngr_auto_start" = yes ; then
+    AC_DEFINE(USE_DIRMNGR_AUTO_START,1,
+              [Define to enable auto starting of the dirmngr])
+fi
 
 
 #
@@ -386,27 +474,39 @@ AH_BOTTOM([
 #define SAFE_VERSION_DASH '-'
 
 /* Some global constants. */
-#ifdef HAVE_DRIVE_LETTERS
-#define GNUPG_DEFAULT_HOMEDIR "c:/gnupg"
+#ifdef HAVE_DOSISH_SYSTEM
+# ifdef HAVE_DRIVE_LETTERS
+#  define GNUPG_DEFAULT_HOMEDIR "c:/gnupg"
+# else
+#  define GNUPG_DEFAULT_HOMEDIR "/gnupg"
+# endif
 #elif defined(__VMS)
-#define GNUPG_DEFAULT_HOMEDIR "/SYS\$LOGIN/gnupg"
+#define GNUPG_DEFAULT_HOMEDIR "/SYS$LOGIN/gnupg"
 #else
 #define GNUPG_DEFAULT_HOMEDIR "~/.gnupg"
 #endif
-#define GNUPG_PRIVATE_KEYS_DIR "private-keys-v1.d"
+#define GNUPG_PRIVATE_KEYS_DIR  "private-keys-v1.d"
+#define GNUPG_OPENPGP_REVOC_DIR "openpgp-revocs.d"
 
 /* For some systems (DOS currently), we hardcode the path here.  For
    POSIX systems the values are constructed by the Makefiles, so that
    the values may be overridden by the make invocations; this is to
-   comply with the GNU coding standards. */
-#ifdef HAVE_DRIVE_LETTERS
- /* FIXME: We need to use a function to determine these values depending
-    on the actual installation directory. */
-#define GNUPG_BINDIR      "c:\\gnupg"
-#define GNUPG_LIBEXECDIR  "c:\\gnupg"
-#define GNUPG_LIBDIR      "c:\\gnupg"
-#define GNUPG_DATADIR     "c:\\gnupg"
-#define GNUPG_SYSCONFDIR  "c:\\gnupg"
+   comply with the GNU coding standards.  Note that these values are
+   only defaults.  */
+#ifdef HAVE_DOSISH_SYSTEM
+# ifdef HAVE_DRIVE_LETTERS
+#  define GNUPG_BINDIR      "c:\\gnupg"
+#  define GNUPG_LIBEXECDIR  "c:\\gnupg"
+#  define GNUPG_LIBDIR      "c:\\gnupg"
+#  define GNUPG_DATADIR     "c:\\gnupg"
+#  define GNUPG_SYSCONFDIR  "c:\\gnupg"
+# else
+#  define GNUPG_BINDIR      "\\gnupg"
+#  define GNUPG_LIBEXECDIR  "\\gnupg"
+#  define GNUPG_LIBDIR      "\\gnupg"
+#  define GNUPG_DATADIR     "\\gnupg"
+#  define GNUPG_SYSCONFDIR  "\\gnupg"
+# endif
 #endif
 
 /* Derive some other constants. */
@@ -438,12 +538,14 @@ AH_BOTTOM([
 # endif
 #endif
 
+/* Provide the es_ macro for estream.  */
+#define GPGRT_ENABLE_ES_MACROS 1
 
 /* Tell libgcrypt not to use its own libgpg-error implementation. */
 #define USE_LIBGPG_ERROR 1
 
-/* We use jnlib, so tell other modules about it.  */
-#define HAVE_JNLIB_LOGGING 1
+/* Tell Libgcrypt not to include deprecated definitions.  */
+#define GCRYPT_NO_DEPRECATED 1
 
 /* Our HTTP code is used in estream mode.  */
 #define HTTP_USE_ESTREAM 1
@@ -453,24 +555,11 @@ AH_BOTTOM([
    handler.  */
 #define HTTP_NO_WSASTARTUP
 
-/* We always include support for the OpenPGP card.  */
-#define ENABLE_CARD_SUPPORT 1
+/* Under Windows we use the gettext code from libgpg-error.  */
+#define GPG_ERR_ENABLE_GETTEXT_MACROS
 
-/* We don't want the old assuan codes anymore. */
-#define _ASSUAN_ONLY_GPG_ERRORS 1
-
-/* We don't need any of the old gcrypt functions.  */
-#define GCRYPT_NO_DEPRECATED 1
-
-/* We explicitly need to disable PTH's soft mapping as Debian
-   currently enables it by default for no reason. */
-#define PTH_SYSCALL_SOFT 0
-
-/* We want to use the libgcrypt provided memory allocation for
-   asprintf.  */
-#define _ESTREAM_PRINTF_MALLOC        gcry_malloc
-#define _ESTREAM_PRINTF_FREE          gcry_free
-#define _ESTREAM_PRINTF_EXTRA_INCLUDE "util.h"
+/* Under WindowsCE we use the strerror replacement from libgpg-error.  */
+#define GPG_ERR_ENABLE_ERRNO_MACROS
 
 #endif /*GNUPG_CONFIG_H_INCLUDED*/
 ])
@@ -489,6 +578,7 @@ AM_MISSING_PROG(AUTOCONF, autoconf, $missing_dir)
 AM_MISSING_PROG(AUTOMAKE, automake, $missing_dir)
 AM_MISSING_PROG(AUTOHEADER, autoheader, $missing_dir)
 AM_MISSING_PROG(MAKEINFO, makeinfo, $missing_dir)
+AM_SILENT_RULES
 AC_PROG_AWK
 AC_PROG_CC
 AC_PROG_CPP
@@ -503,14 +593,13 @@ AC_CHECK_TOOL(AR, ar, :)
 AC_PATH_PROG(PERL,"perl")
 AC_CHECK_TOOL(WINDRES, windres, :)
 AC_ISC_POSIX
-gl_EARLY
 AC_SYS_LARGEFILE
-GNUPG_CHECK_FAQPROG
 GNUPG_CHECK_USTAR
+
 
 # We need to compile and run a program on the build machine.  A
 # comment in libgpg-error says that the AC_PROG_CC_FOR_BUILD macro in
-# the AC archive is broken for autoconf 2.57.  Given that tehre is no
+# the AC archive is broken for autoconf 2.57.  Given that there is no
 # newer version of that macro, we assume that it is also broken for
 # autoconf 2.61 and thus we use a simple but usually sufficient
 # approach.
@@ -523,29 +612,47 @@ fi
 AC_MSG_RESULT($CC_FOR_BUILD)
 AC_ARG_VAR(CC_FOR_BUILD,[build system C compiler])
 
+# We need to call this macro because other pkg-config macros are
+# not always used.
+PKG_PROG_PKG_CONFIG
 
 
 try_gettext=yes
+require_iconv=yes
 have_dosish_system=no
 have_w32_system=no
+have_w32ce_system=no
+have_android_system=no
+run_tests=yes
 use_simple_gettext=no
+use_ldapwrapper=yes
+mmap_needed=yes
 case "${host}" in
     *-mingw32*)
         # special stuff for Windoze NT
         ac_cv_have_dev_random=no
         AC_DEFINE(USE_ONLY_8DOT3,1,
-                  [set this to limit filenames to the 8.3 format])
-        AC_DEFINE(HAVE_DRIVE_LETTERS,1,
-                  [defined if we must run on a stupid file system])
+                  [Set this to limit filenames to the 8.3 format])
         AC_DEFINE(USE_SIMPLE_GETTEXT,1,
-                  [because the Unix gettext has too much overhead on
+                  [Because the Unix gettext has too much overhead on
                    MingW32 systems and these systems lack Posix functions,
                    we use a simplified version of gettext])
-        disable_keyserver_path=yes
         have_dosish_system=yes
         have_w32_system=yes
+        run_tests=no
+        use_ldapwrapper=no  # Fixme: Do this only for CE.
+        case "${host}" in
+          *-mingw32ce*)
+            have_w32ce_system=yes
+            ;;
+          *)
+            AC_DEFINE(HAVE_DRIVE_LETTERS,1,
+                      [Defined if the OS supports drive letters.])
+            ;;
+        esac
         try_gettext="no"
 	use_simple_gettext=yes
+	mmap_needed=no
         ;;
     i?86-emx-os2 | i?86-*-os2*emx )
         # OS/2 with the EMX environment
@@ -563,22 +670,16 @@ case "${host}" in
         try_gettext="no"
         ;;
 
-    *-*-freebsd*)
-       # FreeBSD
-       CPPFLAGS="$CPPFLAGS -I/usr/local/include"
-       LDFLAGS="$LDFLAGS -L/usr/local/lib"
-       ;;
-
     *-*-hpux*)
         if test -z "$GCC" ; then
-            CFLAGS="$CFLAGS -Ae -D_HPUX_SOURCE"
+            CFLAGS="-Ae -D_HPUX_SOURCE $CFLAGS"
         fi
         ;;
     *-dec-osf4*)
         if test -z "$GCC" ; then
             # Suppress all warnings
             # to get rid of the unsigned/signed char mismatch warnings.
-            CFLAGS="$CFLAGS -w"
+            CFLAGS="-w $CFLAGS"
         fi
         ;;
     *-dec-osf5*)
@@ -587,10 +688,17 @@ case "${host}" in
             # get rid of the unsigned/signed char mismatch warnings.
             # Using this may hide other pointer mismatch warnings, but
 	    # it at least lets other warning classes through
-            CFLAGS="$CFLAGS -msg_disable ptrmismatch1"
+            CFLAGS="-msg_disable ptrmismatch1 $CFLAGS"
         fi
         ;;
     m68k-atari-mint)
+        ;;
+    *-linux-androideabi)
+        have_android_system=yes
+        # Android is fully utf-8 and we do not want to use iconv to
+        # keeps things simple
+        require_iconv=no
+        run_tests=no
         ;;
     *)
        ;;
@@ -600,7 +708,8 @@ if test "$have_dosish_system" = yes; then
    AC_DEFINE(HAVE_DOSISH_SYSTEM,1,
              [Defined if we run on some of the PCDOS like systems
               (DOS, Windoze. OS/2) with special properties like
-              no file modes])
+              no file modes, case insensitive file names and preferred
+              use of backslashes as directory name separators.])
 fi
 AM_CONDITIONAL(HAVE_DOSISH_SYSTEM, test "$have_dosish_system" = yes)
 
@@ -608,49 +717,26 @@ AM_CONDITIONAL(USE_SIMPLE_GETTEXT, test x"$use_simple_gettext" = xyes)
 
 if test "$have_w32_system" = yes; then
    AC_DEFINE(HAVE_W32_SYSTEM,1, [Defined if we run on a W32 API based system])
+   if test "$have_w32ce_system" = yes; then
+      AC_DEFINE(HAVE_W32CE_SYSTEM,1,[Defined if we run on WindowsCE])
+   fi
 fi
 AM_CONDITIONAL(HAVE_W32_SYSTEM, test "$have_w32_system" = yes)
+AM_CONDITIONAL(HAVE_W32CE_SYSTEM, test "$have_w32ce_system" = yes)
 
-if test "$disable_keyserver_path" = yes; then
-    AC_DEFINE(DISABLE_KEYSERVER_PATH,1,
-              [Defined to disable exec-path for keyserver helpers])
+if test "$have_android_system" = yes; then
+   AC_DEFINE(HAVE_ANDROID_SYSTEM,1, [Defined if we build for an Android system])
 fi
+AM_CONDITIONAL(HAVE_ANDROID_SYSTEM, test "$have_android_system" = yes)
 
-#
-# Allows enabling the use of a standard socket by default This is
-# gpg-agent's option --[no-]use-standard-socket.  For Windows we force
-# the use of this.
-#
-AC_MSG_CHECKING([whether to use a standard socket by default])
-AC_ARG_ENABLE(standard-socket,
-              AC_HELP_STRING([--enable-standard-socket],
-                             [use a standard socket for the agent by default]),
-              use_standard_socket=$enableval)
-tmp=""
-if test "$use_standard_socket" != yes; then
-  if test "$have_w32_system" = yes; then
-    use_standard_socket=yes
-    tmp=" (forced)"
-  fi
+if test "$run_tests" = yes; then
+   AC_DEFINE(RUN_TESTS,1, [Defined if we should run the tests])
 fi
-AC_MSG_RESULT($use_standard_socket$tmp)
-if test "$use_standard_socket" = yes; then
-  AC_DEFINE(USE_STANDARD_SOCKET,1,
-            [Use a standard socket for the agent by default])
-fi
+AM_CONDITIONAL(RUN_TESTS, test "$run_tests" = yes)
 
 
 # (These need to go after AC_PROG_CC so that $EXEEXT is defined)
 AC_DEFINE_UNQUOTED(EXEEXT,"$EXEEXT",[The executable file extension, if any])
-
-if test x"$try_hkp" = xyes ; then
-  AC_SUBST(GPGKEYS_HKP,"gpg2keys_hkp$EXEEXT")
-fi
-
-if test x"$try_finger" = xyes ; then
-  AC_SUBST(GPGKEYS_FINGER,"gpg2keys_finger$EXEEXT")
-fi
-
 
 
 #
@@ -681,9 +767,9 @@ AM_PATH_LIBASSUAN("$NEED_LIBASSUAN_API:$NEED_LIBASSUAN_VERSION",
                   have_libassuan=yes,have_libassuan=no)
 if test "$have_libassuan" = "yes"; then
   AC_DEFINE_UNQUOTED(GNUPG_LIBASSUAN_VERSION, "$libassuan_version",
-            [version of the libbassuan library])
+                     [version of the libassuan library])
+  show_tor_support="only .onion"
 fi
-
 
 
 #
@@ -709,6 +795,7 @@ AC_SUBST(LIBUSB_LIBS)
 
 #
 # Check wether it is necessary to link against libdl.
+# (For example to load libpcsclite)
 #
 gnupg_dlopen_save_libs="$LIBS"
 LIBS=""
@@ -716,6 +803,56 @@ AC_SEARCH_LIBS(dlopen, c dl,,,)
 DL_LIBS=$LIBS
 AC_SUBST(DL_LIBS)
 LIBS="$gnupg_dlopen_save_libs"
+
+
+# Checks for g10
+
+AC_ARG_ENABLE(sqlite,
+                AC_HELP_STRING([--disable-sqlite],
+                               [disable the use of SQLITE]),
+              try_sqlite=$enableval, try_sqlite=yes)
+
+if test x"$use_tofu" = xyes ; then
+  if test x"$try_sqlite" = xyes ; then
+    PKG_CHECK_MODULES([SQLITE3], [sqlite3 >= $NEED_SQLITE_VERSION],
+                                 [have_sqlite=yes],
+                                 [have_sqlite=no])
+  fi
+  if test "$have_sqlite" = "yes"; then
+    :
+    AC_SUBST([SQLITE3_CFLAGS])
+    AC_SUBST([SQLITE3_LIBS])
+  else
+    use_tofu=no
+    tmp=$(echo "$SQLITE3_PKG_ERRORS" | tr '\n' '\v' | sed 's/\v/\n*** /g')
+    AC_MSG_WARN([[
+***
+*** Building without SQLite support - TOFU disabled
+***
+*** $tmp]])
+  fi
+fi
+
+AM_CONDITIONAL(SQLITE3, test "$have_sqlite" = "yes")
+
+if test x"$use_tofu" = xyes ; then
+    AC_DEFINE(USE_TOFU, 1, [Enable to build the TOFU code])
+fi
+
+
+# Checks for g13
+
+AC_PATH_PROG(ENCFS, encfs, /usr/bin/encfs)
+AC_DEFINE_UNQUOTED(ENCFS,
+	"${ENCFS}", [defines the filename of the encfs program])
+
+AC_PATH_PROG(FUSERMOUNT, fusermount, /usr/bin/fusermount)
+AC_DEFINE_UNQUOTED(FUSERMOUNT,
+	"${FUSERMOUNT}", [defines the filename of the fusermount program])
+
+
+# Checks for dirmngr
+
 
 #
 # Checks for symcryptrun:
@@ -735,24 +872,62 @@ AC_DEFINE_UNQUOTED(SHRED,
 	"${SHRED}", [defines the filename of the shred program])
 
 
-
 #
-# Check whether the GNU Pth library is available
-# Note, that we include a Pth emulation for W32.
+# Check whether the nPth library is available
 #
-GNUPG_PATH_PTH
-if test "$have_pth" = "yes"; then
-  AC_DEFINE(USE_GNU_PTH, 1,
-              [Defined if the GNU Portable Thread Library should be used])
+AM_PATH_NPTH("$NEED_NPTH_API:$NEED_NPTH_VERSION",have_npth=yes,have_npth=no)
+if test "$have_npth" = "yes"; then
+  AC_DEFINE(HAVE_NPTH, 1,
+              [Defined if the New Portable Thread Library is available])
+  AC_DEFINE(USE_NPTH, 1,
+              [Defined if support for nPth is requested and nPth is available])
 else
   AC_MSG_WARN([[
 ***
-*** To support concurrent access to the gpg-agent and the SCdaemon
-*** we need the support of the GNU Portable Threads Library.
-*** Download it from ftp://ftp.gnu.org/gnu/pth/
-*** On a Debian GNU/Linux system you might want to try
-***   apt-get install libpth-dev
+*** To support concurrent access for example in gpg-agent and the SCdaemon
+*** we need the support of the New Portable Threads Library.
 ***]])
+fi
+
+
+#
+# NTBTLS is our TLS library.  If it is not available fallback to
+# GNUTLS.
+#
+AC_ARG_ENABLE(ntbtls,
+              AC_HELP_STRING([--disable-ntbtls],
+                             [disable the use of NTBTLS as TLS library]),
+              try_ntbtls=$enableval, try_ntbtls=yes)
+if test x"$try_ntbtls" = xyes ; then
+  AM_PATH_NTBTLS("$NEED_NTBTLS_API:$NEED_NTBTLS_VERSION",
+                 [have_ntbtls=yes],[have_ntbtls=no])
+fi
+if test "$have_ntbtls" = yes ; then
+   use_tls_library=ntbtls
+   AC_DEFINE(HTTP_USE_NTBTLS, 1, [Enable NTBTLS support in http.c])
+else
+  AC_ARG_ENABLE(gnutls,
+                AC_HELP_STRING([--disable-gnutls],
+                               [disable GNUTLS as fallback TLS library]),
+                try_gnutls=$enableval, try_gnutls=yes)
+  if test x"$try_gnutls" = xyes ; then
+    PKG_CHECK_MODULES([LIBGNUTLS], [gnutls >= $NEED_GNUTLS_VERSION],
+                                   [have_gnutls=yes],
+                                   [have_gnutls=no])
+  fi
+  if test "$have_gnutls" = "yes"; then
+    AC_SUBST([LIBGNUTLS_CFLAGS])
+    AC_SUBST([LIBGNUTLS_LIBS])
+    use_tls_library=gnutls
+    AC_DEFINE(HTTP_USE_GNUTLS, 1, [Enable GNUTLS support in http.c])
+  else
+    tmp=$(echo "$LIBGNUTLS_PKG_ERRORS" | tr '\n' '\v' | sed 's/\v/\n*** /g')
+    AC_MSG_WARN([[
+***
+*** Building without NTBTLS and GNUTLS - no TLS access to keyservers.
+***
+*** $tmp]])
+  fi
 fi
 
 
@@ -783,62 +958,78 @@ AC_ARG_WITH(adns,
                LDFLAGS="${LDFLAGS} -L$withval/lib"
              fi])
 if test "$with_adns" != "no"; then
-  AC_CHECK_HEADERS(adns.h,
-                AC_CHECK_LIB(adns, adns_init,
-                             [have_adns=yes],
-                             [CPPFLAGS=${_cppflags} LDFLAGS=${_ldflags}]),
-                [CPPFLAGS=${_cppflags} LDFLAGS=${_ldflags}])
+  AC_CHECK_HEADERS(adns.h,AC_CHECK_LIB(adns, adns_init_strcfg,[have_adns=yes]))
+  AC_CHECK_FUNCS(adns_free)
+  AC_MSG_CHECKING([if adns supports adns_if_tormode])
+  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+    #include <adns.h>
+    adns_initflags flags = adns_if_tormode;
+  ]],[])],[adns_if_tormode=yes],[adns_if_tormode=no])
+  AC_MSG_RESULT($adns_if_tormode)
+  if test x"$adns_if_tormode" = xyes; then
+    AC_DEFINE(HAVE_ADNS_IF_TORMODE,1,[define if adns_if_tormode is available])
+    if test "$show_tor_support" != "no"; then
+      show_tor_support=yes
+    fi
+  fi
 fi
+CPPFLAGS=${_cppflags}
+LDFLAGS=${_ldflags}
 if test "$have_adns" = "yes"; then
   ADNSLIBS="-ladns"
 fi
-AC_SUBST(ADNSLIBS)
-# Newer adns versions feature a free function to be used under W32.
-AC_CHECK_FUNCS(adns_free)
 
 
 #
 # Now try for the resolver functions so we can use DNS for SRV, PA and CERT.
 #
-if test x"$try_hkp" = xyes || test x"$try_http" = xyes ; then
-  AC_ARG_ENABLE(dns-srv,
-     AC_HELP_STRING([--disable-dns-srv],
-                    [disable the use of DNS SRV in HKP and HTTP]),
-                use_dns_srv=$enableval,use_dns_srv=yes)
-fi
-
-AC_ARG_ENABLE(dns-pka,
-   AC_HELP_STRING([--disable-dns-pka],
-	[disable the use of PKA records in DNS]),
-   use_dns_pka=$enableval,use_dns_pka=yes)
+AC_ARG_ENABLE(dns-srv,
+              AC_HELP_STRING([--disable-dns-srv],
+                             [disable the use of DNS SRV in HKP and HTTP]),
+              use_dns_srv=$enableval,use_dns_srv=yes)
 
 AC_ARG_ENABLE(dns-cert,
    AC_HELP_STRING([--disable-dns-cert],
 	[disable the use of CERT records in DNS]),
    use_dns_cert=$enableval,use_dns_cert=yes)
 
-if test x"$use_dns_pka" = xyes || test x"$use_dns_srv" = xyes \
-   || test x"$use_dns_cert" = xyes; then
+if test x"$use_dns_srv" = xyes || test x"$use_dns_cert" = xyes; then
   _dns_save_libs=$LIBS
   LIBS=""
-  # the double underscore thing is a glibc-ism?
-  AC_SEARCH_LIBS(res_query,resolv bind,,
-                 AC_SEARCH_LIBS(__res_query,resolv bind,,have_resolver=no))
-  AC_SEARCH_LIBS(dn_expand,resolv bind,,
-                 AC_SEARCH_LIBS(__dn_expand,resolv bind,,have_resolver=no))
-  AC_SEARCH_LIBS(dn_skipname,resolv bind,,
-                 AC_SEARCH_LIBS(__dn_skipname,resolv bind,,have_resolver=no))
 
-  if test x"$have_resolver" != xno ; then
+  if test x"$have_adns" = xyes ; then
+    # We prefer ADNS.
+    DNSLIBS="$ADNSLIBS"
+    AC_DEFINE(USE_ADNS,1,[Use ADNS as resolver library.])
 
-    # Make sure that the BIND 4 resolver interface is workable before
-    # enabling any code that calls it.  At some point I'll rewrite the
-    # code to use the BIND 8 resolver API.
-    # We might also want to use adns instead.  Problem with ADNS is that
-    # it does not support v6.
+    if test x"$use_dns_srv" = xyes ; then
+        AC_DEFINE(USE_DNS_SRV,1)
+    fi
 
-    AC_MSG_CHECKING([whether the resolver is usable])
-    AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <sys/types.h>
+    if test x"$use_dns_cert" = xyes ; then
+        AC_DEFINE(USE_DNS_CERT,1,[define to use DNS CERT])
+    fi
+  else
+    # With no ADNS find the system resolver.
+
+    # the double underscore thing is a glibc-ism?
+    AC_SEARCH_LIBS(res_query,resolv bind,,
+                   AC_SEARCH_LIBS(__res_query,resolv bind,,have_resolver=no))
+    AC_SEARCH_LIBS(dn_expand,resolv bind,,
+                   AC_SEARCH_LIBS(__dn_expand,resolv bind,,have_resolver=no))
+    AC_SEARCH_LIBS(dn_skipname,resolv bind,,
+                   AC_SEARCH_LIBS(__dn_skipname,resolv bind,,have_resolver=no))
+
+    if test x"$have_resolver" != xno ; then
+
+      # Make sure that the BIND 4 resolver interface is workable before
+      # enabling any code that calls it.  At some point I'll rewrite the
+      # code to use the BIND 8 resolver API.
+      # We might also want to use adns instead.  Problem with ADNS is that
+      # it does not support v6.
+
+      AC_MSG_CHECKING([whether the resolver is usable])
+      AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/nameser.h>
 #include <resolv.h>]],
@@ -847,15 +1038,15 @@ if test x"$use_dns_pka" = xyes || test x"$use_dns_srv" = xyes \
   dn_skipname(0,0);
   dn_expand(0,0,0,0,0);
 ]])],have_resolver=yes,have_resolver=no)
-    AC_MSG_RESULT($have_resolver)
+      AC_MSG_RESULT($have_resolver)
 
-    # This is Apple-specific and somewhat bizarre as they changed the
-    # define in bind 8 for some reason.
+      # This is Apple-specific and somewhat bizarre as they changed the
+      # define in bind 8 for some reason.
 
-    if test x"$have_resolver" != xyes ; then
-       AC_MSG_CHECKING(
+      if test x"$have_resolver" != xyes ; then
+         AC_MSG_CHECKING(
              [whether I can make the resolver usable with BIND_8_COMPAT])
-       AC_LINK_IFELSE([AC_LANG_PROGRAM([[#define BIND_8_COMPAT
+        AC_LINK_IFELSE([AC_LANG_PROGRAM([[#define BIND_8_COMPAT
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/nameser.h>
@@ -864,51 +1055,28 @@ if test x"$use_dns_pka" = xyes || test x"$use_dns_srv" = xyes \
   res_query("foo.bar",C_IN,T_A,answer,PACKETSZ);
   dn_skipname(0,0); dn_expand(0,0,0,0,0);
 ]])],[have_resolver=yes ; need_compat=yes])
-       AC_MSG_RESULT($have_resolver)
+         AC_MSG_RESULT($have_resolver)
+      fi
     fi
-  fi
 
-  if test x"$have_resolver" = xyes ; then
-     DNSLIBS=$LIBS
+    if test x"$have_resolver" = xyes ; then
+      DNSLIBS=$LIBS
 
-     if test x"$use_dns_srv" = xyes ; then
-        AC_DEFINE(USE_DNS_SRV,1,[define to use DNS SRV])
-     fi
+      if test x"$use_dns_srv" = xyes ; then
+         AC_DEFINE(USE_DNS_SRV,1,[define to use DNS SRV])
+      fi
 
-     if test x"$use_dns_pka" = xyes ; then
-        AC_DEFINE(USE_DNS_PKA,1,[define to use our experimental DNS PKA])
-     fi
-
-     if test x"$use_dns_cert" = xyes ; then
+      if test x"$use_dns_cert" = xyes ; then
         AC_DEFINE(USE_DNS_CERT,1,[define to use DNS CERT])
-     fi
+      fi
 
-     if test x"$need_compat" = xyes ; then
+      if test x"$need_compat" = xyes ; then
         AC_DEFINE(BIND_8_COMPAT,1,[an Apple OSXism])
-     fi
-  else
-     # If we have no resolver library but ADNS (e.g. under W32) enable the
-     # code parts which can be used with ADNS.
-     if test x"$have_adns" = xyes ; then
-        DNSLIBS="$ADNSLIBS"
-        AC_DEFINE(USE_ADNS,1,[Use ADNS as resolver library.])
-
-        if test x"$use_dns_srv" = xyes ; then
-           AC_DEFINE(USE_DNS_SRV,1)
-        fi
-
-        if test x"$use_dns_pka" = xyes ; then
-           AC_DEFINE(USE_DNS_PKA,1)
-        fi
-
-        if test x"$use_dns_cert" = xyes ; then
-           AC_DEFINE(USE_DNS_CERT,1,[define to use DNS CERT])
-        fi
-     else
-        use_dns_srv=no
-        use_dns_pka=no
-        use_dns_cert=no
-     fi
+      fi
+    else
+      use_dns_srv=no
+      use_dns_cert=no
+    fi
   fi
 
   LIBS=$_dns_save_libs
@@ -922,22 +1090,47 @@ AM_CONDITIONAL(USE_DNS_SRV, test x"$use_dns_srv" = xyes)
 #
 # Check for LDAP
 #
-if test "$try_ldap" = yes ; then
-   GNUPG_CHECK_LDAP($NETLIBS)
+# Note that running the check changes the variable
+# gnupg_have_ldap from "n/a" to "no" or "yes".
+
+AC_ARG_ENABLE(ldap,
+    AC_HELP_STRING([--disable-ldap],[disable LDAP support]),
+    [if test "$enableval" = "no"; then gnupg_have_ldap=no; fi])
+
+if test "$gnupg_have_ldap" != "no" ; then
+  if test "$build_dirmngr" = "yes" ; then
+     GNUPG_CHECK_LDAP($NETLIBS)
+     AC_CHECK_LIB(lber, ber_free,
+                  [ LBER_LIBS="$LBER_LIBS -llber"
+                    AC_DEFINE(HAVE_LBER,1,
+                             [defined if liblber is available])
+                    have_lber=yes
+                 ])
+  fi
+fi
+AC_SUBST(LBER_LIBS)
+if test "$gnupg_have_ldap" = "no"; then
+    AC_MSG_WARN([[
+***
+*** Building without LDAP support.
+*** No CRL access or X.509 certificate search available.
+***]])
 fi
 
-#
-# Check for curl.  We fake the curl API if libcurl isn't installed.
-# We require 7.10 or later as we use curl_version_info().
-#
-LIBCURL_CHECK_CONFIG([yes],[7.10],,[fake_curl=yes])
-AM_CONDITIONAL(FAKE_CURL,test x"$fake_curl" = xyes)
-
-# Generic, for us, means curl
-
-if test x"$try_generic" = xyes ; then
-   AC_SUBST(GPGKEYS_CURL,"gpg2keys_curl$EXEEXT")
+AM_CONDITIONAL(USE_LDAP, [test "$gnupg_have_ldap" = yes])
+if test "$gnupg_have_ldap" = yes ; then
+  AC_DEFINE(USE_LDAP,1,[Defined if LDAP is support])
+else
+ use_ldapwrapper=no
 fi
+
+if test "$use_ldapwrapper" = yes; then
+   AC_DEFINE(USE_LDAPWRAPPER,1, [Build dirmngr with LDAP wrapper process])
+fi
+AM_CONDITIONAL(USE_LDAPWRAPPER, test "$use_ldapwrapper" = yes)
+
+
+
 
 #
 # Check for sendmail
@@ -945,31 +1138,26 @@ fi
 # This isn't necessarily sendmail itself, but anything that gives a
 # sendmail-ish interface to the outside world.  That includes Exim,
 # Postfix, etc.  Basically, anything that can handle "sendmail -t".
-if test "$try_mailto" = yes ; then
-  AC_ARG_WITH(mailprog,
+AC_ARG_WITH(mailprog,
       AC_HELP_STRING([--with-mailprog=NAME],
                      [use "NAME -t" for mail transport]),
              ,with_mailprog=yes)
-
-  if test x"$with_mailprog" = xyes ; then
+if test x"$with_mailprog" = xyes ; then
     AC_PATH_PROG(SENDMAIL,sendmail,,$PATH:/usr/sbin:/usr/libexec:/usr/lib)
-    if test "$ac_cv_path_SENDMAIL" ; then
-      GPGKEYS_MAILTO="gpg2keys_mailto"
-    fi
-  elif test x"$with_mailprog" != xno ; then
+elif test x"$with_mailprog" != xno ; then
     AC_MSG_CHECKING([for a mail transport program])
     AC_SUBST(SENDMAIL,$with_mailprog)
     AC_MSG_RESULT($with_mailprog)
-    GPGKEYS_MAILTO="gpg2keys_mailto"
-  fi
 fi
 
-AC_SUBST(GPGKEYS_MAILTO)
 
 #
 # Construct a printable name of the OS
 #
 case "${host}" in
+    *-mingw32ce*)
+        PRINTABLE_OS_NAME="W32CE"
+        ;;
     *-mingw32*)
         PRINTABLE_OS_NAME="MingW32"
         ;;
@@ -997,10 +1185,13 @@ AC_DEFINE_UNQUOTED(PRINTABLE_OS_NAME, "$PRINTABLE_OS_NAME",
 #
 # Checking for iconv
 #
-missing_iconv=no
-AM_ICONV
-if test "$am_cv_func_iconv" != yes; then
-   missing_iconv=yes
+if test "$require_iconv" = yes; then
+  AM_ICONV
+else
+  LIBICONV=
+  LTLIBICONV=
+  AC_SUBST(LIBICONV)
+  AC_SUBST(LTLIBICONV)
 fi
 
 
@@ -1012,7 +1203,7 @@ fi
 #
 AC_MSG_NOTICE([checking for gettext])
 AM_PO_SUBDIRS
-AM_GNU_GETTEXT_VERSION([0.19.3])
+AM_GNU_GETTEXT_VERSION([0.17])
 if test "$try_gettext" = yes; then
   AM_GNU_GETTEXT([external],[need-ngettext])
 
@@ -1035,7 +1226,7 @@ fi
 # We use HAVE_LANGINFO_CODESET in a couple of places.
 AM_LANGINFO_CODESET
 
-# Checks required for our use locales
+# Checks required for our use of locales
 gt_LC_MESSAGES
 
 
@@ -1052,8 +1243,9 @@ fi
 #
 AC_MSG_NOTICE([checking for header files])
 AC_HEADER_STDC
-AC_CHECK_HEADERS([string.h unistd.h langinfo.h termio.h locale.h getopt.h])
-AC_CHECK_HEADERS([pty.h utmp.h pwd.h inttypes.h])
+AC_CHECK_HEADERS([string.h unistd.h langinfo.h termio.h locale.h getopt.h \
+                  pty.h utmp.h pwd.h inttypes.h signal.h sys/select.h     \
+                  signal.h])
 AC_HEADER_TIME
 
 
@@ -1071,6 +1263,8 @@ AC_DECL_SYS_SIGLIST
 
 gl_HEADER_SYS_SOCKET
 gl_TYPE_SOCKLEN_T
+
+AC_SEARCH_LIBS([inet_addr], [nsl])
 
 AC_ARG_ENABLE(endian-check,
               AC_HELP_STRING([--disable-endian-check],
@@ -1092,6 +1286,7 @@ AC_CHECK_SIZEOF(unsigned short)
 AC_CHECK_SIZEOF(unsigned int)
 AC_CHECK_SIZEOF(unsigned long)
 AC_CHECK_SIZEOF(unsigned long long)
+AC_HEADER_TIME
 AC_CHECK_SIZEOF(time_t,,[[
 #include <stdio.h>
 #if TIME_WITH_SYS_TIME
@@ -1105,18 +1300,8 @@ AC_CHECK_SIZEOF(time_t,,[[
 # endif
 #endif
 ]])
+GNUPG_TIME_T_UNSIGNED
 
-
-# Ensure that we have UINT64_C before we bother to check for uint64_t
-# Fixme: really needed in gnupg?  I think it is only useful in libcgrypt.
-AC_CACHE_CHECK([for UINT64_C],[gnupg_cv_uint64_c_works],
-   AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <inttypes.h>]],
-                                      [[uint64_t foo=UINT64_C(42);]])],
-                                      [gnupg_cv_uint64_c_works=yes],
-                                      [gnupg_cv_uint64_c_works=no]   ))
-if test "$gnupg_cv_uint64_c_works" = "yes" ; then
-   AC_CHECK_SIZEOF(uint64_t)
-fi
 
 if test "$ac_cv_sizeof_unsigned_short" = "0" \
    || test "$ac_cv_sizeof_unsigned_int" = "0" \
@@ -1133,31 +1318,31 @@ AC_CHECK_DECLS(getpagesize)
 AC_FUNC_FSEEKO
 AC_FUNC_VPRINTF
 AC_FUNC_FORK
-AC_CHECK_FUNCS([strerror strlwr tcgetattr mmap])
-AC_CHECK_FUNCS([strcasecmp strncasecmp ctermid times gmtime_r])
-AC_CHECK_FUNCS([unsetenv fcntl ftruncate inet_ntop])
+AC_CHECK_FUNCS([strerror strlwr tcgetattr mmap canonicalize_file_name])
+AC_CHECK_FUNCS([strcasecmp strncasecmp ctermid times gmtime_r strtoull])
+AC_CHECK_FUNCS([setenv unsetenv fcntl ftruncate inet_ntop])
+AC_CHECK_FUNCS([canonicalize_file_name])
 AC_CHECK_FUNCS([gettimeofday getrusage getrlimit setrlimit clock_gettime])
 AC_CHECK_FUNCS([atexit raise getpagesize strftime nl_langinfo setlocale])
-AC_CHECK_FUNCS([waitpid wait4 sigaction sigprocmask pipe stat getaddrinfo])
-AC_CHECK_FUNCS([ttyname rand ftello fsync stat])
+AC_CHECK_FUNCS([waitpid wait4 sigaction sigprocmask pipe getaddrinfo])
+AC_CHECK_FUNCS([ttyname rand ftello fsync stat lstat])
+AC_CHECK_FUNCS([memicmp stpcpy strsep strlwr strtoul memmove stricmp strtol \
+                memrchr isascii timegm getrusage setrlimit stat setlocale   \
+                flockfile funlockfile fopencookie funopen getpwnam getpwuid \
+                getenv inet_pton strpbrk])
+
+if test "$have_android_system" = yes; then
+   # On Android ttyname is a stub but prints an error message.
+   AC_DEFINE(HAVE_BROKEN_TTYNAME,1,
+             [Defined if ttyname does not work properly])
+fi
 
 AC_CHECK_TYPES([struct sigaction, sigset_t],,,[#include <signal.h>])
 
-#
-# These are needed by libjnlib - fixme: we should use a jnlib.m4
-# Note:  We already checked pwd.h.
-AC_CHECK_FUNCS([memicmp stpcpy strsep strlwr strtoul memmove stricmp strtol])
-AC_CHECK_FUNCS([memrchr isascii timegm getrusage setrlimit stat setlocale])
-AC_CHECK_FUNCS([flockfile funlockfile fopencookie funopen getpwnam getpwuid])
-
-#
-# gnulib checks
-#
-gl_SOURCE_BASE([gl])
-gl_M4_BASE([gl/m4])
-gl_MODULES([setenv mkdtemp xsize strpbrk])
-gl_INIT
-
+# Dirmngr requires mmap on Unix systems.
+if test $ac_cv_func_mmap != yes -a $mmap_needed = yes; then
+  AC_MSG_ERROR([[Sorry, the current implemenation requires mmap.]])
+fi
 
 #
 # W32 specific test
@@ -1226,25 +1411,27 @@ AM_CONDITIONAL(DISABLE_REGEX, test x"$use_regex" != xyes)
 # when compiling a conftest (due to the "-lz" from LIBS).
 # Note that we combine zlib and bzlib2 in ZLIBS.
 #
-missing_zlib=yes
-_cppflags="${CPPFLAGS}"
-_ldflags="${LDFLAGS}"
-AC_ARG_WITH(zlib,
-  [  --with-zlib=DIR         use libz in DIR],[
-    if test -d "$withval"; then
-      CPPFLAGS="${CPPFLAGS} -I$withval/include"
-      LDFLAGS="${LDFLAGS} -L$withval/lib"
-    fi
-  ])
+if test "$use_zip" = yes ; then
+  _cppflags="${CPPFLAGS}"
+  _ldflags="${LDFLAGS}"
+  AC_ARG_WITH(zlib,
+    [  --with-zlib=DIR         use libz in DIR],[
+      if test -d "$withval"; then
+        CPPFLAGS="${CPPFLAGS} -I$withval/include"
+        LDFLAGS="${LDFLAGS} -L$withval/lib"
+      fi
+    ])
 
-AC_CHECK_HEADER(zlib.h,
-      AC_CHECK_LIB(z, deflateInit2_,
+  AC_CHECK_HEADER(zlib.h,
+     AC_CHECK_LIB(z, deflateInit2_,
        [
        ZLIBS="-lz"
-       missing_zlib=no
+       AC_DEFINE(HAVE_ZIP,1, [Defined if ZIP and ZLIB are supported])
        ],
        CPPFLAGS=${_cppflags} LDFLAGS=${_ldflags}),
        CPPFLAGS=${_cppflags} LDFLAGS=${_ldflags})
+fi
+
 
 #
 # Check whether we can support bzip2
@@ -1298,9 +1485,13 @@ GNUPG_CHECK_GNUMAKE
 # mysterious reasons - the final link step should bail out.
 # W32SOCKLIBS is also defined so that if can be used for tools not
 # requiring any network stuff but linking to code in libcommon which
-# tracks in winsock stuff (e.g. init_common_subsystems.
+# tracks in winsock stuff (e.g. init_common_subsystems).
 if test "$have_w32_system" = yes; then
-   W32SOCKLIBS="-lws2_32"
+   if test "$have_w32ce_system" = yes; then
+     W32SOCKLIBS="-lws2"
+   else
+     W32SOCKLIBS="-lws2_32"
+   fi
    NETLIBS="${NETLIBS} ${W32SOCKLIBS}"
 fi
 
@@ -1312,6 +1503,9 @@ AC_SUBST(W32SOCKLIBS)
 #
 AC_MSG_NOTICE([checking for cc features])
 if test "$GCC" = yes; then
+    mycflags=
+    mycflags_save=$CFLAGS
+
     # Check whether gcc does not emit a diagnositc for unknow -Wno-*
     # options.  This is the case for gcc >= 4.6
     AC_MSG_CHECKING([if gcc ignores unknown -Wno-* options])
@@ -1321,73 +1515,59 @@ if test "$GCC" = yes; then
 #endif]],[])],[_gcc_silent_wno=yes],[_gcc_silent_wno=no])
     AC_MSG_RESULT($_gcc_silent_wno)
 
-    # Note that it is okay to use CFLAGS here because this are just
+    # Note that it is okay to use CFLAGS here because these are just
     # warning options and the user should have a chance of overriding
     # them.
     if test "$USE_MAINTAINER_MODE" = "yes"; then
-        CFLAGS="$CFLAGS -Wall -Wcast-align -Wshadow -Wstrict-prototypes"
-        CFLAGS="$CFLAGS -Wformat -Wno-format-y2k -Wformat-security"
+        mycflags="$mycflags -O3 -Wall -Wcast-align -Wshadow -Wstrict-prototypes"
+        mycflags="$mycflags -Wformat -Wno-format-y2k -Wformat-security"
         if test x"$_gcc_silent_wno" = xyes ; then
           _gcc_wopt=yes
         else
           AC_MSG_CHECKING([if gcc supports -Wno-missing-field-initializers])
-          _gcc_cflags_save=$CFLAGS
           CFLAGS="-Wno-missing-field-initializers"
           AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[])],
                             [_gcc_wopt=yes],[_gcc_wopt=no])
           AC_MSG_RESULT($_gcc_wopt)
-          CFLAGS=$_gcc_cflags_save;
         fi
         if test x"$_gcc_wopt" = xyes ; then
-          CFLAGS="$CFLAGS -W -Wno-sign-compare -Wno-missing-field-initializers"
+          mycflags="$mycflags -W -Wno-sign-compare"
+          mycflags="$mycflags -Wno-missing-field-initializers"
         fi
 
         AC_MSG_CHECKING([if gcc supports -Wdeclaration-after-statement])
-        _gcc_cflags_save=$CFLAGS
         CFLAGS="-Wdeclaration-after-statement"
-        AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[])],
-                          [_gcc_wopt=yes],[_gcc_wopt=no])
+        AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[])],_gcc_wopt=yes,_gcc_wopt=no)
         AC_MSG_RESULT($_gcc_wopt)
-        CFLAGS=$_gcc_cflags_save;
         if test x"$_gcc_wopt" = xyes ; then
-          CFLAGS="$CFLAGS -Wdeclaration-after-statement"
+          mycflags="$mycflags -Wdeclaration-after-statement"
         fi
     else
-        CFLAGS="$CFLAGS -Wall"
+        mycflags="$mycflags -Wall"
     fi
 
     if test x"$_gcc_silent_wno" = xyes ; then
       _gcc_psign=yes
     else
       AC_MSG_CHECKING([if gcc supports -Wno-pointer-sign])
-      _gcc_cflags_save=$CFLAGS
       CFLAGS="-Wno-pointer-sign"
       AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[])],
                         [_gcc_psign=yes],[_gcc_psign=no])
       AC_MSG_RESULT($_gcc_psign)
-      CFLAGS=$_gcc_cflags_save;
     fi
     if test x"$_gcc_psign" = xyes ; then
-       CFLAGS="$CFLAGS -Wno-pointer-sign"
+       mycflags="$mycflags -Wno-pointer-sign"
     fi
 
     AC_MSG_CHECKING([if gcc supports -Wpointer-arith])
-    _gcc_cflags_save=$CFLAGS
     CFLAGS="-Wpointer-arith"
-    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[])],[_gcc_psign=yes],[_gcc_psign=no])
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[])],_gcc_psign=yes,_gcc_psign=no)
     AC_MSG_RESULT($_gcc_psign)
-    CFLAGS=$_gcc_cflags_save;
     if test x"$_gcc_psign" = xyes ; then
-       CFLAGS="$CFLAGS -Wpointer-arith"
+       mycflags="$mycflags -Wpointer-arith"
     fi
 
-    # The undocumented option -Wno-psabi suppresses the annoying
-    #   "the ABI of passing union with long double has changed in GCC 4.4"
-    # which is emitted in estream-printf.c but entirely irrelvant
-    # because that union is local to the file.
-    if test x"$_gcc_silent_wno" = xyes ; then
-       CFLAGS="$CFLAGS -Wno-psabi"
-    fi
+    CFLAGS="$mycflags $mycflags_save"
 fi
 
 
@@ -1399,48 +1579,22 @@ AC_ARG_ENABLE(optimization,
    AC_HELP_STRING([--disable-optimization],
                   [disable compiler optimization]),
                   [if test $enableval = no ; then
-                      CFLAGS=`echo $CFLAGS | sed 's/-O[[0-9]]//'`
+                      CFLAGS=`echo $CFLAGS | sed s/-O[[1-9]]\ /-O0\ /g`
                    fi])
 
 #
-# Prepare building of estream
+# Add user CFLAGS.
 #
-estream_INIT
-
+CFLAGS="$CFLAGS $CFLAGS_orig"
 
 #
 # Decide what to build
 #
-if test "$have_adns" = "yes"; then
-  AC_SUBST(GPGKEYS_KDNS, "gpg2keys_kdns$EXEEXT")
-fi
-
-
-missing_pth=no
-if test $have_ksba = no; then
-  build_gpgsm=no
-  build_scdaemon=no
-fi
-
-build_agent_threaded=""
-if test "$build_agent" = "yes"; then
-  if test $have_pth = no; then
-     build_agent_threaded="(not multi-threaded)"
-     missing_pth=yes
-  fi
-fi
 
 build_scdaemon_extra=""
 if test "$build_scdaemon" = "yes"; then
-  tmp=""
-  if test $have_pth = no; then
-     build_scdaemon_extra="not multi-threaded"
-     tmp=", "
-     missing_pth=yes
-  fi
   if test $have_libusb = no; then
-     build_scdaemon_extra="${tmp}without internal CCID driver"
-     tmp=", "
+     build_scdaemon_extra="without internal CCID driver"
   fi
   if test -n "$build_scdaemon_extra"; then
      build_scdaemon_extra="(${build_scdaemon_extra})"
@@ -1448,26 +1602,99 @@ if test "$build_scdaemon" = "yes"; then
 fi
 
 
-if test "$build_agent_only" = "yes" ; then
-  build_gpg=no
-  build_gpgsm=no
-  build_scdaemon=no
-  build_tools=no
-  build_doc=no
-fi
-
-
-AM_CONDITIONAL(BUILD_GPG,   test "$build_gpg" = "yes")
-AM_CONDITIONAL(BUILD_GPGSM, test "$build_gpgsm" = "yes")
-AM_CONDITIONAL(BUILD_AGENT, test "$build_agent" = "yes")
-AM_CONDITIONAL(BUILD_SCDAEMON, test "$build_scdaemon" = "yes")
-AM_CONDITIONAL(BUILD_TOOLS, test "$build_tools" = "yes")
-AM_CONDITIONAL(BUILD_DOC,   test "$build_doc" = "yes")
+#
+# Set variables for use by automake makefiles.
+#
+AM_CONDITIONAL(BUILD_GPG,         test "$build_gpg" = "yes")
+AM_CONDITIONAL(BUILD_GPGSM,       test "$build_gpgsm" = "yes")
+AM_CONDITIONAL(BUILD_AGENT,       test "$build_agent" = "yes")
+AM_CONDITIONAL(BUILD_SCDAEMON,    test "$build_scdaemon" = "yes")
+AM_CONDITIONAL(BUILD_G13,         test "$build_g13" = "yes")
+AM_CONDITIONAL(BUILD_DIRMNGR,     test "$build_dirmngr" = "yes")
+AM_CONDITIONAL(BUILD_TOOLS,       test "$build_tools" = "yes")
+AM_CONDITIONAL(BUILD_DOC,         test "$build_doc" = "yes")
 AM_CONDITIONAL(BUILD_SYMCRYPTRUN, test "$build_symcryptrun" = "yes")
 AM_CONDITIONAL(BUILD_GPGTAR,      test "$build_gpgtar" = "yes")
 
+AM_CONDITIONAL(ENABLE_CARD_SUPPORT, test "$card_support" = yes)
+AM_CONDITIONAL(NO_TRUST_MODELS,     test "$use_trust_models" = no)
+AM_CONDITIONAL(USE_TOFU,            test "$use_tofu" = yes)
+
 AM_CONDITIONAL(RUN_GPG_TESTS,
-	test x$cross_compiling = xno -a "$build_gpg" = yes )
+               test x$cross_compiling = xno -a "$build_gpg" = yes )
+
+#
+# Set some defines for use gpgconf.
+#
+if test "$build_gpg" = yes ; then
+    AC_DEFINE(BUILD_WITH_GPG,1,[Defined if GPG is to be build])
+fi
+if test "$build_gpgsm" = yes ; then
+    AC_DEFINE(BUILD_WITH_GPGSM,1,[Defined if GPGSM is to be build])
+fi
+if test "$build_agent" = yes ; then
+    AC_DEFINE(BUILD_WITH_AGENT,1,[Defined if GPG-AGENT is to be build])
+fi
+if test "$build_scdaemon" = yes ; then
+    AC_DEFINE(BUILD_WITH_SCDAEMON,1,[Defined if SCDAEMON is to be build])
+fi
+if test "$build_dirmngr" = yes ; then
+    AC_DEFINE(BUILD_WITH_DIRMNGR,1,[Defined if SCDAEMON is to be build])
+fi
+if test "$build_g13" = yes ; then
+    AC_DEFINE(BUILD_WITH_G13,1,[Defined if G13 is to be build])
+fi
+
+
+#
+# Define Name strings
+#
+AC_DEFINE_UNQUOTED(GNUPG_NAME, "GnuPG", [The name of the project])
+
+AC_DEFINE_UNQUOTED(GPG_NAME, "gpg", [The name of the OpenPGP tool])
+AC_DEFINE_UNQUOTED(GPG_DISP_NAME, "GnuPG", [The displayed name of gpg])
+
+AC_DEFINE_UNQUOTED(GPGSM_NAME, "gpgsm", [The name of the S/MIME tool])
+AC_DEFINE_UNQUOTED(GPGSM_DISP_NAME, "GPGSM", [The displayed name of gpgsm])
+
+AC_DEFINE_UNQUOTED(GPG_AGENT_NAME, "gpg-agent", [The name of the agent])
+AC_DEFINE_UNQUOTED(GPG_AGENT_DISP_NAME, "GPG Agent",
+                                        [The displayed name of gpg-agent])
+
+AC_DEFINE_UNQUOTED(SCDAEMON_NAME, "scdaemon", [The name of the scdaemon])
+AC_DEFINE_UNQUOTED(SCDAEMON_DISP_NAME, "SCDaemon",
+                                       [The displayed name of scdaemon])
+
+AC_DEFINE_UNQUOTED(DIRMNGR_NAME, "dirmngr", [The name of the dirmngr])
+AC_DEFINE_UNQUOTED(DIRMNGR_DISP_NAME, "DirMngr",
+                                      [The displayed name of dirmngr])
+
+AC_DEFINE_UNQUOTED(G13_NAME, "g13", [The name of the g13 tool])
+AC_DEFINE_UNQUOTED(G13_DISP_NAME, "G13", [The displayed name of g13])
+
+AC_DEFINE_UNQUOTED(GPGCONF_NAME, "gpgconf", [The name of the gpgconf tool])
+AC_DEFINE_UNQUOTED(GPGCONF_DISP_NAME, "GPGConf",
+                                      [The displayed name of gpgconf])
+
+AC_DEFINE_UNQUOTED(GPGTAR_NAME, "gpgtar", [The name of the gpgtar tool])
+
+AC_DEFINE_UNQUOTED(GPG_AGENT_SOCK_NAME, "S.gpg-agent",
+                   [The name of the agent socket])
+AC_DEFINE_UNQUOTED(GPG_AGENT_SSH_SOCK_NAME, "S.gpg-agent.ssh",
+                   [The name of the agent socket for ssh])
+AC_DEFINE_UNQUOTED(DIRMNGR_INFO_NAME, "DIRMNGR_INFO",
+                   [The name of the dirmngr info envvar])
+AC_DEFINE_UNQUOTED(SCDAEMON_SOCK_NAME, "S.scdaemon",
+                   [The name of the SCdaemon socket])
+AC_DEFINE_UNQUOTED(DIRMNGR_SOCK_NAME, "S.dirmngr",
+                   [The name of the dirmngr socket])
+
+AC_DEFINE_UNQUOTED(GPGEXT_GPG, "gpg", [The standard binary file suffix])
+
+if test "$have_w32_system" = yes; then
+  AC_DEFINE_UNQUOTED(GNUPG_REGISTRY_DIR, "\\\\Software\\\\GNU\\\\GnuPG",
+                     [The directory part of the W32 registry keys])
+fi
 
 
 #
@@ -1479,12 +1706,23 @@ AC_DEFINE_UNQUOTED(BUILD_REVISION, "$BUILD_REVISION",
                    [GIT commit id revision used to build this package])
 
 changequote(,)dnl
-BUILD_FILEVERSION=`echo "$VERSION" | sed 's/\([0-9.]*\).*/\1./;s/\./,/g'`
+BUILD_VERSION=`echo "$VERSION" | sed 's/\([0-9.]*\).*/\1./'`
 changequote([,])dnl
-BUILD_FILEVERSION="${BUILD_FILEVERSION}mym4_revision_dec"
+BUILD_VERSION="${BUILD_VERSION}mym4_revision_dec"
+BUILD_FILEVERSION=`echo "${BUILD_VERSION}" | tr . ,`
+AC_SUBST(BUILD_VERSION)
 AC_SUBST(BUILD_FILEVERSION)
 
-BUILD_TIMESTAMP=`date -u +%Y-%m-%dT%H:%M+0000 2>/dev/null || date`
+AC_ARG_ENABLE([build-timestamp],
+  AC_HELP_STRING([--enable-build-timestamp],
+                 [set an explicit build timestamp for reproducibility.
+                  (default is the current time in ISO-8601 format)]),
+     [if test "$enableval" = "yes"; then
+        BUILD_TIMESTAMP=`date -u +%Y-%m-%dT%H:%M+0000 2>/dev/null || date`
+      else
+        BUILD_TIMESTAMP="$enableval"
+      fi],
+     [BUILD_TIMESTAMP="<none>"])
 AC_SUBST(BUILD_TIMESTAMP)
 AC_DEFINE_UNQUOTED(BUILD_TIMESTAMP, "$BUILD_TIMESTAMP",
                    [The time this package was configured for a build])
@@ -1514,7 +1752,7 @@ if test "$have_libgcrypt" = "no"; then
 *** You need libgcrypt to build this program.
 **  This library is for example available at
 ***   ftp://ftp.gnupg.org/gcrypt/libgcrypt/
-*** (at least version $NEED_LIBGCRYPT_VERSION using API $NEED_LIBGCRYPT_API is required.)
+*** (at least version $NEED_LIBGCRYPT_VERSION (API $NEED_LIBGCRYPT_API) is required.)
 ***]])
 fi
 if test "$have_libassuan" = "no"; then
@@ -1528,6 +1766,7 @@ if test "$have_libassuan" = "no"; then
 ***]])
 fi
 if test "$have_ksba" = "no"; then
+    die=yes
     AC_MSG_NOTICE([[
 ***
 *** You need libksba to build this program.
@@ -1536,38 +1775,39 @@ if test "$have_ksba" = "no"; then
 *** (at least version $NEED_KSBA_VERSION using API $NEED_KSBA_API is required).
 ***]])
 fi
-if test "$missing_pth" = "yes"; then
+if test "$gnupg_have_ldap" = yes; then
+  if test "$have_w32ce_system" = yes; then
+    AC_MSG_NOTICE([[
+*** Note that CeGCC might be broken, a package fixing this is:
+***    http://files.kolab.org/local/windows-ce/
+***                           source/wldap32_0.1-mingw32ce.orig.tar.gz
+***                           binary/wldap32-ce-arm-dev_0.1-1_all.deb
+***]])
+   fi
+fi
+if test "$have_npth" = "no"; then
+    die=yes
     AC_MSG_NOTICE([[
 ***
 *** It is now required to build with support for the
-*** GNU Portable Threads Library (Pth). Please install this
+*** New Portable Threads Library (nPth). Please install this
 *** library first.  The library is for example available at
-***   ftp://ftp.gnu.org/gnu/pth/
-*** On a Debian GNU/Linux system you can install it using
-***   apt-get install libpth-dev
-*** To build GnuPG for Windows you need to use the W32PTH
-*** package; available at:
-***   ftp://ftp.g10code.com/g10code/w32pth/
+***   ftp://ftp.gnupg.org/gcrypt/npth/
+*** (at least version $NEED_NPTH_VERSION (API $NEED_NPTH_API) is required).
 ***]])
-   die=yes
 fi
-if test "$missing_zlib" = "yes"; then
+
+if test "$require_iconv" = yes; then
+  if test "$am_func_iconv" != yes; then
+    die=yes
     AC_MSG_NOTICE([[
 ***
-*** The zlib compression library is required.
-*** Please install a suitable development package
-*** (e.g. Debian package zlib1g-dev) or download
-*** it from http://zlib.net and build yourself.
+*** The system does not provide a working iconv function.  Please
+*** install a suitable library; for example GNU Libiconv which is
+*** available at:
+***   http://ftp.gnu.org/gnu/libiconv/
 ***]])
-   die=yes
-fi
-if test "$missing_iconv" = "yes"; then
-    AC_MSG_NOTICE([[
-***
-*** It is now required to build with support for iconv
-*** Please install a suitable iconv implementation.
-***]])
-   die=yes
+  fi
 fi
 
 if test "$die" = "yes"; then
@@ -1583,9 +1823,6 @@ fi
 AC_CONFIG_FILES([ m4/Makefile
 Makefile
 po/Makefile.in
-gl/Makefile
-include/Makefile
-jnlib/Makefile
 common/Makefile
 common/w32info-rc.h
 kbx/Makefile
@@ -1593,16 +1830,18 @@ g10/Makefile
 sm/Makefile
 agent/Makefile
 scd/Makefile
-keyserver/Makefile
-keyserver/gpg2keys_mailto
-keyserver/gpg2keys_test
+g13/Makefile
+dirmngr/Makefile
 tools/gpg-zip
 tools/Makefile
 doc/Makefile
 tests/Makefile
 tests/openpgp/Makefile
 tests/pkits/Makefile
+g10/gpg.w32-manifest
 ])
+
+
 AC_OUTPUT
 
 
@@ -1614,21 +1853,32 @@ echo "
 
         OpenPGP:   $build_gpg
         S/MIME:    $build_gpgsm
-        Agent:     $build_agent $build_agent_threaded
+        Agent:     $build_agent
         Smartcard: $build_scdaemon $build_scdaemon_extra
+        G13:       $build_g13
+        Dirmngr:   $build_dirmngr
         Gpgtar:    $build_gpgtar
 
         Protect tool:      $show_gnupg_protect_tool_pgm
+        LDAP wrapper:      $show_gnupg_dirmngr_ldap_pgm
         Default agent:     $show_gnupg_agent_pgm
         Default pinentry:  $show_gnupg_pinentry_pgm
         Default scdaemon:  $show_gnupg_scdaemon_pgm
         Default dirmngr:   $show_gnupg_dirmngr_pgm
+
+        Dirmngr auto start:  $dirmngr_auto_start
+        Readline support:    $gnupg_cv_have_readline
+        LDAP support:        $gnupg_have_ldap
+        DNS SRV support:     $use_dns_srv
+        TLS support:         $use_tls_library
+        TOFU support:        $use_tofu
+        Tor support:         $show_tor_support
 "
 if test x"$use_regex" != xyes ; then
 echo "
         Warning: No regular expression support available.
                  OpenPGP trust signatures won't work.
-                 gpg-check-pattern will not be build.
+                 gpg-check-pattern will not be built.
 "
 fi
 if test "x${gpg_config_script_warn}" != x; then

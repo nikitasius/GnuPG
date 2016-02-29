@@ -1,15 +1,24 @@
 /* openpgpdefs.h - Constants from the OpenPGP standard (rfc2440)
  * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
  *               2006 Free Software Foundation, Inc.
+ * Copyright (C) 2014 Werner Koch
  *
- * This file is part of GnuPG.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
  *
- * GnuPG is distributed in the hope that it will be useful,
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -21,7 +30,7 @@
 #ifndef GNUPG_COMMON_OPENPGPDEFS_H
 #define GNUPG_COMMON_OPENPGPDEFS_H
 
-typedef enum 
+typedef enum
   {
     PKT_NONE	      = 0,
     PKT_PUBKEY_ENC    = 1,  /* Public key encrypted packet. */
@@ -44,11 +53,11 @@ typedef enum
     PKT_MDC 	      = 19, /* Manipulation detection code packet. */
     PKT_COMMENT	      = 61, /* new comment packet (GnuPG specific). */
     PKT_GPG_CONTROL   = 63  /* internal control packet (GnuPG specific). */
-  } 
+  }
 pkttype_t;
 
 
-typedef enum 
+typedef enum
   {
     SIGSUBPKT_TEST_CRITICAL = -3,
     SIGSUBPKT_LIST_UNHASHED = -2,
@@ -76,12 +85,71 @@ typedef enum
     SIGSUBPKT_SIGNERS_UID   = 28, /* Signer's user id. */
     SIGSUBPKT_REVOC_REASON  = 29, /* Reason for revocation. */
     SIGSUBPKT_FEATURES      = 30, /* Feature flags. */
-                              
+
     SIGSUBPKT_SIGNATURE     = 32, /* Embedded signature. */
-                              
+
     SIGSUBPKT_FLAG_CRITICAL = 128
-  } 
+  }
 sigsubpkttype_t;
+
+
+typedef enum
+  {
+    CIPHER_ALGO_NONE	    =  0,
+    CIPHER_ALGO_IDEA	    =  1,
+    CIPHER_ALGO_3DES	    =  2,
+    CIPHER_ALGO_CAST5	    =  3,
+    CIPHER_ALGO_BLOWFISH    =  4, /* 128 bit */
+    /* 5 & 6 are reserved */
+    CIPHER_ALGO_AES         =  7,
+    CIPHER_ALGO_AES192      =  8,
+    CIPHER_ALGO_AES256      =  9,
+    CIPHER_ALGO_TWOFISH	    = 10, /* 256 bit */
+    CIPHER_ALGO_CAMELLIA128 = 11,
+    CIPHER_ALGO_CAMELLIA192 = 12,
+    CIPHER_ALGO_CAMELLIA256 = 13
+  }
+cipher_algo_t;
+
+
+typedef enum
+  {
+    PUBKEY_ALGO_RSA         =  1,
+    PUBKEY_ALGO_RSA_E       =  2, /* RSA encrypt only (legacy). */
+    PUBKEY_ALGO_RSA_S       =  3, /* RSA sign only (legacy).    */
+    PUBKEY_ALGO_ELGAMAL_E   = 16, /* Elgamal encrypt only.      */
+    PUBKEY_ALGO_DSA         = 17,
+    PUBKEY_ALGO_ECDH        = 18, /* RFC-6637  */
+    PUBKEY_ALGO_ECDSA       = 19, /* RFC-6637  */
+    PUBKEY_ALGO_ELGAMAL     = 20, /* Elgamal encrypt+sign (legacy).  */
+    /*                        21     reserved by OpenPGP.            */
+    PUBKEY_ALGO_EDDSA       = 22  /* EdDSA (not yet assigned).       */
+  }
+pubkey_algo_t;
+
+
+typedef enum
+  {
+    DIGEST_ALGO_MD5         =  1,
+    DIGEST_ALGO_SHA1        =  2,
+    DIGEST_ALGO_RMD160      =  3,
+    /* 4, 5, 6, and 7 are reserved. */
+    DIGEST_ALGO_SHA256      =  8,
+    DIGEST_ALGO_SHA384      =  9,
+    DIGEST_ALGO_SHA512      = 10,
+    DIGEST_ALGO_SHA224      = 11
+  }
+digest_algo_t;
+
+
+typedef enum
+  {
+    COMPRESS_ALGO_NONE      =  0,
+    COMPRESS_ALGO_ZIP       =  1,
+    COMPRESS_ALGO_ZLIB      =  2,
+    COMPRESS_ALGO_BZIP2     =  3
+  }
+compress_algo_t;
 
 
 #endif /*GNUPG_COMMON_OPENPGPDEFS_H*/

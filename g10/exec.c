@@ -48,8 +48,8 @@
 #include "i18n.h"
 #include "iobuf.h"
 #include "util.h"
-#include "mkdtemp.h"  /* From gnulib. */
 #include "membuf.h"
+#include "sysutils.h"
 #include "exec.h"
 
 #ifdef NO_EXEC
@@ -58,15 +58,15 @@ exec_write(struct exec_info **info,const char *program,
 	       const char *args_in,const char *name,int writeonly,int binary)
 {
   log_error(_("no remote program execution supported\n"));
-  return G10ERR_GENERAL;
+  return GPG_ERR_GENERAL;
 }
 
 int
-exec_read(struct exec_info *info) { return G10ERR_GENERAL; }
+exec_read(struct exec_info *info) { return GPG_ERR_GENERAL; }
 int
-exec_finish(struct exec_info *info) { return G10ERR_GENERAL; }
+exec_finish(struct exec_info *info) { return GPG_ERR_GENERAL; }
 int
-set_exec_path(const char *path) { return G10ERR_GENERAL; }
+set_exec_path(const char *path) { return GPG_ERR_GENERAL; }
 
 #else /* ! NO_EXEC */
 
@@ -77,6 +77,9 @@ set_exec_path(const char *path) { return G10ERR_GENERAL; }
 static int
 w32_system(const char *command)
 {
+#ifdef HAVE_W32CE_SYSTEM
+#warning Change this code to use common/exechelp.c
+#else
   PROCESS_INFORMATION pi;
   STARTUPINFO si;
   char *string;
@@ -102,6 +105,7 @@ w32_system(const char *command)
   xfree(string);
 
   return 0;
+#endif
 }
 #endif
 
@@ -109,6 +113,9 @@ w32_system(const char *command)
 int
 set_exec_path(const char *path)
 {
+#ifdef HAVE_W32CE_SYSTEM
+#warning Change this code to use common/exechelp.c
+#else
   char *p;
 
   p=xmalloc(5+strlen(path)+1);
@@ -123,9 +130,10 @@ set_exec_path(const char *path)
      set_exec_path multiple times. */
 
   if(putenv(p)!=0)
-    return G10ERR_GENERAL;
+    return GPG_ERR_GENERAL;
   else
     return 0;
+#endif
 }
 
 /* Makes a temp directory and filenames */
@@ -187,8 +195,8 @@ make_tempdir(struct exec_info *info)
   xfree(tmp);
 #endif
 
-  if(mkdtemp(info->tempdir)==NULL)
-    log_error(_("can't create directory `%s': %s\n"),
+  if (!gnupg_mkdtemp(info->tempdir))
+    log_error(_("can't create directory '%s': %s\n"),
 	      info->tempdir,strerror(errno));
   else
     {
@@ -206,7 +214,7 @@ make_tempdir(struct exec_info *info)
 	}
     }
 
-  return info->flags.madedir?0:G10ERR_GENERAL;
+  return info->flags.madedir? 0 : GPG_ERR_GENERAL;
 }
 
 /* Expands %i and %o in the args to the full temp files within the
@@ -291,7 +299,7 @@ expand_args(struct exec_info *info,const char *args_in)
 
  fail:
   xfree (get_membuf (&command, NULL));
-  return G10ERR_GENERAL;
+  return GPG_ERR_GENERAL;
 }
 
 /* Either handles the tempfile creation, or the fork/exec.  If it
@@ -304,7 +312,7 @@ int
 exec_write(struct exec_info **info,const char *program,
            const char *args_in,const char *name,int writeonly,int binary)
 {
-  int ret=G10ERR_GENERAL;
+  int ret = GPG_ERR_GENERAL;
 
   if(opt.exec_disable && !opt.no_perm_warn)
     {
@@ -416,10 +424,10 @@ exec_write(struct exec_info **info,const char *program,
 	  /* If we get this far the exec failed.  Clean up and return. */
 
 	  if(args_in==NULL)
-	    log_error(_("unable to execute program `%s': %s\n"),
+	    log_error(_("unable to execute program '%s': %s\n"),
 		      program,strerror(errno));
 	  else
-	    log_error(_("unable to execute shell `%s': %s\n"),
+	    log_error(_("unable to execute shell '%s': %s\n"),
 		      shell,strerror(errno));
 
 	  /* This mimics the POSIX sh behavior - 127 means "not found"
@@ -452,28 +460,28 @@ exec_write(struct exec_info **info,const char *program,
 	  goto fail;
 	}
 
-      /* fd iobufs are cached?! */
-      iobuf_ioctl((*info)->fromchild,3,1,NULL);
+      /* fd iobufs are cached! */
+      iobuf_ioctl((*info)->fromchild, IOBUF_IOCTL_NO_CACHE, 1, NULL);
 
       return 0;
     }
 #endif /* !EXEC_TEMPFILE_ONLY */
 
   if(DBG_EXTPROG)
-    log_debug("using temp file `%s'\n",(*info)->tempfile_in);
+    log_debug("using temp file '%s'\n",(*info)->tempfile_in);
 
   /* It's not fork/exec/pipe, so create a temp file */
   if( is_secured_filename ((*info)->tempfile_in) )
     {
       (*info)->tochild = NULL;
-      errno = EPERM;
+      gpg_err_set_errno (EPERM);
     }
   else
     (*info)->tochild=fopen((*info)->tempfile_in,binary?"wb":"w");
   if((*info)->tochild==NULL)
     {
       ret = gpg_error_from_syserror ();
-      log_error(_("can't create `%s': %s\n"),
+      log_error(_("can't create '%s': %s\n"),
 		(*info)->tempfile_in,strerror(errno));
       goto fail;
     }
@@ -492,7 +500,7 @@ exec_write(struct exec_info **info,const char *program,
 int
 exec_read(struct exec_info *info)
 {
-  int ret=G10ERR_GENERAL;
+  int ret = GPG_ERR_GENERAL;
 
   fclose(info->tochild);
   info->tochild=NULL;
@@ -548,7 +556,7 @@ exec_read(struct exec_info *info)
             {
               iobuf_close (info->fromchild);
               info->fromchild = NULL;
-              errno = EPERM;
+              gpg_err_set_errno (EPERM);
             }
 	  if(info->fromchild==NULL)
 	    {
@@ -559,7 +567,7 @@ exec_read(struct exec_info *info)
 	    }
 
 	  /* Do not cache this iobuf on close */
-	  iobuf_ioctl(info->fromchild,3,1,NULL);
+	  iobuf_ioctl(info->fromchild, IOBUF_IOCTL_NO_CACHE, 1, NULL);
 	}
     }
 
@@ -599,19 +607,19 @@ exec_finish(struct exec_info *info)
       if(info->tempfile_in)
 	{
 	  if(unlink(info->tempfile_in)==-1)
-	    log_info(_("WARNING: unable to remove tempfile (%s) `%s': %s\n"),
+	    log_info(_("WARNING: unable to remove tempfile (%s) '%s': %s\n"),
 		     "in",info->tempfile_in,strerror(errno));
 	}
 
       if(info->tempfile_out)
 	{
 	  if(unlink(info->tempfile_out)==-1)
-	    log_info(_("WARNING: unable to remove tempfile (%s) `%s': %s\n"),
+	    log_info(_("WARNING: unable to remove tempfile (%s) '%s': %s\n"),
 		     "out",info->tempfile_out,strerror(errno));
 	}
 
       if(rmdir(info->tempdir)==-1)
-	log_info(_("WARNING: unable to remove temp directory `%s': %s\n"),
+	log_info(_("WARNING: unable to remove temp directory '%s': %s\n"),
 		 info->tempdir,strerror(errno));
     }
 

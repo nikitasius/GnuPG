@@ -1,4 +1,4 @@
-/* revoke.c
+/* revoke.c - Create recovation certificates.
  * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003,
  *               2004 Free Software Foundation, Inc.
  *
@@ -36,7 +36,7 @@
 #include "ttyio.h"
 #include "status.h"
 #include "i18n.h"
-
+#include "call-agent.h"
 
 struct revocation_reason_info {
     int code;
@@ -90,7 +90,7 @@ export_minimal_pk(IOBUF out,KBNODE keyblock,
   if(!node)
     {
       log_error("key incomplete\n");
-      return G10ERR_GENERAL;
+      return GPG_ERR_GENERAL;
     }
 
   keyid_from_pk(node->pkt->pkt.public_key,keyid);
@@ -99,7 +99,7 @@ export_minimal_pk(IOBUF out,KBNODE keyblock,
   rc=build_packet(out,&pkt);
   if(rc)
     {
-      log_error(_("build_packet failed: %s\n"), g10_errstr(rc) );
+      log_error(_("build_packet failed: %s\n"), gpg_strerror (rc) );
       return rc;
     }
 
@@ -113,7 +113,7 @@ export_minimal_pk(IOBUF out,KBNODE keyblock,
       rc=build_packet(out,&pkt);
       if(rc)
 	{
-	  log_error(_("build_packet failed: %s\n"), g10_errstr(rc) );
+	  log_error("build_packet failed: %s\n", gpg_strerror (rc) );
 	  return rc;
 	}
     }
@@ -125,7 +125,7 @@ export_minimal_pk(IOBUF out,KBNODE keyblock,
       rc=build_packet(out,&pkt);
       if(rc)
 	{
-	  log_error(_("build_packet failed: %s\n"), g10_errstr(rc) );
+	  log_error(_("build_packet failed: %s\n"), gpg_strerror (rc) );
 	  return rc;
 	}
     }
@@ -143,7 +143,7 @@ export_minimal_pk(IOBUF out,KBNODE keyblock,
 	  else
 	    {
 	      log_error(_("key %s has no user IDs\n"),keystr(keyid));
-	      return G10ERR_GENERAL;
+	      return GPG_ERR_GENERAL;
 	    }
 	}
 
@@ -171,7 +171,7 @@ export_minimal_pk(IOBUF out,KBNODE keyblock,
   rc=build_packet(out,&pkt);
   if(rc)
     {
-      log_error(_("build_packet failed: %s\n"), g10_errstr(rc) );
+      log_error(_("build_packet failed: %s\n"), gpg_strerror (rc) );
       return rc;
     }
 
@@ -183,7 +183,7 @@ export_minimal_pk(IOBUF out,KBNODE keyblock,
       rc=build_packet(out,&pkt);
       if(rc)
 	{
-	  log_error(_("build_packet failed: %s\n"), g10_errstr(rc) );
+	  log_error(_("build_packet failed: %s\n"), gpg_strerror (rc) );
 	  return rc;
 	}
     }
@@ -195,12 +195,12 @@ export_minimal_pk(IOBUF out,KBNODE keyblock,
  * Generate a revocation certificate for UNAME via a designated revoker
  */
 int
-gen_desig_revoke( const char *uname, strlist_t locusr )
+gen_desig_revoke (ctrl_t ctrl, const char *uname, strlist_t locusr)
 {
     int rc = 0;
     armor_filter_context_t *afx;
     PKT_public_key *pk = NULL;
-    PKT_secret_key *sk = NULL;
+    PKT_public_key *pk2 = NULL;
     PKT_signature *sig = NULL;
     IOBUF out = NULL;
     struct revocation_reason_info *reason = NULL;
@@ -214,22 +214,28 @@ gen_desig_revoke( const char *uname, strlist_t locusr )
     if( opt.batch )
       {
 	log_error(_("can't do this in batch mode\n"));
-	return G10ERR_GENERAL;
+	return GPG_ERR_GENERAL;
       }
 
     afx = new_armor_context ();
 
-    kdbhd = keydb_new (0);
-    classify_user_id (uname, &desc);
-    rc = desc.mode? keydb_search (kdbhd, &desc, 1) : G10ERR_INV_USER_ID;
+    kdbhd = keydb_new ();
+    if (!kdbhd)
+      {
+        rc = gpg_error_from_syserror ();
+        goto leave;
+      }
+    rc = classify_user_id (uname, &desc, 1);
+    if (!rc)
+      rc = keydb_search (kdbhd, &desc, 1, NULL);
     if (rc) {
-	log_error (_("key \"%s\" not found: %s\n"),uname, g10_errstr (rc));
+	log_error (_("key \"%s\" not found: %s\n"),uname, gpg_strerror (rc));
 	goto leave;
     }
 
     rc = keydb_get_keyblock (kdbhd, &keyblock );
     if( rc ) {
-	log_error (_("error reading keyblock: %s\n"), g10_errstr(rc) );
+	log_error (_("error reading keyblock: %s\n"), gpg_strerror (rc) );
 	goto leave;
     }
 
@@ -238,7 +244,7 @@ gen_desig_revoke( const char *uname, strlist_t locusr )
 
     /* get the key from the keyblock */
     node = find_kbnode( keyblock, PKT_PUBLIC_KEY );
-    if( !node ) 
+    if( !node )
       BUG ();
 
     pk=node->pkt->pkt.public_key;
@@ -247,7 +253,7 @@ gen_desig_revoke( const char *uname, strlist_t locusr )
 
     if(locusr)
       {
-	rc=build_sk_list(locusr,&sk_list,0,PUBKEY_USAGE_CERT);
+	rc = build_sk_list (ctrl, locusr, &sk_list, PUBKEY_USAGE_CERT);
 	if(rc)
 	  goto leave;
       }
@@ -261,8 +267,8 @@ gen_desig_revoke( const char *uname, strlist_t locusr )
       {
 	SK_LIST list;
 
-	if(sk)
-	  free_secret_key(sk);
+        free_public_key (pk2);
+        pk2 = NULL;
 
 	if(sk_list)
 	  {
@@ -271,7 +277,7 @@ gen_desig_revoke( const char *uname, strlist_t locusr )
 		byte fpr[MAX_FINGERPRINT_LEN];
 		size_t fprlen;
 
-		fingerprint_from_sk(list->sk,fpr,&fprlen);
+		fingerprint_from_pk (list->pk, fpr, &fprlen);
 
 		/* Don't get involved with keys that don't have 160
 		   bit fingerprints */
@@ -282,18 +288,19 @@ gen_desig_revoke( const char *uname, strlist_t locusr )
 		  break;
 	      }
 
-	    if(list)
-	      sk=copy_secret_key(NULL,list->sk);
+	    if (list)
+	      pk2 = copy_public_key (NULL, list->pk);
 	    else
 	      continue;
 	  }
 	else
 	  {
-	    sk=xmalloc_secure_clear(sizeof(*sk));
-	    rc=get_seckey_byfprint(sk,pk->revkey[i].fpr,MAX_FINGERPRINT_LEN);
+	    pk2 = xmalloc_clear (sizeof *pk2);
+	    rc = get_pubkey_byfprint (pk2, NULL,
+                                      pk->revkey[i].fpr, MAX_FINGERPRINT_LEN);
 	  }
 
-	/* We have the revocation key */
+	/* We have the revocation key.  */
 	if(!rc)
 	  {
 	    PKT_signature *revkey = NULL;
@@ -304,11 +311,18 @@ gen_desig_revoke( const char *uname, strlist_t locusr )
 	    tty_printf ("\n");
 
 	    tty_printf (_("To be revoked by:\n"));
-            print_seckey_info (sk);
+            print_seckey_info (pk2);
 
 	    if(pk->revkey[i].class&0x40)
 	      tty_printf(_("(This is a sensitive revocation key)\n"));
 	    tty_printf("\n");
+
+	    rc = agent_probe_secret_key (ctrl, pk2);
+	    if (rc)
+	      {
+		tty_printf (_("Secret key is not available.\n"));
+		continue;
+	      }
 
 	    if( !cpr_get_answer_is_yes("gen_desig_revoke.okay",
          _("Create a designated revocation certificate for this key? (y/N) ")))
@@ -319,14 +333,10 @@ gen_desig_revoke( const char *uname, strlist_t locusr )
 	    if( !reason )
 	      continue;
 
-	    rc = check_secret_key( sk, 0 );
-	    if( rc )
-	      continue;
-
 	    if( !opt.armor )
 	      tty_printf(_("ASCII armored output forced.\n"));
 
-	    if( (rc = open_outfile( NULL, 0, &out )) )
+	    if( (rc = open_outfile (-1, NULL, 0, 1, &out )) )
 	      goto leave;
 
 	    afx->what = 1;
@@ -335,11 +345,12 @@ gen_desig_revoke( const char *uname, strlist_t locusr )
 	    push_armor_filter (afx, out);
 
 	    /* create it */
-	    rc = make_keysig_packet( &sig, pk, NULL, NULL, sk, 0x20, 0,
-				     0, 0, 0,
-				     revocation_reason_build_cb, reason );
+	    rc = make_keysig_packet( &sig, pk, NULL, NULL, pk2, 0x20, 0,
+				     0, 0,
+				     revocation_reason_build_cb, reason,
+                                     NULL);
 	    if( rc ) {
-	      log_error(_("make_keysig_packet failed: %s\n"), g10_errstr(rc));
+	      log_error(_("make_keysig_packet failed: %s\n"), gpg_strerror (rc));
 	      goto leave;
 	    }
 
@@ -380,11 +391,11 @@ gen_desig_revoke( const char *uname, strlist_t locusr )
 		    for(j=0;j<signode->pkt->pkt.signature->numrevkeys;j++)
 		      {
 			if(pk->revkey[i].class==
-			   signode->pkt->pkt.signature->revkey[j]->class &&
+			   signode->pkt->pkt.signature->revkey[j].class &&
 			   pk->revkey[i].algid==
-			   signode->pkt->pkt.signature->revkey[j]->algid &&
+			   signode->pkt->pkt.signature->revkey[j].algid &&
 			   memcmp(pk->revkey[i].fpr,
-				  signode->pkt->pkt.signature->revkey[j]->fpr,
+				  signode->pkt->pkt.signature->revkey[j].fpr,
 				  MAX_FINGERPRINT_LEN)==0)
 			  {
 			    revkey=signode->pkt->pkt.signature;
@@ -411,10 +422,8 @@ gen_desig_revoke( const char *uname, strlist_t locusr )
       log_error(_("no revocation keys found for \"%s\"\n"),uname);
 
   leave:
-    if( pk )
-	free_public_key( pk );
-    if( sk )
-	free_secret_key( sk );
+    free_public_key (pk);
+    free_public_key (pk2);
     if( sig )
 	free_seckey_enc( sig );
 
@@ -430,184 +439,312 @@ gen_desig_revoke( const char *uname, strlist_t locusr )
 }
 
 
+/* Common core to create the revocation. FILENAME may be NULL to write
+   to stdout or the filename given by --output.  REASON describes the
+   revocation reason.  PSK is the public primary key - we expect that
+   a corresponding secret key is available.  KEYBLOCK is the entire
+   KEYBLOCK which is used in PGP mode to write a a minimal key and not
+   just the naked revocation signature; it may be NULL.  If LEADINTEXT
+   is not NULL, it is written right before the (armored) output.*/
+static int
+create_revocation (const char *filename,
+                   struct revocation_reason_info *reason,
+                   PKT_public_key *psk,
+                   kbnode_t keyblock,
+                   const char *leadintext, int suffix,
+                   const char *cache_nonce)
+{
+  int rc;
+  iobuf_t out = NULL;
+  armor_filter_context_t *afx;
+  PKT_signature *sig = NULL;
+  PACKET pkt;
+
+  afx = new_armor_context ();
+
+  if ((rc = open_outfile (-1, filename, suffix, 1, &out)))
+    goto leave;
+
+  if (leadintext )
+    iobuf_writestr (out, leadintext);
+
+  afx->what = 1;
+  afx->hdrlines = "Comment: This is a revocation certificate\n";
+  push_armor_filter (afx, out);
+
+  rc = make_keysig_packet (&sig, psk, NULL, NULL, psk, 0x20, 0,
+                           0, 0,
+                           revocation_reason_build_cb, reason, cache_nonce);
+  if (rc)
+    {
+      log_error (_("make_keysig_packet failed: %s\n"), gpg_strerror (rc));
+      goto leave;
+    }
+
+  if (keyblock && (PGP6 || PGP7 || PGP8))
+    {
+      /* Use a minimal pk for PGPx mode, since PGP can't import bare
+         revocation certificates. */
+      rc = export_minimal_pk (out, keyblock, sig, NULL);
+      if (rc)
+        goto leave;
+    }
+  else
+    {
+      init_packet (&pkt);
+      pkt.pkttype = PKT_SIGNATURE;
+      pkt.pkt.signature = sig;
+
+      rc = build_packet (out, &pkt);
+      if (rc)
+        {
+          log_error (_("build_packet failed: %s\n"), gpg_strerror (rc));
+          goto leave;
+        }
+    }
+
+ leave:
+  if (sig)
+    free_seckey_enc (sig);
+  if (rc)
+    iobuf_cancel (out);
+  else
+    iobuf_close (out);
+  release_armor_context (afx);
+  return rc;
+}
+
+
+/* This function is used to generate a standard revocation certificate
+   by gpg's interactive key generation function.  The certificate is
+   stored at a dedicated place in a slightly modified form to avoid an
+   accidental import.  PSK is the primary key; a corresponding secret
+   key must be available.  CACHE_NONCE is optional but can be used to
+   help gpg-agent to avoid an extra passphrase prompt. */
+int
+gen_standard_revoke (PKT_public_key *psk, const char *cache_nonce)
+{
+  int rc;
+  estream_t memfp;
+  struct revocation_reason_info reason;
+  char *dir, *tmpstr, *fname;
+  void *leadin;
+  size_t len;
+  u32 keyid[2];
+  char pkstrbuf[PUBKEY_STRING_SIZE];
+  char *orig_codeset;
+
+  dir = get_openpgp_revocdir (opt.homedir);
+  tmpstr = hexfingerprint (psk, NULL, 0);
+  fname = xstrconcat (dir, DIRSEP_S, tmpstr, NULL);
+  xfree (tmpstr);
+  xfree (dir);
+
+  keyid_from_pk (psk, keyid);
+
+  memfp = es_fopenmem (0, "r+");
+  if (!memfp)
+    log_fatal ("error creating memory stream\n");
+
+  orig_codeset = i18n_switchto_utf8 ();
+
+  es_fprintf (memfp, "%s\n\n",
+              _("This is a revocation certificate for the OpenPGP key:"));
+
+  es_fprintf (memfp, "pub  %s/%s %s\n",
+              pubkey_string (psk, pkstrbuf, sizeof pkstrbuf),
+              keystr (keyid),
+              datestr_from_pk (psk));
+
+  print_fingerprint (memfp, psk, 3);
+
+  tmpstr = get_user_id (keyid, &len);
+  es_fprintf (memfp, "uid%*s%.*s\n\n",
+              (int)keystrlen () + 10, "",
+              (int)len, tmpstr);
+  xfree (tmpstr);
+
+  es_fprintf (memfp, "%s\n\n%s\n\n%s\n\n:",
+     _("A revocation certificate is a kind of \"kill switch\" to publicly\n"
+       "declare that a key shall not anymore be used.  It is not possible\n"
+       "to retract such a revocation certificate once it has been published."),
+     _("Use it to revoke this key in case of a compromise or loss of\n"
+       "the secret key.  However, if the secret key is still accessible,\n"
+       "it is better to generate a new revocation certificate and give\n"
+       "a reason for the revocation.  For details see the description of\n"
+       "of the gpg command \"--gen-revoke\" in the GnuPG manual."),
+     _("To avoid an accidental use of this file, a colon has been inserted\n"
+       "before the 5 dashes below.  Remove this colon with a text editor\n"
+       "before importing and publishing this revocation certificate."));
+
+  es_putc (0, memfp);
+
+  i18n_switchback (orig_codeset);
+
+  if (es_fclose_snatch (memfp, &leadin, NULL))
+    log_fatal ("error snatching memory stream\n");
+
+  reason.code = 0x00; /* No particular reason.  */
+  reason.desc = NULL;
+  rc = create_revocation (fname, &reason, psk, NULL, leadin, 3, cache_nonce);
+  if (!rc && !opt.quiet)
+    log_info (_("revocation certificate stored as '%s.rev'\n"), fname);
+
+  xfree (leadin);
+  xfree (fname);
+
+  return rc;
+}
+
+
+
 /****************
  * Generate a revocation certificate for UNAME
  */
 int
-gen_revoke( const char *uname )
+gen_revoke (const char *uname)
 {
-    int rc = 0;
-    armor_filter_context_t *afx;
-    PACKET pkt;
-    PKT_secret_key *sk; /* used as pointer into a kbnode */
-    PKT_public_key *pk = NULL;
-    PKT_signature *sig = NULL;
-    u32 sk_keyid[2];
-    IOBUF out = NULL;
-    KBNODE keyblock = NULL, pub_keyblock = NULL;
-    KBNODE node;
-    KEYDB_HANDLE kdbhd;
-    struct revocation_reason_info *reason = NULL;
-    KEYDB_SEARCH_DESC desc;
+  int rc = 0;
+  PKT_public_key *psk;
+  u32 keyid[2];
+  kbnode_t keyblock = NULL;
+  kbnode_t node;
+  KEYDB_HANDLE kdbhd;
+  struct revocation_reason_info *reason = NULL;
+  KEYDB_SEARCH_DESC desc;
 
-    if( opt.batch )
-      {
-	log_error(_("can't do this in batch mode\n"));
-	return G10ERR_GENERAL;
-      }
-
-    afx = new_armor_context ();
-    init_packet( &pkt );
-
-    /* search the userid: 
-     * We don't want the whole getkey stuff here but the entire keyblock
-     */
-    kdbhd = keydb_new (1);
-    classify_user_id (uname, &desc);
-    rc = desc.mode? keydb_search (kdbhd, &desc, 1) : G10ERR_INV_USER_ID;
-    if (rc)
-      {
-	log_error (_("secret key \"%s\" not found: %s\n"),
-                   uname, g10_errstr (rc));
-	goto leave;
-      }
-
-    rc = keydb_get_keyblock (kdbhd, &keyblock );
-    if( rc ) {
-	log_error (_("error reading keyblock: %s\n"), g10_errstr(rc) );
-	goto leave;
+  if( opt.batch )
+    {
+      log_error(_("can't do this in batch mode\n"));
+      return GPG_ERR_GENERAL;
     }
 
-    /* get the keyid from the keyblock */
-    node = find_kbnode( keyblock, PKT_SECRET_KEY );
-    if( !node ) 
-	BUG ();
-
-    /* fixme: should make a function out of this stuff,
-     * it's used all over the source */
-    sk = node->pkt->pkt.secret_key;
-    keyid_from_sk( sk, sk_keyid );
-    print_seckey_info (sk);
-
-    /* FIXME: We should get the public key direct from the secret one */
-
-    pub_keyblock=get_pubkeyblock(sk_keyid);
-    if(!pub_keyblock)
-      {
-	log_error(_("no corresponding public key: %s\n"), g10_errstr(rc) );
-	goto leave;
-      }
-
-    node=find_kbnode(pub_keyblock,PKT_PUBLIC_KEY);
-    if(!node)
-      BUG();
-
-    pk=node->pkt->pkt.public_key;
-
-    if( cmp_public_secret_key( pk, sk ) ) {
-	log_error(_("public key does not match secret key!\n") );
-	rc = G10ERR_GENERAL;
-	goto leave;
+  /* Search the userid; we don't want the whole getkey stuff here.  */
+  kdbhd = keydb_new ();
+  if (!kdbhd)
+    {
+      rc = gpg_error_from_syserror ();
+      goto leave;
+    }
+  rc = classify_user_id (uname, &desc, 1);
+  if (!rc)
+    rc = keydb_search (kdbhd, &desc, 1, NULL);
+  if (rc)
+    {
+      if (gpg_err_code (rc) == GPG_ERR_NOT_FOUND)
+        log_error (_("secret key \"%s\" not found\n"), uname);
+      else
+        log_error (_("secret key \"%s\" not found: %s\n"),
+                   uname, gpg_strerror (rc));
+      goto leave;
     }
 
-    tty_printf("\n");
-    if( !cpr_get_answer_is_yes("gen_revoke.okay",
-		  _("Create a revocation certificate for this key? (y/N) ")) )
-      {
-	rc = 0;
-	goto leave;
-      }
-
-    if(sk->version>=4 || opt.force_v4_certs) {
-      /* get the reason for the revocation */
-      reason = ask_revocation_reason( 1, 0, 1 );
-      if( !reason ) { /* user decided to cancel */
-	rc = 0;
-	goto leave;
-      }
+  rc = keydb_get_keyblock (kdbhd, &keyblock );
+  if (rc)
+    {
+      log_error (_("error reading keyblock: %s\n"), gpg_strerror (rc) );
+      goto leave;
     }
 
-    switch( is_secret_key_protected( sk ) ) {
-      case -1:
-	log_error(_("unknown protection algorithm\n"));
-	rc = G10ERR_PUBKEY_ALGO;
-	break;
-      case -3:
-	tty_printf (_("Secret parts of primary key are not available.\n"));
-        rc = G10ERR_NO_SECKEY;
-        break;
-      case 0:
-	tty_printf(_("NOTE: This key is not protected!\n"));
-	break;
-      default:
-        rc = check_secret_key( sk, 0 );
-	break;
+  rc = keydb_search (kdbhd, &desc, 1, NULL);
+  if (gpg_err_code (rc) == GPG_ERR_NOT_FOUND)
+    /* Not ambiguous.  */
+    {
     }
-    if( rc )
-	goto leave;
+  else if (rc == 0)
+    /* Ambiguous.  */
+    {
+      char *info;
 
+      /* TRANSLATORS: The %s prints a key specification which
+         for example has been given at the command line.  Several lines
+         lines with secret key infos are printed after this message.  */
+      log_error (_("'%s' matches multiple secret keys:\n"), uname);
 
-    if( !opt.armor )
-	tty_printf(_("ASCII armored output forced.\n"));
+      info = format_seckey_info (keyblock->pkt->pkt.public_key);
+      log_error ("  %s\n", info);
+      xfree (info);
+      release_kbnode (keyblock);
 
-    if( (rc = open_outfile( NULL, 0, &out )) )
-	goto leave;
+      rc = keydb_get_keyblock (kdbhd, &keyblock);
+      while (! rc)
+        {
+          info = format_seckey_info (keyblock->pkt->pkt.public_key);
+          log_info ("  %s\n", info);
+          xfree (info);
+          release_kbnode (keyblock);
+          keyblock = NULL;
 
-    afx->what = 1;
-    afx->hdrlines = "Comment: A revocation certificate should follow\n";
-    push_armor_filter (afx, out);
+          rc = keydb_search (kdbhd, &desc, 1, NULL);
+          if (! rc)
+            rc = keydb_get_keyblock (kdbhd, &keyblock);
+        }
 
-    /* create it */
-    rc = make_keysig_packet( &sig, pk, NULL, NULL, sk, 0x20, 0,
-			     opt.force_v4_certs?4:0, 0, 0,
-			     revocation_reason_build_cb, reason );
-    if( rc ) {
-	log_error(_("make_keysig_packet failed: %s\n"), g10_errstr(rc));
-	goto leave;
+      rc = GPG_ERR_AMBIGUOUS_NAME;
+
+      goto leave;
+    }
+  else
+    {
+      log_error (_("error searching the keyring: %s\n"), gpg_strerror (rc));
+      goto leave;
     }
 
-    if(PGP2 || PGP6 || PGP7 || PGP8)
-      {
-	/* Use a minimal pk for PGPx mode, since PGP can't import bare
-	   revocation certificates. */
-	rc=export_minimal_pk(out,pub_keyblock,sig,NULL);
-	if(rc)
-	  goto leave;
-      }
-    else
-      {
-	init_packet( &pkt );
-	pkt.pkttype = PKT_SIGNATURE;
-	pkt.pkt.signature = sig;
+  /* Get the keyid from the keyblock.  */
+  node = find_kbnode (keyblock, PKT_PUBLIC_KEY);
+  if (!node)
+    BUG ();
 
-	rc = build_packet( out, &pkt );
-	if( rc ) {
-	  log_error(_("build_packet failed: %s\n"), g10_errstr(rc) );
-	  goto leave;
-	}
-      }
+  psk = node->pkt->pkt.public_key;
+  rc = agent_probe_secret_key (NULL, psk);
+  if (rc)
+    {
+      log_error (_("secret key \"%s\" not found: %s\n"),
+                 uname, gpg_strerror (rc));
+      goto leave;
+    }
 
-    /* and issue a usage notice */
-    tty_printf(_("Revocation certificate created.\n\n"
+  keyid_from_pk (psk, keyid );
+  print_seckey_info (psk);
+
+  tty_printf("\n");
+  if (!cpr_get_answer_is_yes ("gen_revoke.okay",
+                _("Create a revocation certificate for this key? (y/N) ")))
+    {
+      rc = 0;
+      goto leave;
+    }
+
+  /* Get the reason for the revocation.  */
+  reason = ask_revocation_reason (1, 0, 1);
+  if (!reason)
+    {
+      /* User decided to cancel.  */
+      rc = 0;
+      goto leave;
+    }
+
+  if (!opt.armor)
+    tty_printf (_("ASCII armored output forced.\n"));
+
+  rc = create_revocation (NULL, reason, psk, keyblock, NULL, 0, NULL);
+  if (rc)
+    goto leave;
+
+  /* and issue a usage notice */
+  tty_printf (_(
+"Revocation certificate created.\n\n"
 "Please move it to a medium which you can hide away; if Mallory gets\n"
 "access to this certificate he can use it to make your key unusable.\n"
 "It is smart to print this certificate and store it away, just in case\n"
 "your media become unreadable.  But have some caution:  The print system of\n"
 "your machine might store the data and make it available to others!\n"));
 
-  leave:
-    if( sig )
-	free_seckey_enc( sig );
-    release_kbnode( keyblock );
-    release_kbnode( pub_keyblock );
-    keydb_release (kdbhd);
-    if( rc )
-	iobuf_cancel(out);
-    else
-	iobuf_close(out);
-    release_revocation_reason_info( reason );
-    release_armor_context (afx);
-    return rc;
+ leave:
+  release_kbnode (keyblock);
+  keydb_release (kdbhd);
+  release_revocation_reason_info( reason );
+  return rc;
 }
 
 

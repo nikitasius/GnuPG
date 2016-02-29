@@ -32,11 +32,11 @@
 #endif
 
 #include "gpg.h"
+#include "util.h"
 #include "packet.h"
 #include "status.h"
 #include "exec.h"
 #include "keydb.h"
-#include "util.h"
 #include "i18n.h"
 #include "iobuf.h"
 #include "options.h"
@@ -113,11 +113,11 @@ generate_photo_id(PKT_public_key *pk,const char *photo_name)
         {
           iobuf_close (file);
           file = NULL;
-          errno = EPERM;
+          gpg_err_set_errno (EPERM);
         }
       if(!file)
 	{
-	  log_error(_("unable to open JPEG file `%s': %s\n"),
+	  log_error(_("unable to open JPEG file '%s': %s\n"),
 		    filename,strerror(errno));
 	  xfree(filename);
 	  filename=NULL;
@@ -146,7 +146,7 @@ generate_photo_id(PKT_public_key *pk,const char *photo_name)
       /* Is it a JPEG? */
       if(photo[0]!=0xFF || photo[1]!=0xD8)
 	{
-	  log_error(_("`%s' is not a JPEG file\n"),filename);
+	  log_error(_("'%s' is not a JPEG file\n"),filename);
 	  xfree(photo);
 	  photo=NULL;
 	  xfree(filename);
@@ -163,7 +163,7 @@ generate_photo_id(PKT_public_key *pk,const char *photo_name)
          "user" may not be able to dismiss a viewer window! */
       if(opt.command_fd==-1)
 	{
-	  show_photos(uid->attribs,uid->numattribs,pk,NULL,uid);
+	  show_photos (uid->attribs, uid->numattribs, pk, uid);
 	  switch(cpr_get_answer_yes_no_quit("photoid.jpeg.okay",
 					 _("Is this photo correct (y/N/q)? ")))
 	    {
@@ -287,11 +287,15 @@ static const char *get_default_photo_command(void)
 #endif
 
 void
-show_photos(const struct user_attribute *attrs,
-	    int count,PKT_public_key *pk,PKT_secret_key *sk,
-	    PKT_user_id *uid)
+show_photos(const struct user_attribute *attrs, int count,
+            PKT_public_key *pk, PKT_user_id *uid)
 {
-#ifndef DISABLE_PHOTO_VIEWER
+#ifdef DISABLE_PHOTO_VIEWER
+  (void)attrs;
+  (void)count;
+  (void)pk;
+  (void)uid;
+#else /*!DISABLE_PHOTO_VIEWER*/
   int i;
   struct expando_args args;
   u32 len;
@@ -304,10 +308,8 @@ show_photos(const struct user_attribute *attrs,
   namehash_from_uid (uid);
   args.namehash = uid->namehash;
 
-  if(pk)
-    keyid_from_pk(pk,kid);
-  else if(sk)
-    keyid_from_sk(sk,kid);
+  if (pk)
+    keyid_from_pk (pk, kid);
 
   for(i=0;i<count;i++)
     if(attrs[i].type==ATTRIB_IMAGE &&
@@ -375,5 +377,5 @@ show_photos(const struct user_attribute *attrs,
 
  fail:
   log_error(_("unable to display photo ID!\n"));
-#endif
+#endif /*!DISABLE_PHOTO_VIEWER*/
 }

@@ -3,12 +3,22 @@
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -104,7 +114,7 @@ answer_is_yes_no_quit ( const char *s )
 }
 
 /*
-   Return 1 for okay, 0 for for cancel or DEF_ANSWER for default. 
+   Return 1 for okay, 0 for for cancel or DEF_ANSWER for default.
  */
 int
 answer_is_okay_cancel (const char *s, int def_answer)
@@ -115,7 +125,7 @@ answer_is_okay_cancel (const char *s, int def_answer)
   const char *long_cancel = _("cancel|cancel");
   const char *short_okay = _("oO");
   const char *short_cancel = _("cC");
-  
+
   /* Note: We have to use the locale dependent compare. */
   if ( match_multistr(long_okay,s) )
     return 1;
@@ -138,4 +148,3 @@ answer_is_okay_cancel (const char *s, int def_answer)
     return 0;
   return def_answer;
 }
-

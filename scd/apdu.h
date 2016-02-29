@@ -36,11 +36,15 @@ enum {
   SW_CC_NOT_SUP     = 0x6884, /* Command Chaining is not supported.  */
   SW_CHV_WRONG      = 0x6982,
   SW_CHV_BLOCKED    = 0x6983,
+  SW_REF_DATA_INV   = 0x6984, /* Referenced data invalidated. */
   SW_USE_CONDITIONS = 0x6985,
   SW_BAD_PARAMETER  = 0x6a80, /* (in the data field) */
   SW_NOT_SUPPORTED  = 0x6a81,
   SW_FILE_NOT_FOUND = 0x6a82,
   SW_RECORD_NOT_FOUND = 0x6a83,
+  SW_NOT_ENOUGH_MEMORY= 0x6a84, /* Not enough memory space in the file.  */
+  SW_INCONSISTENT_LC  = 0x6a85, /* Lc inconsistent with TLV structure.  */
+  SW_INCORRECT_P0_P1  = 0x6a86,
   SW_BAD_LC         = 0x6a87, /* Lc does not match command or p1/p2.  */
   SW_REF_NOT_FOUND  = 0x6a88,
   SW_BAD_P0_P1      = 0x6b00,
@@ -49,7 +53,7 @@ enum {
   SW_CLA_NOT_SUP    = 0x6e00,
   SW_SUCCESS        = 0x9000,
 
-  /* The follwoing statuswords are no real ones but used to map host
+  /* The following statuswords are no real ones but used to map host
      OS errors into status words.  A status word is 16 bit so that
      those values can't be issued by a card. */
   SW_HOST_OUT_OF_CORE = 0x10001,  /* No way yet to differentiate
@@ -108,7 +112,6 @@ int apdu_disconnect (int slot);
 
 int apdu_set_progress_cb (int slot, gcry_handler_progress_t cb, void *cb_arg);
 
-int apdu_activate (int slot);
 int apdu_reset (int slot);
 int apdu_get_status (int slot, int hang,
                      unsigned int *status, unsigned int *changed);
@@ -120,10 +123,10 @@ int apdu_pinpad_modify (int slot, int class, int ins, int p0, int p1,
 int apdu_send_simple (int slot, int extended_mode,
                       int class, int ins, int p0, int p1,
                       int lc, const char *data);
-int apdu_send (int slot, int extended_mode, 
+int apdu_send (int slot, int extended_mode,
                int class, int ins, int p0, int p1, int lc, const char *data,
                unsigned char **retbuf, size_t *retbuflen);
-int apdu_send_le (int slot, int extended_mode, 
+int apdu_send_le (int slot, int extended_mode,
                   int class, int ins, int p0, int p1,
                   int lc, const char *data, int le,
                   unsigned char **retbuf, size_t *retbuflen);
@@ -131,9 +134,6 @@ int apdu_send_direct (int slot, size_t extended_length,
                       const unsigned char *apdudata, size_t apdudatalen,
                       int handle_more,
                       unsigned char **retbuf, size_t *retbuflen);
-
+const char *apdu_get_reader_name (int slot);
 
 #endif /*APDU_H*/
-
-
-

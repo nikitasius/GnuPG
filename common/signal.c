@@ -4,12 +4,22 @@
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -21,7 +31,9 @@
 #include <config.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <signal.h>
+#ifdef HAVE_SIGNAL_H
+# include <signal.h>
+#endif
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
@@ -43,7 +55,7 @@ init_one_signal (int sig, RETSIGTYPE (*handler)(int), int check_ign )
 {
 # ifdef HAVE_SIGACTION
   struct sigaction oact, nact;
-  
+
   if (check_ign)
     {
       /* we don't want to change an IGN handler */
@@ -56,11 +68,11 @@ init_one_signal (int sig, RETSIGTYPE (*handler)(int), int check_ign )
   sigemptyset (&nact.sa_mask);
   nact.sa_flags = 0;
   sigaction ( sig, &nact, NULL);
-# else 
+# else
   RETSIGTYPE (*ohandler)(int);
-  
+
   ohandler = signal (sig, handler);
-  if (check_ign && ohandler == SIG_IGN) 
+  if (check_ign && ohandler == SIG_IGN)
     {
       /* Change it back if it was already set to IGN */
       signal (sig, SIG_IGN);
@@ -92,18 +104,18 @@ got_fatal_signal (int sig)
   if (caught_fatal_sig)
     raise (sig);
   caught_fatal_sig = 1;
-  
+
   if (cleanup_fnc)
     cleanup_fnc ();
   /* Better don't translate these messages. */
-  write (2, "\n", 1 );
+  (void)write (2, "\n", 1 );
   s = log_get_prefix (NULL);
   if (s)
-    write(2, s, strlen (s));
-  write (2, ": signal ", 9 );
+    (void)write(2, s, strlen (s));
+  (void)write (2, ": signal ", 9 );
   s = get_signal_name(sig);
   if (s)
-    write (2, s, strlen(s) );
+    (void) write (2, s, strlen(s) );
   else
     {
       /* We are in a signal handler so we can't use any kind of printf
@@ -113,8 +125,8 @@ got_fatal_signal (int sig)
          things are messed up because we modify its value.  Although
          this is a bug in that system, we will protect against it.  */
       if (sig < 0 || sig >= 100000)
-        write (2, "?", 1);
-      else 
+        (void)write (2, "?", 1);
+      else
         {
           int i, value, any=0;
 
@@ -122,7 +134,7 @@ got_fatal_signal (int sig)
             {
               if (value >= i || ((any || i==1) && !(value/i)))
                 {
-                  write (2, "0123456789"+(value/i), 1);
+                  (void)write (2, "0123456789"+(value/i), 1);
                   if ((value/i))
                     any = 1;
                   value %= i;
@@ -130,8 +142,8 @@ got_fatal_signal (int sig)
             }
         }
     }
-  write (2, " caught ... exiting\n", 20);
-  
+  (void)write (2, " caught ... exiting\n", 20);
+
   /* Reset action to default action and raise signal again */
   init_one_signal (sig, SIG_DFL, 0);
   /* Fixme: remove_lockfiles ();*/
@@ -168,38 +180,13 @@ gnupg_init_signals (int mode, void (*fast_cleanup)(void))
 #endif
 }
 
-void
-gnupg_pause_on_sigusr (int which)
-{
-#ifndef HAVE_DOSISH_SYSTEM
-# ifdef HAVE_SIGPROCMASK
-  sigset_t mask, oldmask;
-
-  assert (which == 1);
-  sigemptyset( &mask );
-  sigaddset( &mask, SIGUSR1 );
-  
-  sigprocmask( SIG_BLOCK, &mask, &oldmask );
-  while (!caught_sigusr1)
-    sigsuspend (&oldmask);
-  caught_sigusr1 = 0;
-  sigprocmask (SIG_UNBLOCK, &mask, NULL);
-# else 
-  assert (which == 1);
-  sighold (SIGUSR1);
-  while (!caught_sigusr1)
-    sigpause(SIGUSR1);
-  caught_sigusr1 = 0;
-  sigrelease(SIGUSR1);
-# endif /*!HAVE_SIGPROCMASK*/
-#endif
-}
-
 
 static void
-do_block( int block )
+do_block (int block)
 {
-#ifndef HAVE_DOSISH_SYSTEM
+#ifdef HAVE_DOSISH_SYSTEM
+  (void)block;
+#else /*!HAVE_DOSISH_SYSTEM*/
   static int is_blocked;
 #ifdef HAVE_SIGPROCMASK
   static sigset_t oldmask;
@@ -245,7 +232,7 @@ do_block( int block )
       is_blocked = 0;
     }
 #endif /*!HAVE_SIGPROCMASK*/
-#endif /*HAVE_DOSISH_SYSTEM*/
+#endif /*!HAVE_DOSISH_SYSTEM*/
 }
 
 

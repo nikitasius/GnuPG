@@ -1,6 +1,6 @@
 /* verify.c - Verify signed data
  * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2004, 2005, 2006,
- *               2007 Free Software Foundation, Inc.
+ *               2007, 2010 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -39,7 +39,6 @@
 #include "i18n.h"
 
 
-
 /****************
  * Assume that the input is a signature and verify it without
  * generating any output.  With no arguments, the signature packet
@@ -51,7 +50,7 @@
  */
 
 int
-verify_signatures( int nfiles, char **files )
+verify_signatures (ctrl_t ctrl, int nfiles, char **files )
 {
     IOBUF fp;
     armor_filter_context_t *afx = NULL;
@@ -81,9 +80,9 @@ verify_signatures( int nfiles, char **files )
      * case 4 with a file2 of "-".
      *
      * Actually we don't have to change anything here but can handle
-     * that all quite easily in mainproc.c 
+     * that all quite easily in mainproc.c
      */
-     
+
     sigfile = nfiles? *files : NULL;
 
     /* open the signature file */
@@ -92,12 +91,12 @@ verify_signatures( int nfiles, char **files )
       {
         iobuf_close (fp);
         fp = NULL;
-        errno = EPERM;
+        gpg_err_set_errno (EPERM);
       }
     if( !fp ) {
         rc = gpg_error_from_syserror ();
-	log_error(_("can't open `%s': %s\n"),
-                  print_fname_stdin(sigfile), strerror (errno));
+	log_error(_("can't open '%s': %s\n"),
+                  print_fname_stdin(sigfile), gpg_strerror (rc));
         goto leave;
     }
     handle_progress (pfx, fp, sigfile);
@@ -111,10 +110,11 @@ verify_signatures( int nfiles, char **files )
     sl = NULL;
     for(i=nfiles-1 ; i > 0 ; i-- )
 	add_to_strlist( &sl, files[i] );
-    rc = proc_signature_packets( NULL, fp, sl, sigfile );
+    rc = proc_signature_packets (ctrl, NULL, fp, sl, sigfile );
     free_strlist(sl);
     iobuf_close(fp);
-    if( (afx && afx->no_openpgp_data && rc == -1) || rc == G10ERR_NO_DATA ) {
+    if( (afx && afx->no_openpgp_data && rc == -1)
+        || gpg_err_code (rc) == GPG_ERR_NO_DATA ) {
 	log_error(_("the signature could not be verified.\n"
 		   "Please remember that the signature file (.sig or .asc)\n"
 		   "should be the first file given on the command line.\n") );
@@ -140,7 +140,7 @@ print_file_status( int status, const char *name, int what )
 
 
 static int
-verify_one_file( const char *name )
+verify_one_file (ctrl_t ctrl, const char *name )
 {
     IOBUF fp;
     armor_filter_context_t *afx = NULL;
@@ -150,16 +150,16 @@ verify_one_file( const char *name )
     print_file_status( STATUS_FILE_START, name, 1 );
     fp = iobuf_open(name);
     if (fp)
-      iobuf_ioctl (fp,3,1,NULL); /* disable fd caching */
+      iobuf_ioctl (fp, IOBUF_IOCTL_NO_CACHE, 1, NULL);
     if (fp && is_secured_file (iobuf_get_fd (fp)))
       {
         iobuf_close (fp);
         fp = NULL;
-        errno = EPERM;
+        gpg_err_set_errno (EPERM);
       }
     if( !fp ) {
         rc = gpg_error_from_syserror ();
-	log_error(_("can't open `%s': %s\n"),
+	log_error(_("can't open '%s': %s\n"),
                   print_fname_stdin(name), strerror (errno));
 	print_file_status( STATUS_FILE_ERROR, name, 1 );
         goto leave;
@@ -173,7 +173,7 @@ verify_one_file( const char *name )
 	}
     }
 
-    rc = proc_signature_packets( NULL, fp, NULL, name );
+    rc = proc_signature_packets (ctrl, NULL, fp, NULL, name );
     iobuf_close(fp);
     write_status( STATUS_FILE_DONE );
 
@@ -191,7 +191,7 @@ verify_one_file( const char *name )
  * Note:  This function can not handle detached signatures.
  */
 int
-verify_files( int nfiles, char **files )
+verify_files (ctrl_t ctrl, int nfiles, char **files )
 {
     int i;
 
@@ -203,19 +203,19 @@ verify_files( int nfiles, char **files )
 	    lno++;
 	    if( !*line || line[strlen(line)-1] != '\n' ) {
 		log_error(_("input line %u too long or missing LF\n"), lno );
-		return G10ERR_GENERAL;
+		return GPG_ERR_GENERAL;
 	    }
 	    /* This code does not work on MSDOS but how cares there are
 	     * also no script languages available.  We don't strip any
 	     * spaces, so that we can process nearly all filenames */
 	    line[strlen(line)-1] = 0;
-	    verify_one_file( line );
+	    verify_one_file (ctrl, line );
 	}
 
     }
     else {  /* take filenames from the array */
 	for(i=0; i < nfiles; i++ )
-	    verify_one_file( files[i] );
+            verify_one_file (ctrl, files[i] );
     }
     return 0;
 }
@@ -226,12 +226,12 @@ verify_files( int nfiles, char **files )
 /* Perform a verify operation.  To verify detached signatures, DATA_FD
    shall be the descriptor of the signed data; for regular signatures
    it needs to be -1.  If OUT_FP is not NULL and DATA_FD is not -1 the
-   the signed material gets written that stream. 
+   the signed material gets written that stream.
 
    FIXME: OUTFP is not yet implemented.
 */
 int
-gpg_verify (ctrl_t ctrl, int sig_fd, int data_fd, FILE *out_fp)
+gpg_verify (ctrl_t ctrl, int sig_fd, int data_fd, estream_t out_fp)
 {
   int rc;
   iobuf_t fp;
@@ -241,13 +241,14 @@ gpg_verify (ctrl_t ctrl, int sig_fd, int data_fd, FILE *out_fp)
   (void)ctrl;
   (void)out_fp;
 
-  fp = iobuf_fdopen (sig_fd, "rb");
-  if (fp && is_secured_file (sig_fd))
+  if (is_secured_file (sig_fd))
     {
       fp = NULL;
-      errno = EPERM;
+      gpg_err_set_errno (EPERM);
     }
-  if ( !fp )
+  else
+    fp = iobuf_fdopen_nc (sig_fd, "rb");
+  if (!fp)
     {
       rc = gpg_error_from_syserror ();
       log_error (_("can't open fd %d: %s\n"), sig_fd, strerror (errno));
@@ -262,17 +263,15 @@ gpg_verify (ctrl_t ctrl, int sig_fd, int data_fd, FILE *out_fp)
       push_armor_filter (afx, fp);
     }
 
-  rc = proc_signature_packets_by_fd ( NULL, fp, data_fd );
+  rc = proc_signature_packets_by_fd (ctrl, NULL, fp, data_fd);
 
   if ( afx && afx->no_openpgp_data
        && (rc == -1 || gpg_err_code (rc) == GPG_ERR_EOF) )
     rc = gpg_error (GPG_ERR_NO_DATA);
 
- leave:  
-  if (fp)
-    iobuf_close (fp);
+ leave:
+  iobuf_close (fp);
   release_progress_context (pfx);
   release_armor_context (afx);
   return rc;
 }
-

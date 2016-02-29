@@ -79,33 +79,24 @@ build_triplet = @build@
 host_triplet = @host@
 subdir = m4
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
-	$(top_srcdir)/scripts/mkinstalldirs
+	$(top_srcdir)/build-aux/mkinstalldirs
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/gl/m4/absolute-header.m4 \
-	$(top_srcdir)/gl/m4/alloca.m4 $(top_srcdir)/gl/m4/allocsa.m4 \
-	$(top_srcdir)/gl/m4/eealloc.m4 \
-	$(top_srcdir)/gl/m4/gnulib-comp.m4 \
-	$(top_srcdir)/gl/m4/gnulib-tool.m4 \
-	$(top_srcdir)/gl/m4/mkdtemp.m4 $(top_srcdir)/gl/m4/setenv.m4 \
-	$(top_srcdir)/gl/m4/stdint.m4 $(top_srcdir)/gl/m4/strpbrk.m4 \
-	$(top_srcdir)/gl/m4/unistd_h.m4 $(top_srcdir)/m4/autobuild.m4 \
-	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/estream.m4 \
-	$(top_srcdir)/m4/gettext.m4 $(top_srcdir)/m4/gnupg-pth.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
+	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/m4/gpg-error.m4 $(top_srcdir)/m4/iconv.m4 \
 	$(top_srcdir)/m4/isc-posix.m4 $(top_srcdir)/m4/ksba.m4 \
 	$(top_srcdir)/m4/lcmessage.m4 $(top_srcdir)/m4/ldap.m4 \
 	$(top_srcdir)/m4/lib-ld.m4 $(top_srcdir)/m4/lib-link.m4 \
 	$(top_srcdir)/m4/lib-prefix.m4 $(top_srcdir)/m4/libassuan.m4 \
-	$(top_srcdir)/m4/libcurl.m4 $(top_srcdir)/m4/libgcrypt.m4 \
-	$(top_srcdir)/m4/longdouble.m4 $(top_srcdir)/m4/nls.m4 \
+	$(top_srcdir)/m4/libgcrypt.m4 $(top_srcdir)/m4/nls.m4 \
+	$(top_srcdir)/m4/npth.m4 $(top_srcdir)/m4/ntbtls.m4 \
 	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
-	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/size_max.m4 \
-	$(top_srcdir)/m4/socklen.m4 $(top_srcdir)/m4/sys_socket_h.m4 \
-	$(top_srcdir)/m4/tar-ustar.m4 $(top_srcdir)/m4/xsize.m4 \
+	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
 	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
-mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
+mkinstalldirs = $(SHELL) $(top_srcdir)/build-aux/mkinstalldirs
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
@@ -130,11 +121,7 @@ am__can_run_installinfo = \
   esac
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
-ABSOLUTE_STDINT_H = @ABSOLUTE_STDINT_H@
 ACLOCAL = @ACLOCAL@
-ADNSLIBS = @ADNSLIBS@
-ALLOCA = @ALLOCA@
-ALLOCA_H = @ALLOCA_H@
 AMTAR = @AMTAR@
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
 AR = @AR@
@@ -142,16 +129,12 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
-BITSIZEOF_PTRDIFF_T = @BITSIZEOF_PTRDIFF_T@
-BITSIZEOF_SIG_ATOMIC_T = @BITSIZEOF_SIG_ATOMIC_T@
-BITSIZEOF_SIZE_T = @BITSIZEOF_SIZE_T@
-BITSIZEOF_WCHAR_T = @BITSIZEOF_WCHAR_T@
-BITSIZEOF_WINT_T = @BITSIZEOF_WINT_T@
 BUILD_FILEVERSION = @BUILD_FILEVERSION@
 BUILD_HOSTNAME = @BUILD_HOSTNAME@
 BUILD_INCLUDED_LIBINTL = @BUILD_INCLUDED_LIBINTL@
 BUILD_REVISION = @BUILD_REVISION@
 BUILD_TIMESTAMP = @BUILD_TIMESTAMP@
+BUILD_VERSION = @BUILD_VERSION@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CC_FOR_BUILD = @CC_FOR_BUILD@
@@ -167,39 +150,25 @@ ECHO_C = @ECHO_C@
 ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
+ENCFS = @ENCFS@
 EXEEXT = @EXEEXT@
-FAQPROG = @FAQPROG@
+FUSERMOUNT = @FUSERMOUNT@
 GETTEXT_MACRO_VERSION = @GETTEXT_MACRO_VERSION@
 GMSGFMT = @GMSGFMT@
 GMSGFMT_015 = @GMSGFMT_015@
 GNUPG_AGENT_PGM = @GNUPG_AGENT_PGM@
+GNUPG_DIRMNGR_LDAP_PGM = @GNUPG_DIRMNGR_LDAP_PGM@
 GNUPG_DIRMNGR_PGM = @GNUPG_DIRMNGR_PGM@
 GNUPG_PINENTRY_PGM = @GNUPG_PINENTRY_PGM@
 GNUPG_PROTECT_TOOL_PGM = @GNUPG_PROTECT_TOOL_PGM@
 GNUPG_SCDAEMON_PGM = @GNUPG_SCDAEMON_PGM@
-GPGKEYS_CURL = @GPGKEYS_CURL@
-GPGKEYS_FINGER = @GPGKEYS_FINGER@
-GPGKEYS_HKP = @GPGKEYS_HKP@
-GPGKEYS_KDNS = @GPGKEYS_KDNS@
 GPGKEYS_LDAP = @GPGKEYS_LDAP@
-GPGKEYS_MAILTO = @GPGKEYS_MAILTO@
 GPG_ERROR_CFLAGS = @GPG_ERROR_CFLAGS@
 GPG_ERROR_CONFIG = @GPG_ERROR_CONFIG@
 GPG_ERROR_LIBS = @GPG_ERROR_LIBS@
 GPG_ERROR_MT_CFLAGS = @GPG_ERROR_MT_CFLAGS@
 GPG_ERROR_MT_LIBS = @GPG_ERROR_MT_LIBS@
 GREP = @GREP@
-HAVE_INTTYPES_H = @HAVE_INTTYPES_H@
-HAVE_LONG_LONG_INT = @HAVE_LONG_LONG_INT@
-HAVE_SIGNED_SIG_ATOMIC_T = @HAVE_SIGNED_SIG_ATOMIC_T@
-HAVE_SIGNED_WCHAR_T = @HAVE_SIGNED_WCHAR_T@
-HAVE_SIGNED_WINT_T = @HAVE_SIGNED_WINT_T@
-HAVE_STDINT_H = @HAVE_STDINT_H@
-HAVE_SYS_BITYPES_H = @HAVE_SYS_BITYPES_H@
-HAVE_SYS_INTTYPES_H = @HAVE_SYS_INTTYPES_H@
-HAVE_SYS_TYPES_H = @HAVE_SYS_TYPES_H@
-HAVE_UNSIGNED_LONG_LONG_INT = @HAVE_UNSIGNED_LONG_LONG_INT@
-HAVE_WCHAR_H = @HAVE_WCHAR_H@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -210,19 +179,18 @@ INTL_MACOSX_LIBS = @INTL_MACOSX_LIBS@
 KSBA_CFLAGS = @KSBA_CFLAGS@
 KSBA_CONFIG = @KSBA_CONFIG@
 KSBA_LIBS = @KSBA_LIBS@
+LBER_LIBS = @LBER_LIBS@
 LDAPLIBS = @LDAPLIBS@
 LDAP_CPPFLAGS = @LDAP_CPPFLAGS@
 LDFLAGS = @LDFLAGS@
 LIBASSUAN_CFLAGS = @LIBASSUAN_CFLAGS@
 LIBASSUAN_CONFIG = @LIBASSUAN_CONFIG@
 LIBASSUAN_LIBS = @LIBASSUAN_LIBS@
-LIBCURL = @LIBCURL@
-LIBCURL_CPPFLAGS = @LIBCURL_CPPFLAGS@
 LIBGCRYPT_CFLAGS = @LIBGCRYPT_CFLAGS@
 LIBGCRYPT_CONFIG = @LIBGCRYPT_CONFIG@
 LIBGCRYPT_LIBS = @LIBGCRYPT_LIBS@
-LIBGNU_LIBDEPS = @LIBGNU_LIBDEPS@
-LIBGNU_LTLIBDEPS = @LIBGNU_LTLIBDEPS@
+LIBGNUTLS_CFLAGS = @LIBGNUTLS_CFLAGS@
+LIBGNUTLS_LIBS = @LIBGNUTLS_LIBS@
 LIBICONV = @LIBICONV@
 LIBINTL = @LIBINTL@
 LIBOBJS = @LIBOBJS@
@@ -241,6 +209,12 @@ MSGFMT = @MSGFMT@
 MSGFMT_015 = @MSGFMT_015@
 MSGMERGE = @MSGMERGE@
 NETLIBS = @NETLIBS@
+NPTH_CFLAGS = @NPTH_CFLAGS@
+NPTH_CONFIG = @NPTH_CONFIG@
+NPTH_LIBS = @NPTH_LIBS@
+NTBTLS_CFLAGS = @NTBTLS_CFLAGS@
+NTBTLS_CONFIG = @NTBTLS_CONFIG@
+NTBTLS_LIBS = @NTBTLS_LIBS@
 OBJEXT = @OBJEXT@
 PACKAGE = @PACKAGE@
 PACKAGE_BUGREPORT = @PACKAGE_BUGREPORT@
@@ -252,37 +226,30 @@ PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
 PERL = @PERL@
+PKG_CONFIG = @PKG_CONFIG@
+PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
+PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 POSUB = @POSUB@
-PTH_CFLAGS = @PTH_CFLAGS@
-PTH_CONFIG = @PTH_CONFIG@
-PTH_LIBS = @PTH_LIBS@
-PTRDIFF_T_SUFFIX = @PTRDIFF_T_SUFFIX@
 RANLIB = @RANLIB@
-SED = @SED@
 SENDMAIL = @SENDMAIL@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 SHRED = @SHRED@
-SIG_ATOMIC_T_SUFFIX = @SIG_ATOMIC_T_SUFFIX@
-SIZE_T_SUFFIX = @SIZE_T_SUFFIX@
-STDINT_H = @STDINT_H@
+SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
+SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
 SYSROOT = @SYSROOT@
 SYS_SOCKET_H = @SYS_SOCKET_H@
 TAR = @TAR@
-UNISTD_H = @UNISTD_H@
 USE_INCLUDED_LIBINTL = @USE_INCLUDED_LIBINTL@
 USE_NLS = @USE_NLS@
 VERSION = @VERSION@
 W32SOCKLIBS = @W32SOCKLIBS@
-WCHAR_T_SUFFIX = @WCHAR_T_SUFFIX@
 WINDRES = @WINDRES@
-WINT_T_SUFFIX = @WINT_T_SUFFIX@
 XGETTEXT = @XGETTEXT@
 XGETTEXT_015 = @XGETTEXT_015@
 XGETTEXT_EXTRA_OPTIONS = @XGETTEXT_EXTRA_OPTIONS@
 ZLIBS = @ZLIBS@
-_libcurl_config = @_libcurl_config@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
 abs_top_builddir = @abs_top_builddir@
@@ -340,7 +307,7 @@ EXTRA_DIST = intl.m4 intldir.m4 glibc2.m4 lock.m4 visibility.m4 \
 	isc-posix.m4 lcmessage.m4 lib-ld.m4 lib-link.m4 lib-prefix.m4 \
 	progtest.m4 stdint_h.m4 uintmax_t.m4 ldap.m4 libcurl.m4 \
 	libusb.m4 tar-ustar.m4 readline.m4 gnupg-pth.m4 gpg-error.m4 \
-	libgcrypt.m4 libassuan.m4 ksba.m4 autobuild.m4 estream.m4 \
+	libgcrypt.m4 libassuan.m4 ksba.m4 ntbtls.m4 autobuild.m4 \
 	sys_socket_h.m4 socklen.m4 ChangeLog-2011
 all: all-am
 

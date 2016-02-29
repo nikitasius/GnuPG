@@ -107,7 +107,7 @@ test_agent_protect (void)
       "\xA4\x44\x3B\xA5\x3A\x52\xFC\xA8\x17\x3D\xE6\xE8\x5B\x42\xF9\x78\x3D\x4A\x78\x17"
       "\xD0\x68\x0B\x29\x29\x00"
     };
-  /* This RSA key is the `e' value.  */
+  /* This RSA key is the 'e' value.  */
   struct key_spec key_rsa_bogus_1 =
     {
       "\x28\x31\x31\x3A\x70\x72\x69\x76\x61\x74\x65\x2D\x6B\x65\x79\x28\x33\x3A\x72\x73"
@@ -155,6 +155,7 @@ test_agent_protect (void)
       "\x64\x73\x61\x29\x29"
     };
 
+
   struct
   {
     const char *key;
@@ -194,7 +195,7 @@ test_agent_protect (void)
     {
       ret = agent_protect ((const unsigned char*)specs[i].key,
                            specs[i].passphrase,
-			   &specs[i].result, &specs[i].resultlen);
+			   &specs[i].result, &specs[i].resultlen, 0);
       if (gpg_err_code (ret) != specs[i].ret_expected)
 	{
 	  printf ("agent_protect(%d) returned '%i/%s'; expected '%i/%s'\n",
@@ -309,6 +310,13 @@ test_agent_get_shadow_info (void)
 }
 
 
+static void
+test_agent_protect_shared_secret (void)
+{
+
+}
+
+
 
 
 int
@@ -325,6 +333,18 @@ main (int argc, char **argv)
   test_make_shadow_info ();
   test_agent_shadow_key ();
   test_agent_get_shadow_info ();
+  test_agent_protect_shared_secret ();
 
   return 0;
+}
+
+/* Stub function.  */
+gpg_error_t
+convert_from_openpgp_native (gcry_sexp_t s_pgp, const char *passphrase,
+                             unsigned char **r_key)
+{
+  (void)s_pgp;
+  (void)passphrase;
+  (void)r_key;
+  return gpg_error (GPG_ERR_BUG);
 }

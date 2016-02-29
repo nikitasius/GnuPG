@@ -56,6 +56,7 @@
 #include "app-common.h"
 #include "tlv.h"
 #include "apdu.h"
+#include "host2net.h"
 
 static char const aid_nks[]  = { 0xD2, 0x76, 0x00, 0x00, 0x03, 0x01, 0x02 };
 static char const aid_sigg[] = { 0xD2, 0x76, 0x00, 0x00, 0x66, 0x01 };
@@ -188,8 +189,8 @@ keygripstr_from_pk_file (app_t app, int fid, char *r_gripstr)
          libgcrypt but we can't yet rely on it yet.  */
       for (i=0; i < 2; i++)
         {
-          while (buflen[i]-offset[i] > 1 
-                 && !buffer[i][offset[i]] 
+          while (buflen[i]-offset[i] > 1
+                 && !buffer[i][offset[i]]
                  && !(buffer[i][offset[i]+1] & 0x80))
             offset[i]++;
         }
@@ -201,9 +202,9 @@ keygripstr_from_pk_file (app_t app, int fid, char *r_gripstr)
     {
       if ((buflen[i]-offset[i]) && (buffer[i][offset[i]] & 0x80))
         {
-          unsigned char *newbuf;          
+          unsigned char *newbuf;
           size_t newlen;
-          
+
           newlen = 1 + buflen[i] - offset[i];
           newbuf = xtrymalloc (newlen);
           if (!newlen)
@@ -271,14 +272,14 @@ get_chv_status (app_t app, int sigg, int pwid)
   command[2] = 0x00;
   command[3] = pwid;
 
-  if (apdu_send_direct (app->slot, 0, (unsigned char *)command, 
+  if (apdu_send_direct (app->slot, 0, (unsigned char *)command,
                         4, 0, &result, &resultlen))
     rc = -1; /* Error. */
   else if (resultlen < 2)
     rc = -1; /* Error. */
   else
     {
-      unsigned int sw = ((result[resultlen-2] << 8) | result[resultlen-1]);
+      unsigned int sw = buf16_to_uint (result+resultlen-2);
 
       if (sw == 0x6a88)
         rc = -2; /* No such PIN.  */
@@ -299,7 +300,7 @@ get_chv_status (app_t app, int sigg, int pwid)
 
 /* Implement the GETATTR command.  This is similar to the LEARN
    command but returns just one value via the status interface. */
-static gpg_error_t 
+static gpg_error_t
 do_getattr (app_t app, ctrl_t ctrl, const char *name)
 {
   static struct {
@@ -322,7 +323,7 @@ do_getattr (app_t app, ctrl_t ctrl, const char *name)
   for (idx=0; table[idx].name && strcmp (table[idx].name, name); idx++)
     ;
   if (!table[idx].name)
-    return gpg_error (GPG_ERR_INV_NAME); 
+    return gpg_error (GPG_ERR_INV_NAME);
 
   switch (table[idx].special)
     {
@@ -350,7 +351,7 @@ do_getattr (app_t app, ctrl_t ctrl, const char *name)
            two global passwords followed by the two SigG passwords.
            For the values, see the function get_chv_status.  */
         int tmp[4];
-        
+
         /* We use a helper array so that we can control that there is
            no superfluous application switch.  Note that PW2.CH.SIG
            really has the identifier 0x83 and not 0x82 as one would
@@ -358,8 +359,8 @@ do_getattr (app_t app, ctrl_t ctrl, const char *name)
         tmp[0] = get_chv_status (app, 0, 0x00);
         tmp[1] = get_chv_status (app, 0, 0x01);
         tmp[2] = get_chv_status (app, 1, 0x81);
-        tmp[3] = get_chv_status (app, 1, 0x83); 
-        snprintf (buffer, sizeof buffer, 
+        tmp[3] = get_chv_status (app, 1, 0x83);
+        snprintf (buffer, sizeof buffer,
                   "%d %d %d %d", tmp[0], tmp[1], tmp[2], tmp[3]);
         send_status_info (ctrl, table[idx].name,
                           buffer, strlen (buffer), NULL, 0);
@@ -413,11 +414,11 @@ do_learn_status_core (app_t app, ctrl_t ctrl, unsigned int flags, int is_sigg)
                  context so that a following readcert does only need to
                  read that many bytes. */
               snprintf (ct_buf, sizeof ct_buf, "%d", filelist[i].certtype);
-              snprintf (id_buf, sizeof id_buf, "NKS-%s.%04X", 
+              snprintf (id_buf, sizeof id_buf, "NKS-%s.%04X",
                         tag, filelist[i].fid);
               send_status_info (ctrl, "CERTINFO",
-                                ct_buf, strlen (ct_buf), 
-                                id_buf, strlen (id_buf), 
+                                ct_buf, strlen (ct_buf),
+                                id_buf, strlen (id_buf),
                                 NULL, (size_t)0);
             }
         }
@@ -434,8 +435,8 @@ do_learn_status_core (app_t app, ctrl_t ctrl, unsigned int flags, int is_sigg)
               snprintf (id_buf, sizeof id_buf, "NKS-%s.%04X",
                         tag, filelist[i].fid);
               send_status_info (ctrl, "KEYPAIRINFO",
-                                gripstr, 40, 
-                                id_buf, strlen (id_buf), 
+                                gripstr, 40,
+                                id_buf, strlen (id_buf),
                                 NULL, (size_t)0);
             }
         }
@@ -453,7 +454,7 @@ do_learn_status (app_t app, ctrl_t ctrl, unsigned int flags)
   err = switch_application (app, 0);
   if (err)
     return err;
-  
+
   do_learn_status_core (app, ctrl, flags, 0);
 
   err = switch_application (app, 1);
@@ -489,11 +490,11 @@ do_readcert (app_t app, const char *certid,
   *cert = NULL;
   *certlen = 0;
 
-  if (!strncmp (certid, "NKS-NKS3.", 9)) 
+  if (!strncmp (certid, "NKS-NKS3.", 9))
     ;
-  else if (!strncmp (certid, "NKS-DF01.", 9)) 
+  else if (!strncmp (certid, "NKS-DF01.", 9))
     ;
-  else if (!strncmp (certid, "NKS-SIGG.", 9)) 
+  else if (!strncmp (certid, "NKS-SIGG.", 9))
     is_sigg = 1;
   else
     return gpg_error (GPG_ERR_INV_ID);
@@ -504,7 +505,7 @@ do_readcert (app_t app, const char *certid,
 
   certid += 9;
   if (!hexdigitp (certid) || !hexdigitp (certid+1)
-      || !hexdigitp (certid+2) || !hexdigitp (certid+3) 
+      || !hexdigitp (certid+2) || !hexdigitp (certid+3)
       || certid[4])
     return gpg_error (GPG_ERR_INV_ID);
   fid = xtoi_4 (certid);
@@ -541,7 +542,7 @@ do_readcert (app_t app, const char *certid,
                  fid, gpg_strerror (err));
       return err;
     }
-  
+
   if (!buflen || *buffer == 0xff)
     {
       log_info ("no certificate contained in FID 0x%04X\n", fid);
@@ -569,13 +570,13 @@ do_readcert (app_t app, const char *certid,
                           &ndef, &objlen, &hdrlen);
   if (err)
     goto leave;
-  
+
   if (rootca)
     ;
   else if (class == CLASS_UNIVERSAL && tag == TAG_OBJECT_ID && !constructed)
     {
       const unsigned char *save_p;
-  
+
       /* The certificate seems to be contained in a userCertificate
          container.  Skip this and assume the following sequence is
          the certificate. */
@@ -589,7 +590,7 @@ do_readcert (app_t app, const char *certid,
       save_p = p;
       err = parse_ber_header (&p, &n, &class, &tag, &constructed,
                               &ndef, &objlen, &hdrlen);
-      if (err) 
+      if (err)
         goto leave;
       if ( !(class == CLASS_UNIVERSAL && tag == TAG_SEQUENCE && constructed) )
         return gpg_error (GPG_ERR_INV_OBJ);
@@ -597,7 +598,7 @@ do_readcert (app_t app, const char *certid,
       assert (save_p + totobjlen <= buffer + buflen);
       memmove (buffer, save_p, totobjlen);
     }
-  
+
   *cert = buffer;
   buffer = NULL;
   *certlen = totobjlen;
@@ -628,7 +629,7 @@ do_readkey (app_t app, const char *keyid, unsigned char **pk, size_t *pklen)
   if (!strcmp (keyid, "$IFDAUTHKEY") && app->app_local->nks_version >= 3)
     ;
   else /* Return the error code expected by cmd_readkey.  */
-    return gpg_error (GPG_ERR_UNSUPPORTED_OPERATION); 
+    return gpg_error (GPG_ERR_UNSUPPORTED_OPERATION);
 
   /* Access the KEYD file which is always in the master directory.  */
   err = iso7816_select_path (app->slot, path, DIM (path), NULL, NULL);
@@ -696,14 +697,14 @@ do_writekey (app_t app, ctrl_t ctrl,
     ;
   else
     return gpg_error (GPG_ERR_INV_ID);
-  
+
   if (!force && !do_readkey (app, keyid, NULL, NULL))
     return gpg_error (GPG_ERR_EEXIST);
 
   /* Parse the S-expression.  */
   err = get_rsa_pk_from_canon_sexp (keydata, keydatalen,
                                     &rsa_n, &rsa_n_len, &rsa_e, &rsa_e_len);
-  if (err) 
+  if (err)
     goto leave;
 
   /* Check that the parameters match the requirements.  */
@@ -732,7 +733,7 @@ do_writekey (app_t app, ctrl_t ctrl,
   /* Send the MSE:Store_Public_Key.  */
   err = gpg_error (GPG_ERR_NOT_IMPLEMENTED);
 /*   mse = xtrymalloc (1000); */
-  
+
 /*   mse[0] = 0x80; /\* Algorithm reference.  *\/ */
 /*   mse[1] = 1; */
 /*   mse[2] = 0x17; */
@@ -810,7 +811,7 @@ verify_pin (app_t app, int pwid, const char *desc,
     {
       char *pinvalue;
 
-      rc = pincb (pincb_arg, desc, &pinvalue); 
+      rc = pincb (pincb_arg, desc, &pinvalue);
       if (rc)
         {
           log_info ("PIN callback returned error: %s\n", gpg_strerror (rc));
@@ -845,7 +846,7 @@ verify_pin (app_t app, int pwid, const char *desc,
    If a PIN is required the PINCB will be used to ask for the PIN;
    that callback should return the PIN in an allocated buffer and
    store that in the 3rd argument.  */
-static gpg_error_t 
+static gpg_error_t
 do_sign (app_t app, const char *keyidstr, int hashalgo,
          gpg_error_t (*pincb)(void*, const char *, char **),
          void *pincb_arg,
@@ -876,11 +877,11 @@ do_sign (app_t app, const char *keyidstr, int hashalgo,
 
   /* Check that the provided ID is valid.  This is not really needed
      but we do it to enforce correct usage by the caller. */
-  if (!strncmp (keyidstr, "NKS-NKS3.", 9) ) 
+  if (!strncmp (keyidstr, "NKS-NKS3.", 9) )
     ;
-  else if (!strncmp (keyidstr, "NKS-DF01.", 9) ) 
+  else if (!strncmp (keyidstr, "NKS-DF01.", 9) )
     ;
-  else if (!strncmp (keyidstr, "NKS-SIGG.", 9) ) 
+  else if (!strncmp (keyidstr, "NKS-SIGG.", 9) )
     is_sigg = 1;
   else
     return gpg_error (GPG_ERR_INV_ID);
@@ -897,7 +898,7 @@ do_sign (app_t app, const char *keyidstr, int hashalgo,
     }
 
   if (!hexdigitp (keyidstr) || !hexdigitp (keyidstr+1)
-      || !hexdigitp (keyidstr+2) || !hexdigitp (keyidstr+3) 
+      || !hexdigitp (keyidstr+2) || !hexdigitp (keyidstr+3)
       || keyidstr[4])
     return gpg_error (GPG_ERR_INV_ID);
   fid = xtoi_4 (keyidstr);
@@ -914,7 +915,7 @@ do_sign (app_t app, const char *keyidstr, int hashalgo,
   if (app->app_local->nks_version > 2 && (indatalen == 35
                                           || indatalen == 47
                                           || indatalen == 51
-                                          || indatalen == 67 
+                                          || indatalen == 67
                                           || indatalen == 83))
     {
       /* The caller send data matching the length of the ASN.1 encoded
@@ -931,7 +932,7 @@ do_sign (app_t app, const char *keyidstr, int hashalgo,
         ;
       else if (hashalgo == GCRY_MD_RMD160 && !memcmp (indata,rmd160_prefix,15))
         ;
-      else 
+      else
         return gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM);
       memcpy (data, indata, indatalen);
       datalen = 35;
@@ -942,7 +943,7 @@ do_sign (app_t app, const char *keyidstr, int hashalgo,
         memcpy (data, sha1_prefix, 15);
       else if (hashalgo == GCRY_MD_RMD160)
         memcpy (data, rmd160_prefix, 15);
-      else 
+      else
         return gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM);
       memcpy (data+15, indata, indatalen);
       datalen = 35;
@@ -955,7 +956,7 @@ do_sign (app_t app, const char *keyidstr, int hashalgo,
   if (app->app_local->nks_version > 2)
     {
       unsigned char mse[6];
-      
+
       mse[0] = 0x80; /* Algorithm reference.  */
       mse[1] = 1;
       mse[2] = 2;    /* RSA, card does pkcs#1 v1.5 padding, no ASN.1 check.  */
@@ -980,28 +981,31 @@ do_sign (app_t app, const char *keyidstr, int hashalgo,
 /* Decrypt the data in INDATA and return the allocated result in OUTDATA.
    If a PIN is required the PINCB will be used to ask for the PIN; it
    should return the PIN in an allocated buffer and put it into PIN.  */
-static gpg_error_t 
+static gpg_error_t
 do_decipher (app_t app, const char *keyidstr,
              gpg_error_t (*pincb)(void*, const char *, char **),
              void *pincb_arg,
              const void *indata, size_t indatalen,
-             unsigned char **outdata, size_t *outdatalen )
+             unsigned char **outdata, size_t *outdatalen,
+             unsigned int *r_info)
 {
   int rc, i;
   int is_sigg = 0;
   int fid;
   int kid;
 
+  (void)r_info;
+
   if (!keyidstr || !*keyidstr || !indatalen)
     return gpg_error (GPG_ERR_INV_VALUE);
 
   /* Check that the provided ID is valid.  This is not really needed
      but we do it to to enforce correct usage by the caller. */
-  if (!strncmp (keyidstr, "NKS-NKS3.", 9) ) 
+  if (!strncmp (keyidstr, "NKS-NKS3.", 9) )
     ;
-  else if (!strncmp (keyidstr, "NKS-DF01.", 9) ) 
+  else if (!strncmp (keyidstr, "NKS-DF01.", 9) )
     ;
-  else if (!strncmp (keyidstr, "NKS-SIGG.", 9) ) 
+  else if (!strncmp (keyidstr, "NKS-SIGG.", 9) )
     is_sigg = 1;
   else
     return gpg_error (GPG_ERR_INV_ID);
@@ -1012,7 +1016,7 @@ do_decipher (app_t app, const char *keyidstr,
     return rc;
 
   if (!hexdigitp (keyidstr) || !hexdigitp (keyidstr+1)
-      || !hexdigitp (keyidstr+2) || !hexdigitp (keyidstr+3) 
+      || !hexdigitp (keyidstr+2) || !hexdigitp (keyidstr+3)
       || keyidstr[4])
     return gpg_error (GPG_ERR_INV_ID);
   fid = xtoi_4 (keyidstr);
@@ -1039,7 +1043,7 @@ do_decipher (app_t app, const char *keyidstr,
     }
   else
     {
-      static const unsigned char mse[] = 
+      static const unsigned char mse[] =
         {
           0x80, 1, 0x10, /* Select algorithm RSA. */
           0x84, 1, 0x81  /* Select local secret key 1 for decryption. */
@@ -1122,7 +1126,10 @@ parse_pwidstr (const char *pwidstr, int new_mode, int *r_sigg, int *r_pwid)
                   "for the key to create qualified signatures."));
     }
   else
-    desc = NULL;
+    {
+      *r_pwid = 0; /* Only to avoid gcc warning in calling function.  */
+      desc = NULL; /* Error.  */
+    }
 
   return desc;
 }
@@ -1130,8 +1137,8 @@ parse_pwidstr (const char *pwidstr, int new_mode, int *r_sigg, int *r_pwid)
 
 /* Handle the PASSWD command. See parse_pwidstr() for allowed values
    for CHVNOSTR.  */
-static gpg_error_t 
-do_change_pin (app_t app, ctrl_t ctrl,  const char *pwidstr, 
+static gpg_error_t
+do_change_pin (app_t app, ctrl_t ctrl,  const char *pwidstr,
                unsigned int flags,
                gpg_error_t (*pincb)(void*, const char *, char **),
                void *pincb_arg)
@@ -1153,7 +1160,7 @@ do_change_pin (app_t app, ctrl_t ctrl,  const char *pwidstr,
   memset (&pininfo, 0, sizeof pininfo);
   pininfo.minlen = 6;
   pininfo.maxlen = 16;
-  
+
   newdesc = parse_pwidstr (pwidstr, 1, &is_sigg, &pwid);
   if (!newdesc)
     return gpg_error (GPG_ERR_INV_ID);
@@ -1204,7 +1211,7 @@ do_change_pin (app_t app, ctrl_t ctrl,  const char *pwidstr,
           /* Regular change mode:  Ask for the old PIN.  */
           desc = parse_pwidstr (pwidstr, 0, &dummy1, &dummy2);
         }
-      err = pincb (pincb_arg, desc, &oldpin); 
+      err = pincb (pincb_arg, desc, &oldpin);
       if (err)
         {
           log_error ("error getting old PIN: %s\n", gpg_strerror (err));
@@ -1216,14 +1223,14 @@ do_change_pin (app_t app, ctrl_t ctrl,  const char *pwidstr,
         goto leave;
     }
 
-  err = pincb (pincb_arg, newdesc, &newpin); 
+  err = pincb (pincb_arg, newdesc, &newpin);
   if (err)
     {
       log_error (_("error getting new PIN: %s\n"), gpg_strerror (err));
       goto leave;
     }
   newpinlen = strlen (newpin);
-  
+
   err = basic_pin_checks (newpin, pininfo.minlen, pininfo.maxlen);
   if (err)
     goto leave;
@@ -1246,8 +1253,8 @@ do_change_pin (app_t app, ctrl_t ctrl,  const char *pwidstr,
       wipememory (data, datalen);
       xfree (data);
     }
-  else 
-    err = iso7816_change_reference_data (app->slot, pwid, 
+  else
+    err = iso7816_change_reference_data (app->slot, pwid,
                                          oldpin, oldpinlen,
                                          newpin, newpinlen);
  leave:
@@ -1258,7 +1265,7 @@ do_change_pin (app_t app, ctrl_t ctrl,  const char *pwidstr,
 
 
 /* Perform a simple verify operation.  KEYIDSTR should be NULL or empty.  */
-static gpg_error_t 
+static gpg_error_t
 do_check_pin (app_t app, const char *pwidstr,
               gpg_error_t (*pincb)(void*, const char *, char **),
               void *pincb_arg)
@@ -1288,10 +1295,10 @@ get_nks_version (int slot)
   size_t resultlen;
   int type;
 
-  if (iso7816_apdu_direct (slot, "\x80\xaa\x06\x00\x00", 5, 0, 
+  if (iso7816_apdu_direct (slot, "\x80\xaa\x06\x00\x00", 5, 0,
                            &result, &resultlen))
     return 2; /* NKS 2 does not support this command.  */
-  
+
   /* Example value:    04 11 19 22 21 6A 20 80 03 03 01 01 01 00 00 00
                        vv tt ccccccccccccccccc aa bb cc vvvvvvvvvvv xx
      vendor (Philips) -+  |  |                 |  |  |  |           |
@@ -1332,7 +1339,7 @@ switch_application (app_t app, int enable_sigg)
   else
     err = iso7816_select_application (app->slot, aid_nks, sizeof aid_nks, 0);
 
-  if (!err && enable_sigg && app->app_local->nks_version >= 3 
+  if (!err && enable_sigg && app->app_local->nks_version >= 3
       && !app->app_local->sigg_msig_checked)
     {
       /* Check whether this card is a mass signature card.  */
@@ -1340,7 +1347,7 @@ switch_application (app_t app, int enable_sigg)
       size_t buflen;
       const unsigned char *tmpl;
       size_t tmpllen;
-      
+
       app->app_local->sigg_msig_checked = 1;
       app->app_local->sigg_is_msig = 1;
       err = iso7816_select_file (app->slot, 0x5349, 0, NULL, NULL);
@@ -1349,7 +1356,7 @@ switch_application (app_t app, int enable_sigg)
       if (!err)
         {
           tmpl = find_tlv (buffer, buflen, 0x7a, &tmpllen);
-          if (tmpl && tmpllen == 12 
+          if (tmpl && tmpllen == 12
               && !memcmp (tmpl,
                           "\x93\x02\x00\x01\xA4\x06\x83\x01\x81\x83\x01\x83",
                           12))
@@ -1359,7 +1366,7 @@ switch_application (app_t app, int enable_sigg)
       if (app->app_local->sigg_is_msig)
         log_info ("This is a mass signature card\n");
     }
-  
+
   if (!err)
     {
       app->app_local->need_app_select = 0;
@@ -1379,7 +1386,7 @@ app_select_nks (app_t app)
 {
   int slot = app->slot;
   int rc;
-  
+
   rc = iso7816_select_application (slot, aid_nks, sizeof aid_nks, 0);
   if (!rc)
     {
@@ -1416,5 +1423,3 @@ app_select_nks (app_t app)
     do_deinit (app);
   return rc;
 }
-
-

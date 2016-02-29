@@ -1,5 +1,5 @@
-/* base64.c 
- *	Copyright (C) 2001, 2003 Free Software Foundation, Inc.
+/* base64.c
+ * Copyright (C) 2001, 2003, 2010 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <unistd.h> 
+#include <unistd.h>
 #include <time.h>
 #include <assert.h>
 
@@ -39,10 +39,11 @@
   #define LF "\n"
 #endif
 
-/* data used by the reader callbacks */
-struct reader_cb_parm_s {
-  FILE *fp;
-  
+/* Data used by the reader callbacks.  */
+struct reader_cb_parm_s
+{
+  estream_t fp;
+
   unsigned char line[1024];
   int linelen;
   int readpos;
@@ -60,7 +61,7 @@ struct reader_cb_parm_s {
   int stop_seen;
   int might_be_smime;
 
-  int eof_seen;         
+  int eof_seen;
 
   struct {
     int idx;
@@ -69,13 +70,14 @@ struct reader_cb_parm_s {
   } base64;
 };
 
-/* data used by the writer callbacks */
-struct writer_cb_parm_s {
-  FILE *fp;            /* FP is only used if STREAM is NULL.  */
-  estream_t stream;    /* Alternative output if not NULL.  */
+
+/* Data used by the writer callbacks.  */
+struct writer_cb_parm_s
+{
+  estream_t stream;    /* Output stream.  */
 
   const char *pem_name;
-  
+
   int wrote_begin;
   int did_finish;
 
@@ -103,33 +105,33 @@ struct base64_context_s {
 
 
 /* The base-64 character list */
-static char bintoasc[64] = 
-       "ABCDEFGHIJKLMNOPQRSTUVWXYZ" 
-       "abcdefghijklmnopqrstuvwxyz" 
-       "0123456789+/"; 
+static char bintoasc[64] =
+       "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+       "abcdefghijklmnopqrstuvwxyz"
+       "0123456789+/";
 /* The reverse base-64 list */
 static unsigned char asctobin[256] = {
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3e, 0xff, 0xff, 0xff, 0x3f, 
-  0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0xff, 0xff, 
-  0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 
-  0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 
-  0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0xff, 0xff, 0xff, 0xff, 0xff, 
-  0xff, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 
-  0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 
-  0x31, 0x32, 0x33, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3e, 0xff, 0xff, 0xff, 0x3f,
+  0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+  0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12,
+  0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24,
+  0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30,
+  0x31, 0x32, 0x33, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
   0xff, 0xff, 0xff, 0xff
 };
 
@@ -179,13 +181,13 @@ base64_reader_cb (void *cb_value, char *buffer, size_t count, size_t *nread)
       parm->have_lf = 0;
       for (n=0; n < DIM(parm->line);)
         {
-          c = getc (parm->fp);
+          c = es_getc (parm->fp);
           if (c == EOF)
             {
               parm->eof_seen = 1;
-              if (ferror (parm->fp))
+              if (es_ferror (parm->fp))
                 return -1;
-              break; 
+              break;
             }
           parm->line[n++] = c;
           if (c == '\n')
@@ -210,7 +212,7 @@ base64_reader_cb (void *cb_value, char *buffer, size_t count, size_t *nread)
             {
               /* wait for the header line */
               parm->linelen = parm->readpos = 0;
-              if (!parm->have_lf 
+              if (!parm->have_lf
                   || strncmp ((char*)parm->line, "-----BEGIN ", 11)
                   || !strncmp ((char*)parm->line+11, "PGP ", 4))
                 goto next;
@@ -272,14 +274,14 @@ base64_reader_cb (void *cb_value, char *buffer, size_t count, size_t *nread)
       parm->base64.stop_seen = 0;
       parm->base64.idx = 0;
     }
-  
+
 
   n = 0;
   if (parm->is_pem || parm->is_base64)
-    {  
+    {
       if (parm->is_pem && parm->have_lf
           && !strncmp ((char*)parm->line, "-----END ", 9))
-        { 
+        {
           parm->identified = 0;
           parm->linelen = parm->readpos = 0;
 
@@ -316,32 +318,32 @@ base64_reader_cb (void *cb_value, char *buffer, size_t count, size_t *nread)
               if (c == '=')
                 { /* pad character: stop */
                   if (idx == 1)
-                    buffer[n++] = val; 
+                    buffer[n++] = val;
                   parm->stop_seen = 1;
                   break;
                 }
-              if( (c = asctobin[(c2=c)]) == 255 ) 
+              if( (c = asctobin[(c2=c)]) == 255 )
                 {
                   log_error (_("invalid radix64 character %02x skipped\n"),
                              c2);
                   continue;
                 }
-              switch (idx) 
+              switch (idx)
                 {
-                case 0: 
+                case 0:
                   val = c << 2;
                   break;
-                case 1: 
+                case 1:
                   val |= (c>>4)&3;
                   buffer[n++] = val;
                   val = (c<<4)&0xf0;
                   break;
-                case 2: 
+                case 2:
                   val |= (c>>2)&15;
                   buffer[n++] = val;
                   val = (c<<6)&0xc0;
                   break;
-                case 3: 
+                case 3:
                   val |= c&0x3f;
                   buffer[n++] = val;
                   break;
@@ -382,14 +384,14 @@ simple_reader_cb (void *cb_value, char *buffer, size_t count, size_t *nread)
 
   for (n=0; n < count; n++)
     {
-      c = getc (parm->fp);
+      c = es_getc (parm->fp);
       if (c == EOF)
         {
           parm->eof_seen = 1;
-          if ( ferror (parm->fp) )
+          if (es_ferror (parm->fp))
             return -1;
           if (n)
-            break; /* return what we have before an EOF */
+            break; /* Return what we have before an EOF.  */
           return -1;
         }
       *(byte *)buffer++ = c;
@@ -402,27 +404,6 @@ simple_reader_cb (void *cb_value, char *buffer, size_t count, size_t *nread)
 
 
 
-/* Call either es_putc or the plain putc.  */
-static void
-do_putc (int value, FILE *fp, estream_t stream)
-{
-  if (stream)
-    es_putc (value, stream);
-  else
-    putc (value, fp);
-}
-
-/* Call either es_fputs or the plain fputs.  */
-static void
-do_fputs (const char *string, FILE *fp, estream_t stream)
-{
-  if (stream)
-    es_fputs (string, stream);
-  else
-    fputs (string, fp);
-}
-
-
 static int
 base64_writer_cb (void *cb_value, const void *buffer, size_t count)
 {
@@ -430,7 +411,6 @@ base64_writer_cb (void *cb_value, const void *buffer, size_t count)
   unsigned char radbuf[4];
   int i, c, idx, quad_count;
   const unsigned char *p;
-  FILE *fp = parm->fp;
   estream_t stream = parm->stream;
 
   if (!count)
@@ -440,9 +420,9 @@ base64_writer_cb (void *cb_value, const void *buffer, size_t count)
     {
       if (parm->pem_name)
         {
-          do_fputs ("-----BEGIN ", fp, stream);
-          do_fputs (parm->pem_name, fp, stream);
-          do_fputs ("-----\n", fp, stream);
+          es_fputs ("-----BEGIN ", stream);
+          es_fputs (parm->pem_name, stream);
+          es_fputs ("-----\n", stream);
         }
       parm->wrote_begin = 1;
       parm->base64.idx = 0;
@@ -461,16 +441,16 @@ base64_writer_cb (void *cb_value, const void *buffer, size_t count)
         {
           idx = 0;
           c = bintoasc[(*radbuf >> 2) & 077];
-          do_putc (c, fp, stream);
+          es_putc (c, stream);
           c = bintoasc[(((*radbuf<<4)&060)|((radbuf[1] >> 4)&017))&077];
-          do_putc (c, fp, stream);
+          es_putc (c, stream);
           c = bintoasc[(((radbuf[1]<<2)&074)|((radbuf[2]>>6)&03))&077];
-          do_putc (c, fp, stream);
+          es_putc (c, stream);
           c = bintoasc[radbuf[2]&077];
-          do_putc (c, fp, stream);
-          if (++quad_count >= (64/4)) 
+          es_putc (c, stream);
+          if (++quad_count >= (64/4))
             {
-              do_fputs (LF, fp, stream);
+              es_fputs (LF, stream);
               quad_count = 0;
             }
         }
@@ -480,10 +460,9 @@ base64_writer_cb (void *cb_value, const void *buffer, size_t count)
   parm->base64.idx = idx;
   parm->base64.quad_count = quad_count;
 
-  return ((stream? es_ferror (stream) : ferror (fp)) 
-          ? gpg_error_from_syserror () 
-          : 0);
+  return es_ferror (stream)? gpg_error_from_syserror () : 0;
 }
+
 
 /* This callback is only used in stream mode.  Hiowever, we don't
    restrict it to this.  */
@@ -491,28 +470,22 @@ static int
 plain_writer_cb (void *cb_value, const void *buffer, size_t count)
 {
   struct writer_cb_parm_s *parm = cb_value;
-  FILE *fp = parm->fp;
   estream_t stream = parm->stream;
 
   if (!count)
     return 0;
 
-  if (stream)
-    es_write (stream, buffer, count, NULL);
-  else
-    fwrite (buffer, count, 1, fp);
+  es_write (stream, buffer, count, NULL);
 
-  return ((stream? es_ferror (stream) : ferror (fp)) 
-          ? gpg_error_from_syserror () 
-          : 0);
+  return es_ferror (stream)? gpg_error_from_syserror () : 0;
 }
+
 
 static int
 base64_finish_write (struct writer_cb_parm_s *parm)
 {
-  unsigned char radbuf[4];
-  int i, c, idx, quad_count;
-  FILE *fp = parm->fp;
+  unsigned char *radbuf;
+  int c, idx, quad_count;
   estream_t stream = parm->stream;
 
   if (!parm->wrote_begin)
@@ -521,56 +494,53 @@ base64_finish_write (struct writer_cb_parm_s *parm)
   /* flush the base64 encoding */
   idx = parm->base64.idx;
   quad_count = parm->base64.quad_count;
-  for (i=0; i < idx; i++)
-    radbuf[i] = parm->base64.radbuf[i];
-
   if (idx)
     {
+      radbuf = parm->base64.radbuf;
+
       c = bintoasc[(*radbuf>>2)&077];
-      do_putc (c, fp, stream);
+      es_putc (c, stream);
       if (idx == 1)
         {
           c = bintoasc[((*radbuf << 4) & 060) & 077];
-          do_putc (c, fp, stream);
-          do_putc ('=', fp, stream);
-          do_putc ('=', fp, stream);
+          es_putc (c, stream);
+          es_putc ('=', stream);
+          es_putc ('=', stream);
         }
-      else 
-        { 
+      else
+        {
           c = bintoasc[(((*radbuf<<4)&060)|((radbuf[1]>>4)&017))&077];
-          do_putc (c, fp, stream);
+          es_putc (c, stream);
           c = bintoasc[((radbuf[1] << 2) & 074) & 077];
-          do_putc (c, fp, stream);
-          do_putc ('=', fp, stream);
+          es_putc (c, stream);
+          es_putc ('=', stream);
 
         }
-      if (++quad_count >= (64/4)) 
+      if (++quad_count >= (64/4))
         {
-          do_fputs (LF, fp, stream);
+          es_fputs (LF, stream);
           quad_count = 0;
         }
     }
 
   if (quad_count)
-    do_fputs (LF, fp, stream);
+    es_fputs (LF, stream);
 
   if (parm->pem_name)
     {
-      do_fputs ("-----END ", fp, stream);
-      do_fputs (parm->pem_name, fp, stream);
-      do_fputs ("-----\n", fp, stream);
+      es_fputs ("-----END ", stream);
+      es_fputs (parm->pem_name, stream);
+      es_fputs ("-----\n", stream);
     }
 
-  return ((stream? es_ferror (stream) : ferror (fp)) 
-          ? gpg_error_from_syserror () 
-          : 0);
+  return es_ferror (stream)? gpg_error_from_syserror () : 0;
 }
 
 
 
 
 /* Create a reader for the given file descriptor.  Depending on the
-   control information an input decoding is automagically choosen.
+   control information an input decoding is automagically chosen.
    The function returns a Base64Context object which must be passed to
    the gpgme_destroy_reader function.  The created KsbaReader object
    is also returned, but the caller must not call the
@@ -579,7 +549,7 @@ base64_finish_write (struct writer_cb_parm_s *parm)
    until no more objects were found. */
 int
 gpgsm_create_reader (Base64Context *ctx,
-                     ctrl_t ctrl, FILE *fp, int allow_multi_pem,
+                     ctrl_t ctrl, estream_t fp, int allow_multi_pem,
                      ksba_reader_t *r_reader)
 {
   int rc;
@@ -643,21 +613,20 @@ gpgsm_destroy_reader (Base64Context ctx)
   if (!ctx)
     return;
 
-  ksba_reader_release (ctx->u2.reader);  
+  ksba_reader_release (ctx->u2.reader);
   xfree (ctx);
 }
 
 
 
-/* Create a writer for the given stream FP or STREAM.  Depending on
+/* Create a writer for the given STREAM.  Depending on
    the control information an output encoding is automagically
-   choosen.  The function returns a Base64Context object which must be
+   chosen.  The function returns a Base64Context object which must be
    passed to the gpgme_destroy_writer function.  The created
    KsbaWriter object is also returned, but the caller must not call
-   the ksba_reader_release function on. */
+   the ksba_reader_release function on it. */
 int
-gpgsm_create_writer (Base64Context *ctx,
-                     ctrl_t ctrl, FILE *fp, estream_t stream,
+gpgsm_create_writer (Base64Context *ctx, ctrl_t ctrl, estream_t stream,
                      ksba_writer_t *r_writer)
 {
   int rc;
@@ -677,7 +646,6 @@ gpgsm_create_writer (Base64Context *ctx,
 
   if (ctrl->create_pem || ctrl->create_base64)
     {
-      (*ctx)->u.wparm.fp = fp;
       (*ctx)->u.wparm.stream = stream;
       if (ctrl->create_pem)
         (*ctx)->u.wparm.pem_name = ctrl->pem_name? ctrl->pem_name
@@ -686,12 +654,11 @@ gpgsm_create_writer (Base64Context *ctx,
     }
   else if (stream)
     {
-      (*ctx)->u.wparm.fp = fp;
       (*ctx)->u.wparm.stream = stream;
       rc = ksba_writer_set_cb (w, plain_writer_cb, &(*ctx)->u.wparm);
     }
   else
-    rc = ksba_writer_set_file (w, fp);
+    rc = gpg_error (GPG_ERR_INV_ARG);
 
   if (rc)
     {
@@ -710,14 +677,14 @@ int
 gpgsm_finish_writer (Base64Context ctx)
 {
   struct writer_cb_parm_s *parm;
-  
+
   if (!ctx)
     return gpg_error (GPG_ERR_INV_VALUE);
   parm = &ctx->u.wparm;
   if (parm->did_finish)
     return 0; /* Already done. */
   parm->did_finish = 1;
-  if (!parm->fp && !parm->stream)
+  if (!parm->stream)
     return 0; /* Callback was not used.  */
   return base64_finish_write (parm);
 }

@@ -58,7 +58,7 @@ md_filter( void *opaque, int control,
 	*ret_len = i;
     }
     else if( control == IOBUFCTRL_DESC )
-	*(char**)buf = "md_filter";
+        mem2str (buf, "md_filter", *ret_len);
     return rc;
 }
 
@@ -72,4 +72,3 @@ free_md_filter_context( md_filter_context_t *mfx )
     mfx->md2 = NULL;
     mfx->maxbuf_size = 0;
 }
-

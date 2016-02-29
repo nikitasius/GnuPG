@@ -1,47 +1,446 @@
-2011-12-02  Werner Koch  <wk@g10code.com>
+2011-12-01  Werner Koch  <wk@g10code.com>
 
 	NB: ChangeLog files are no longer manually maintained.  Starting
 	on December 1st, 2011 we put change information only in the GIT
 	commit log, and generate a top-level ChangeLog file from logs at
 	"make dist".  See doc/HACKING for details.
 
-2011-08-04  Werner Koch  <wk@g10code.com>
+2011-11-30  Werner Koch  <wk@g10code.com>
 
-	* keyedit.c (show_key_with_all_names): Remove set but unused var
-	PK_VERION.
-	* sig-check.c (do_check): Remove set but unused var CTX.
+        * keyserver.c (keyserver_import_cert): Adjust for changed
+	get_dns_cert.
 
-	* build-packet.c (do_user_id): Return RC.
+2011-11-28  Werner Koch  <wk@g10code.com>
+
+	* keyserver.c (DEFAULT_MAX_CERT_SIZE): Increase from 16k to 64k.
+
+2011-11-22  Werner Koch  <wk@g10code.com>
+
+	* pubkey-enc.c (get_session_key): Don't print anonymous recipient
+	messages in quiet mode.  This is bug#1378.
+
+2011-11-06  Werner Koch  <wk@g10code.com>
+
+	* card-util.c (generate_card_keys): Add arg CTRL.
+
+	* call-agent.c (agent_readkey): New.
+	* keygen.c (do_create_from_keygrip): New.
+	(ask_algo): Add arg R_KEYGRIP and a prompt to enter it.
+	(generate_subkeypair): Call do_create_from_keygrip if required.
+	(generate_subkeypair): Add arg CTRL.  Change caller.
+	(ask_algo): Add arg CTRL.
+	(generate_keypair): Ditto.
+
+2011-09-23  Werner Koch  <wk@g10code.com>
+
+	* gpgv.c (disable_dotlock): Rename to dotlock_disable.
+	(create_dotlock): Rename to dotlock_create.
+	(destroy_dotlock): Rename to dotlock_destroy.
+	(make_dotlock): Rename to dotlock_take.
+	(release_dotlock): Rename to dotlock_release.
+	(lockfiles_remove): Rename to dotlock_remove_lockfiles.
+
+2011-09-20  Werner Koch  <wk@g10code.com>
+
+	* free-packet.c (free_public_key): Allow a NULL argument.
+	* keyedit.c (keyedit_passwd): No more need to check that PK is NULL.
+	(menu_addrevoker): Ditto.
+	* passphrase.c (passphrase_get, passphrase_to_dek_ext): Ditto.
+	* skclist.c (release_sk_list): Ditto.
+	* revoke.c (gen_desig_revoke): Ditto.
+	* pubkey-enc.c (get_session_key): Ditto.
+	* pkclist.c (build_pk_list): Ditto.
+
+2011-09-20  Jim Meyering  <meyering@redhat.com>
+
+	avoid use of freed pointer
+	If we free pk2 at the top of the for-loop, set it to NULL
+	so that we don't free it again just before returning.
+	* revoke.c (gen_desig_revoke): Don't use pk2 after freeing it.
+
+2011-09-20  Werner Koch  <wk@g10code.com>
+
+	* sign.c (sign_file, clearsign_file, sign_symencrypt_file):
+	s/gcry_md_start_debug/gcry_md_debug/ in preparation for Libgcrypt
+	1.6.
+	* mainproc.c (proc_plaintext, proc_tree): Ditto.
+	* decrypt-data.c (decrypt_data): Ditto.
+	* cipher.c (write_header): Ditto.
+
+2011-08-10  Werner Koch  <wk@g10code.com>
+
+	* export.c (transfer_format_to_openpgp): Don't parse unneeded CSUM.
+
+	* import.c (import_secret_one): Use arg OPTIONS instead of global
+	import options var.
+
+	* sig-check.c (do_check): Remove unused var CTX.
+
+	* build-packet.c (do_user_id): Return value.
 
 2011-07-29  Werner Koch  <wk@g10code.com>
 
 	* tdbio.c (open_db): Do not print read-only warning in quiet mode.
 
-2011-07-22  Werner Koch  <wk@g10code.com>
+2011-07-18  Werner Koch  <wk@g10code.com>
 
 	* parse-packet.c (parse_key): Print the decoded iteration count.
 	Fixes bug#1355.
 
-2011-07-01  Werner Koch  <wk@g10code.com>
+2011-07-07  Werner Koch  <wk@g10code.com>
 
-	* keyid.c (pubkey_letter): Add letters e and E.
+	* card-util.c (ask_card_keysize): Bump key size limit to 4096.
+	* call-agent.c (scd_genkey_parm_s): New.
+	(agent_scd_genkey): Use new struct.
+	(scd_genkey_cb): Implement chunked mode for KEY-DATA.
+	(scd_genkey_cb_append_savedbytes): New.
+
+2011-06-16  Werner Koch  <wk@g10code.com>
+
+	* card-util.c (ask_card_keysize): Bump key size limit to 4096.
+	* call-agent.c (scd_genkey_parm_s): New.
+	(agent_scd_genkey): Use new struct.
+	(scd_genkey_cb): Implement chunked mode for KEY-DATA.
+	(scd_genkey_cb_append_savedbytes): New.
 
 2011-06-13  Werner Koch  <wk@g10code.com>
 
-	* pkglue.c (mpi_from_sexp, pk_decrypt): Use GCRYMPI_FMT_USG for
-	gcry_sexp_nth_mpi.  This fixes a problem with a recent bug fix in
-	Libgcrypt.
+	* pkglue.c (mpi_from_sexp): Use GCRYMPI_FMT_USG to avoid problems
+	with leading zeroed.  The latest Libgcrypt does this now
+	correctly.  Given that the default of gcry_sexp_nth_mpi would use
+	a signed MPI, which is not implemented, the assertion would fail.
 
-2011-01-10  Werner Koch  <wk@g10code.com>
+2011-06-01  Marcus Brinkmann  <mb@g10code.com>
 
-	* keygen.c (ask_user_id): Fix duplicate test for AMAIL by correct
-	ANAME.  See bug#1307.  Reported by Steve Grubb.
+	* parse-packet.c (parse_pubkeyenc): Change type of N to size_t.
+	(parse_key): Likewise.
+	* seskey.c (encode_session_key): Convert nframe to int for
+	debugging.
+	* build-packet.c (gpg_mpi_write): Change type of N to unsigned int.
+	* import.c (transfer_secret_keys): Likewise.
 
-	* import.c (import_keys_internal): Make loop code a bit more
-	readable.  See bug#1307.  Reported by Steve Grubb.
+2011-04-29  Werner Koch  <wk@g10code.com>
 
-	* sign.c (sign_file): Fix TEMP_HASHLEN computation.  See bug#1307.
-	Reported by Steve Grubb.
+	* keydb.c (keydb_get_keyblock, keydb_add_resource): Use gpg_error.
+	(keydb_get_keyblock): Return VALUE_NOT_FOUND instead of -1.
+	(keydb_update_keyblock, keydb_insert_keyblock)
+	(keydb_delete_keyblock): Ditto.
+	(keydb_locate_writable): Ditto.
+	(keydb_search_reset): Ditto.
+	(keydb_search2): Return GPG_ERR_NOT_FOUND instead of -1.  Change
+	all callers.
+	(keydb_search_first, keydb_search_next, keydb_search_kid)
+	(keydb_search_fpr): Ditto.
+
+2011-04-29  Marcus Brinkmann  <marcus@g10code.com>
+
+	* import.c (import_secret_one): Leave all checks to import_one.
+	Cancel secret key import if public key was skipped due to
+	merge-only request.  Fix import status for non-new secret key
+	import by checking stat counter.
+
+2011-04-29  Marcus Brinkmann  <marcus@g10code.com>
+
+	* delkey.c (do_delete_key): Access public keyblock even for secret
+	key operations.  But deleting secret key is not supported yet, so
+	give an error.  Limit secret-key-exists error case to public keys.
+
+2011-04-28  Werner Koch  <wk@g10code.com>
+
+	* ecdh.c (pk_ecdh_encrypt_with_shared_point): Remove memory leak
+	of SECRET_X in the error case.  Replace an assert by an error
+	return.
+
+2011-04-26  Werner Koch  <wk@g10code.com>
+
+	* export.c (transfer_format_to_openpgp): Do not apply
+	encode_s2k_iterations to S2K_COUNT.
+
+2011-04-25  Werner Koch  <wk@g10code.com>
+
+	* delkey.c (do_delete_key): Mark classify_user_id for use with
+	OpenPGP.
+	* trustdb.c (register_trusted_key): Ditto.
+	* revoke.c (gen_revoke): Ditto.
+	* keyserver.c (keyserver_export, keyidlist, keyserver_export): Ditto.
+	* getkey.c (key_byname): Ditto.
+	* export.c (do_export_stream): Ditto.
+
+2011-04-20  Marcus Brinkmann  <mb@g10code.com>
+
+	* keylist.c (list_keyblock_colon): Use get_ownertrust_info, not
+	get_ownertrust (which lead to binary zeroes in the output!).
+
+2011-03-23  Werner Koch  <wk@g10code.com>
+
+	* parse-packet.c (read_rest): Drop unsed PARTIAL arg.  Rewrite to
+	detect premature EOF.  Suggested by Timo Schulz.
+
+2011-03-10  Werner Koch  <wk@g10code.com>
+
+	* passphrase.c (hash_passphrase): Remove.
+	(passphrase_to_dek_ext): Use gcry_kdf_derive.
+
+2011-03-03  Werner Koch  <wk@g10code.com>
+
+	* keylist.c (print_card_key_info): Re-implement using the agent.
+	* card-util.c (card_status) [GNUPG_MAJOR_VERSION!=1]: Call
+	print_card_key_info.
+
+	* keyid.c (hash_public_key): Remove shadowing NBITS.
+
+	* misc.c (pubkey_nbits): Replace GCRY_PK_ by PUBKEY_ALGO_.
+	(get_signature_count): Remove warning.
+
+	* armor.c (armor_filter): Don't take a copy of radbuf while
+	writing the checksum.  This works around a faulty gcc 4.4 warning.
+
+2011-03-02  Werner Koch  <wk@g10code.com>
+
+	* call-agent.c (agent_scd_pksign, agent_scd_pkdecrypt)
+	(hash_algo_option): Remove these unused functions.
+
+2011-02-10  Werner Koch  <wk@g10code.com>
+
+	* seskey.c (encode_md_value): Change last fix to avoid a
+	regression for DSA with SHA-2 hashes.
+
+2011-02-09  Werner Koch  <wk@g10code.com>
+
+	* keyserver.c: Replace all printf by es_printf.
+
+2011-02-08  Werner Koch  <wk@g10code.com>
+
+	* call-dirmngr.c (gpg_dirmngr_ks_fetch): New.
+	* keyserver.c (keyserver_fetch): Rewrite to use dirmngr.
+
+2011-02-07  Werner Koch  <wk@g10code.com>
+
+	* seskey.c (encode_md_value): Truncate to MDLEN and not to QBYTES
+	which makes a difference with 521 bit ECC keys.  For clarity
+	rename QBYTES to QBITS and adjust accordingly.
+
+2011-02-04  Werner Koch  <wk@g10code.com>
+
+	* sig-check.c (do_check_messages): Remove the long deprecated
+	SIGEXPIRED status line.
+
+2011-02-03  Werner Koch  <wk@g10code.com>
+
+	* export.c (transfer_format_to_openpgp) [!HAVE_GCRY_PK_GET_CURVE]:
+	Fix syntax error.
+
+	* decrypt-data.c: Include status.h.
+	(decrypt_data): Emit a DECRYPTION_INFO status line.
+
+	* misc.c (has_invalid_email_chars): Relax mailbox name checking.
+	Fixes bug#1315.
+
+	* sign.c (do_sign): Use openpgp_pk_algo_name.
+
+	* keygen.c (ask_algo): Show ECC algos only in expert mode.  Add
+	non-combined menu entries for ECDSA and ECDH.
+	(ask_key_flags): Use openpgp_pk_algo_name.
+
+2011-02-03  Werner Koch  <wk@g10code.com>
+
+	Finished ECC integration.
+	Wrote change description for 2011-01-13.
+
+2011-02-02  Werner Koch  <wk@g10code.com>
+
+	* encrypt.c (write_pubkey_enc_from_list): Don't compute the
+	fingerprint.
+	* pkglue.c (pk_encrypt): Replace PK_FP by PK and compute the
+	fingerprint only when needed.
+	* pkglue.h: Include packet.h.
+
+	* import.c (transfer_secret_keys): Make sure keyids are available.
+
+	* keyid.c (hash_public_key): Adjust for the ECC case.
+
+2011-02-01  Werner Koch  <wk@g10code.com>
+
+	* gpg.c (main): Call setup_libgcrypt_logging.
+
+	* import.c (transfer_secret_keys): Implement ECC case.
+	(one_mpi_from_pkey): New.
+	* export.c (transfer_format_to_openpgp): Ditto.
+	* keygen.c (gpg_curve_to_oid): New.
+	(ecckey_from_sexp): Factor curve name mapping out to new function.
+
+2011-01-31  Werner Koch  <wk@g10code.com>
+
+	* ecdh.c (pk_ecdh_encrypt_with_shared_point): Return an opaque MPI.
+
+	* build-packet.c (mpi_write): Rename to gpg_mpi_write and make global.
+
+2011-01-30  Werner Koch  <wk@g10code.com>
+
+	* keyid.c (keygrip_from_pk): Adjust ECC cases.
+	* pkglue.c (pk_verify): Ditto.
+
+	* parse-packet.c (parse_key): Simply ECC case.
+	(parse_pubkeyenc): Ditto.
+
+	* misc.c (pubkey_get_npkey): Special case ECC.
+	(pubkey_get_nskey): Ditto.
+	(mpi_print): Support printing of opaque values.
+	(openpgp_oid_to_str): New.
+	(pubkey_nbits): For ECC pass curve parameter.
+
+	* ecdh.c (pk_ecdh_default_params): Change to return an opaque MPI.
+
+	* build-packet.c (do_key): Automatically handle real and opaque
+	key parameters.
+	(write_fake_data): Return an error code.
+	(mpi_write): Support writing opaque MPIs.
+	(do_pubkey_enc): Simplify ECC handling.
+
+2011-01-28  Werner Koch  <wk@g10code.com>
+
+	* keygen.c (gen_ecc): Rewrite.  Select a named curve and create a
+	keyspec based on that.
+	(pk_ecc_build_key_params): Remove.
+	(get_parameter_algo): Map algo number.
+	(ecckey_from_sexp): New.
+	* misc.c (map_pk_gcry_to_openpgp): New.
+
+2011-01-25  Werner Koch  <wk@g10code.com>
+
+	* ecdh.c (pk_ecdh_default_params_to_mpi): Remove.
+	(pk_ecdh_default_params): Rewrite.  Factor KEK table out to ..
+	(kek_params_table): .. here.
+	(pk_ecdh_generate_ephemeral_key): New.
+	(pk_ecdh_encrypt): Remove.
+	(pk_ecdh_encrypt_with_shared_point): Make public.
+
+	* pubkey-enc.c (get_it): Fix assertion.  Use GPG_ERR_WRONG_SECKEY
+	instead of log_fatal.  Add safety checks for NFRAME.
+
+	* keygen.c (pk_ecc_keypair_gen): Make static.
+	(ask_keysize): Use proper rounding for ECC.
+	(pk_ecc_build_key_params): Remove NBITSSTR.
+
+2011-01-20  Werner Koch  <wk@g10code.com>
+
+	* keyserver.c: Rewrite most stuff for use with dirmngr.  Get rid
+	of all spawn code.  More work pending.
+
+	* export.c (export_pubkeys_buffer): New.
+
+	* import.c (import_keys_es_stream): New.
+
+	* call-dirmngr.c, call-dirmngr.h: New.
+	* gpg.h (server_control_s): Add DIRMNGR_LOCAL.
+	* gpg.c: Include call-dirmngr.h.
+	(gpg_deinit_default_ctrl): Call gpg_dirmngr_deinit_session_data.
+
+2011-01-13  Andrey Jivsov  <openpgp@brainhub.org>  (wk)
+
+	Integrated ECC support.  Below are the changes finally merged into
+	the git master after some cleanup by wk until 2011-02-03.
+
+	* ecdh.c: New.
+
+	* sign.c (mpi_from_sexp): Remove.
+	(match_dsa_hash): Uses SHA-512 for ECDSA with 521 bits.
+	(hash_for): Support ECDSA.
+	(make_keysig_packet): Ditto.
+
+	* seskey.c (encode_session_key): Add arg OPENPGP_PK_ALGO.  Support
+	ECDH.
+	(encode_md_value): Map pkalgo.  Extend size checks to ECDSA.
+
+	* pubkey-enc.c (get_it): Support ECDH.
+
+	* pkglue.c (mpi_from_sexp): Make global.
+	(pk_verify, pk_encrypt, pk_check_secret_key): Support ECC.
+
+	* parse-packet.c (read_size_body): New.
+	(parse_pubkeyenc): Support ECC.
+	(parse_key): Ditto.
+
+	* misc.c (map_pk_openpgp_to_gcry, map_pk_gcry_to_openpgp): New.
+	(openpgp_pk_test_algo, openpgp_pk_test_algo2): Map algo numbers.
+	(openpgp_pk_algo_usage): Support ECDH and ECDSA.
+	(openpgp_pk_algo_name): Simplify.
+	(ecdsa_qbits_from_Q): New.
+
+	* mainproc.c (proc_pubkey_enc): Support ECC.
+
+	* keyid.c (pubkey_letter): Add 'E' and 'e'.
+	(keygrip_from_pk): Supporf ECC.
+
+	* keygen.c: Include pkglue.h.
+	(ask_algo): Add option 9 for ECDSA and ECDH.
+	(ask_keysize): Support ECDSA and ECDH.
+	(do_create): Ditto.
+	(gen_ecc): New.
+	(pk_ecc_build_key_params): New.
+
+	* getkey.c (cache_public_key): Support ECC.
+
+	* encrypt.c (write_pubkey_enc_from_list): Pass PK to PK_ENCRYPT
+	and the pkalgo to encode_session_key.
+
+	* build-packet.c (do_key, do_pubkey_enc): Support ECC.
+	(write_size_body_mpi): New.
+
+2011-01-06  Werner Koch  <wk@g10code.com>
+
+	* gpg.c (main): Use keyserver_spec_t.
+
+	* options.h (struct opt): Factor definition of struct keyserver
+	out to ../common/keyserver.h.
+	(keyserver_spec_t): New.
+
+2011-01-21  Werner Koch  <wk@g10code.com>
+
+	* seskey.c (encode_md_value): Truncate the DSA hash again.
+
+	* misc.c (openpgp_pk_algo_name): Always use the gcrypt function.
+
+2010-12-09  Werner Koch  <wk@g10code.com>
+
+	* tdbio.c (tdbio_set_dbname) [W32CE]: Take care of missing errno.
+	(strerror) [W32CE]: Dummy replacement.
+	(open_db) [W32CE]: Use CreateFile.
+
+2010-12-02  Werner Koch  <wk@g10code.com>
+
+	* misc.c (openpgp_cipher_algo_name): Use gnupg_cipher_algo_name.
+
+2010-11-23  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (gpg2_LDFLAGS, gpgv2_LDFLAGS): Add extra_bin_ldflags.
+
+	* plaintext.c (handle_plaintext): Change to use estream.
+	s/rc/err/.  Replace some xmalloc by xtrymalloc.  Use more
+	gpg_strerror.
+	* options.h (struct): Change type of OUTFP to estream_t.
+	* decrypt.c (decrypt_message_fd): Adjust accordingly.
+
+2010-11-17  Werner Koch  <wk@g10code.com>
+
+	* keyedit.c (find_pk_from_sknode): Remove.
+	* misc.c (get_signature_count): Call agent.
+	* keygen.c (gen_card_key): Rework.  Remove arg PARA.
+	(generate_keypair): Change arg BACKUP_ENCRYPTION_DIR to the flag
+	CARD_BACKUP_KEY.
+	(pBACKUPENCDIR): Change to pCARDBACKUPKEY.
+	(struct output_control_s): Remove struct SEC.  Remove all usages
+	of it.
+	(gen_card_key_with_backup): Remove arg BACKUP_DIR.
+
+	* call-agent.c (agent_scd_genkey): Remove extra memset.
+
+2010-11-16  Werner Koch  <wk@g10code.com>
+
+	* keygen.c (generate_card_subkeypair): Remove arg SEC_KEYBLOCK and
+	change to return an error code.  Rework for removed secring code.
+	* card-util.c (card_generate_subkey): Remove arg SEC_KEYBLOCK.
+	Return an error code instead of a success flag. Change caller.
 
 2010-10-29  David Shaw  <dshaw@jabberwocky.com>
 
@@ -55,56 +454,482 @@
 	with SHA-1, just remove MD5 from the list altogether, and let the
 	next-highest ranked algorithm be chosen.
 
+2010-10-27  Werner Koch  <wk@g10code.com>
+
+	* keygen.c (ask_expire_interval): Do not print the y2038 if we
+	have an unsigned time_t.
+	* keyid.c (IS_INVALID_TIME_T): New.
+	(mk_datestr): Use it to detect the y2038 problem.
+
+2010-10-26  Werner Koch  <wk@g10code.com>
+
+	* keyedit.c (change_passphrase): Handle the passwd_nonce.
+	* call-agent.c (cache_nonce_parm_s): New.
+	(cache_nonce_status_cb): Use that new struct.
+	(agent_genkey, agent_import_key, agent_export_key, agent_passwd):
+	Adjust for that change.
+
+2010-10-25  Werner Koch  <wk@g10code.com>
+
+	* passphrase.c (gpg_format_keydesc): Fix printing of main keyid.
+
+	* keyedit.c (JNLIB_NEED_LOG_LOGV): Define.
+	* call-agent.c (agent_passwd): New.
+
+2010-10-21  Werner Koch  <wk@g10code.com>
+
+	* keyedit.c (keyedit_passwd): Simplify.
+	(change_passphrase): Return an error code and not the change
+	flag.  Remove editing of the keyring.
+
+	* seckey-cert.c: Remove.
+	* Makefile.am (gpg2_SOURCES): Remove seckey-cert.c
+
+	* revoke.c (gen_revoke): Check that the secret key is available.
+
+2010-10-20  Werner Koch  <wk@g10code.com>
+
+	* verify.c (verify_signatures): Use gpg_strerror on open failure
+	for consistency of error messages.
+
+	* packet.h (PKT_public_key): s/mdc_feature/flags.mdc/.  Change all
+	users.
+	(PKT_public_key): Split is_disabled into flags.disabled_valid and
+	flags.disabled.  Change all users.
+	(pk_is_disabled): Adjust for change.
+	(PKT_public_key): s/is_primary/flags.primary/. Change all users.
+	(PKT_public_key): s/is_revoked/flags.revoked/. Change all users.
+	(PKT_public_key): s/maybe_revoked/flags.maybe_revoked/. Change all
+	users.
+	(PKT_public_key): s/is_valid/flags.valid/. Change all users.
+	(PKT_public_key): s/dont_cache/flags.dont_cache/. Change all users.
+	(PKT_public_key): s/backsig/flags.backsig/. Change all users.
+
+	* sign.c (openpgp_card_v1_p): New.
+	(hash_for): Re-implement test for v1 cards.
+	* packet.h (PKT_public_key): Add field serialno and
+	flags.serialno_valid.
+	* free-packet.c (release_public_key_parts): Free serialno.
+
+	* parse-packet.c (parse_key): Cast -1 to size_t.
+	* trustdb.c (validate_keys): Cast -1 to size_t.  Suggested by
+	Steven M. Schweda.
+
+2010-10-18  Werner Koch  <wk@g10code.com>
+
+	* call-agent.c (agent_scd_pksign): Replace sprintf by bin2hex.
+	(agent_scd_pkdecrypt, agent_pksign): Ditto.
+
+	* sign.c (do_sign): Remove warning and commented old code.
+
+2010-10-14  Werner Koch  <wk@g10code.com>
+
+	* call-agent.c (agent_genkey): Add arg NO_PROTECTION.
+	* keygen.c (do_create, gen_elg, gen_dsa, gen_rsa, common_gen): Add
+	arg KEYGEN_FLAGS.
+	(read_parameter_file): Add options no-protection and transient-key.
+	(KEYGEN_FLAG_NO_PROTECTION, KEYGEN_FLAG_TRANSIENT_KEY): New.
+	(gen_rsa, gen_dsa, gen_elg): Use transient-key.
+
+2010-10-13  Werner Koch  <wk@g10code.com>
+
+	* call-agent.c (start_agent): Send option agent-awareness.
+	(status_sc_op_failure): Take care of GPG_ERR_FULLY_CANCELED.
+	* passphrase.c (passphrase_get): Ditto.
+	* import.c (transfer_secret_keys): Ditto.
+	* card-util.c (write_sc_op_status): Ditto.
+
+	* getkey.c (enum_secret_keys): Rewrite.
+
+	* pubkey-enc.c (get_session_key): Skip keys without an encryption
+	capability.  Handle GPG_ERR_FULLY_CANCELED.
+	* gpg.c: Add option --try-secret-key.
+	* options.h (struct opt): Add field secret_keys_to_try.
+
+	* passphrase.c (next_to_last_passphrase): Remove.
+
+2010-10-12  Werner Koch  <wk@g10code.com>
+
+	* keygen.c (generate_subkeypair): Check availibility of secret parts.
+
+	* keylist.c (print_card_serialno): Change to take a hexified serialno.
+	(list_keyblock_print): Print serialno and stub key indicators.
+	(list_keyblock_colon): Ditto.
+
+	* getkey.c (have_any_secret_key): Remove.  Replace all calls by
+	agent_probe_any_secret_key.
+	* gpgv.c (agent_probe_any_secret_key): New.
+	(agent_get_keyinfo): New.
+
+2010-10-08  Werner Koch  <wk@g10code.com>
+
+	* gpg.c: Add option --with-keygrip.
+	* options.h (struct opt): Add WITH_KEYGRIP.
+	* keylist.c (list_keyblock_print, list_keyblock_colon): Implement
+	new option.
+
+2010-10-06  Werner Koch  <wk@g10code.com>
+
+	* import.c (transfer_secret_keys): Ignore missing key parameters.
+	Provide dummy IV.  Ignore stub keys.
+
+2010-10-01  Werner Koch  <wk@g10code.com>
+
+	* export.c (do_export_stream): Rewrite to take the secret keys
+	from the agent.
+	(canon_pubkey_algo, transfer_format_to_openpgp): New.
+
 2010-09-29  Werner Koch  <wk@g10code.com>
 
 	* keygen.c (key_from_sexp): Fix memory leak in the error case.
 
+	* call-agent.c (agent_export_key): New.
+
+2010-09-29  Werner Koch  <wk@g10code.com>
+
+	* build-packet.c (build_packet): Fix up the pkttype.
+
+	* keyid.c (keystr_with_sub): Make SUB_KID optional.
+	(keystr_from_pk_with_sub): Ditto.
+
 	* call-agent.c (agent_scd_pksign): Add missing space.
 
-2010-09-28  David Shaw  <dshaw@jabberwocky.com>  (wk)
-
-	* options.skel: Make the example for force-v3-sigs match
-	reality (it has defaulted to off since 2007-10-25).
+	* mainproc.c (struct mainproc_context): Add field CTRL.
+	(proc_packets): Add arg CTRL.  Change all callers.
+	(proc_signature_packets, proc_signature_packets_by_fd)
+	(proc_encryption_packets): Add arg CTRL.  Change all callers.
+	* compress.c (handle_compressed): Ditto.
+	* getkey.c (get_pubkey_byname): Ditto.
+	* keyserver.c (keyserver_spawn, keyserver_work): Ditto.
+	(show_prompt, keyserver_export, keyserver_import)
+	(keyserver_import_fprint, keyserver_import_keyid)
+	(keyserver_refresh, keyserver_search, keyserver_fetch)
+	(keyserver_import_name, keyserver_search_prompt)
+	(keyserver_import_pka, keyserver_import_cert): Ditto.
+	callers.
+	* verify.c (verify_signatures, verify_files): Ditto.
+	* sign.c (sign_file): Ditto.
+	* encrypt.c (encrypt_crypt, encrypt_crypt_files): Ditto.
+	* pkclist.c (find_and_check_key, build_pk_list): Ditto.
+	* keylist.c (locate_one, public_key_list, secret_key_list): Ditto.
+	* card-util.c (fetch_url, card_edit): Ditto.
+	* import.c (check_prefs, import_one, revocation_present): Ditto.
+	* keyedit.c (menu_addrevoker, keyedit_menu): Ditto.
+	* decrypt-data.c (decrypt_data): Ditto.
+	* decrypt.c (decrypt_message, decrypt_messages)
+	(decrypt_message_fd): Ditto.
+	* gpgv.c (main): Add CTRL structure.
 
 2010-09-28  Werner Koch  <wk@g10code.com>
 
-	* keyedit.c (show_key_with_all_names): Make revocation hint
-	more clear.  Fixes bug#1234.
+	* options.h (struct opt): Remove SIMPLE_SK_CHECKSUM.
+
+	* export.c (parse_export_options): Remove option
+	export-resert-subkey-passwd.
+	(do_export_stream, do_export, export_pubkeys)
+	(export_pubkeys_stream, export_seckeys, export_secsubkeys): Add
+	arg CTRL.  Change all callers.
 
 	* call-agent.c (hash_algo_option): New.
 	(agent_scd_pksign): Use it.
 
+2010-09-17  Werner Koch  <wk@g10code.com>
+
+	* call-agent.c (agent_probe_any_secret_key): New.
+
+2010-09-28  David Shaw  <dshaw@jabberwocky.com>
+
+	* options.skel: Make the example for force-v3-sigs match
+	reality (it has defaulted to off since 2007-10-25).
+
+2010-09-06  Werner Koch  <wk@g10code.com>
+
+	* card-util.c (card_status): Remove stub creation for GnuPG >= 2.
+	(card_store_subkey): Temporary disable this code.
+
+	* keyedit.c (show_key_with_all_names): Merge secret and public key
+	parts.
+	(show_basic_key_info): Ditto.
+	* delkey.c (do_delete_key): Ditto.
+	* export.c (subkey_in_list_p, exact_subkey_match_p): Ditto.
+	(new_subkey_list_item): Ditto.
+	* keyid.c (keystr_from_sk, keystr_from_sk_with_sub)
+	(keyid_from_sk, nbits_from_sk, datestr_from_sk)
+	(expirestr_from_sk, colon_datestr_from_sk, fingerprint_from_sk)
+	(serialno_and_fpr_from_sk, do_fingerprint_md_sk): Remove.
+	* import.c (print_import_ok): Remove arg SK.
+	(import_secret_one): Adjust for seckey_info format.
+	(transfer_secret_keys): Ditto.  Use gpg_format_keydesc.
+	(sec_to_pub_keyblock): Simplify.
+	(pub_to_sec_keyblock): Remove.
+	(auto_create_card_key_stub): Remove - not anymore needed.
+	(update_sec_keyblock_with_cardinfo): Remove.
+	(import_secret_one): Use arg option instead of the global option.
+	* free-packet.c (copy_public_key): Adjust for seckey_info format.
+	(copy_public_parts_to_secret_key, copy_secret_key)
+	(cmp_secret_keys, cmp_public_secret_key): Remove.
+	* passphrase.c (gpg_format_keydesc): Add arg MODE and change all
+	callers.
+	* keyring.c (keyring_search): Remove special case for secret keys.
+	* mainproc.c (struct mainproc_context): Remove unused field
+	LAST_SECKEY.
+	* parse-packet.c (parse_key): Rewrite to cope with new seckey_info
+	format.
+	* build-packet.c (do_public_key, do_secret_key): Merge code into ...
+	(do_key): .. new.  Cope with seckey_info format.
+
+2010-09-03  Werner Koch  <wk@g10code.com>
+
+	* packet.h (struct seckey_info): New.
+	(PKT_public_key): Increase size of PKEY to allow storing of secret
+	keys.  Add field SECKEY_INFO.
+	(PKT_secret_key): Remove.
+	* free-packet.c (release_public_key_parts): Take care of change.
+	(release_secret_key_parts, free_secret_key): Remove.
+
+2010-09-02  Werner Koch  <wk@g10code.com>
+
+	* import.c (transfer_secret_keys, import_secret_one): Enable stats.
+	(import_secret_one): Enable secret key merging.
+
+2010-09-01  Werner Koch  <wk@g10code.com>
+
+	* sign.c (do_sign, write_signature_packets, complete_sig): Add arg
+	CACHE_NONCE.
+	(make_keysig_packet): Ditto.
+	* keygen.c (make_backsig, write_direct_sig, write_selfsigs)
+	(write_keybinding): Add arg CACHE_NONCE.
+	(do_generate_keypair): Use cache_nonce to avoid a pinentry for the
+	self-signatures.
+
+	* passphrase.c (gpg_format_keydesc): Remove now superfluous
+	algo_name fallback.
+
+	* keygen.c (gen_elg, gen_dsa, gen_rsa, do_create, common_gen): Add
+	arg CACHE_NONCE_ADDR.
+	(generate_subkeypair): Pass NULL for CACHE_NONCE_ADDR.
+	(do_generate_keypair): Add cache nonce handling.
+
+	* import.c (transfer_secret_keys): Support a cache nonce.
+	* call-agent.c (cache_nonce_status_cb): New.
+	(agent_genkey, agent_import_key): Add arg CACHE_NONCE_ADDR.
+	(agent_pksign): Ditto.
+
+2010-08-30  Werner Koch  <wk@g10code.com>
+
+	* keyid.c (KEYID_STR_SIZE): New
+	(keystr): Use snprintf and new macro.
+	(keystr_with_sub): New.
+	(keystr_from_sk_with_sub): New.
+	(keystr_from_pk_with_sub): New.
+
+2010-08-27  Werner Koch  <wk@g10code.com>
+
+	* gpg.c (main): Change scope of CTRL to the entire function.
+
+	* import.c (import_secret_one, import, import_keys_internal)
+	(import_keys, import_keys_stream): Add arg CTRL.
+	* call-agent.c (agent_keywrap_key): New.
+	(agent_import_key, inq_import_key_parms): New.
+
+2010-08-26  Werner Koch  <wk@g10code.com>
+
+	* misc.c (openpgp_pk_algo_name): New.
+	(openpgp_md_algo_name): New.
+
+2010-08-24  Werner Koch  <wk@g10code.com>
+
+	* options.h (IMPORT_SK2PK): Remove.
+	* import.c (parse_import_options): Turn convert-sk-to-pk into a
+	dummy option.
+	(sec_to_pub_keyblock): Use modern functions.
+
+2010-08-16  Werner Koch  <wk@g10code.com>
+
+	* gpg.c (list_config, gpgconf_list): Use es_printf.
+	(print_hex, print_hashline, print_algo_numbers)
+	(print_algo_names): Use es_printf.
+
 2010-07-20  Werner Koch  <wk@g10code.com>
 
-	* mainproc.c (print_pkenc_list): Print a STATUS_ERROR.  Fixes
+	* mainproc.c (print_pkenc_list): Write a STATUS_ERROR.  Fixes
 	bug#1255.
-
-2010-06-18  Werner Koch  <wk@g10code.com>
-
-	* parse-packet.c (skip_packet, parse_gpg_control): Take care of
-	premature EOFs.  Backport from trunk.
 
 2010-06-17  Werner Koch  <wk@g10code.com>
 
 	* gpg.c (main): Use CAST5 as default s2k algo.  The macro
 	USE_CAST5 was only used with GnuPG 1.x.
 
+2010-06-07  Werner Koch  <wk@g10code.com>
+
+	* cpr.c: Use estream for status output.
+
 2010-05-12  Werner Koch  <wk@g10code.com>
 
-	* armor.c (radix64_read): Change fix 2006-04-28 to fix bug#1179.
+	* armor.c (radix64_read): Extended 2006-04-28 fix to fix bug#1179.
 
 	* plaintext.c (handle_plaintext): Check return code of fflush.
 	Fixes bug#1207.
 
 2010-05-07  Werner Koch  <wk@g10code.com>
 
-	* import.c (chk_self_sigs): Check direct key signatures.  Fixes
+	* import.c (fix_bad_direct_key_sigs): New.
+	(import_one): Call it.
+	(chk_self_sigs): Re-indent, slighly re-arrange code, use test
+	macros for the sig class.  Check direct key signatures.  Fixes
 	bug#1223.
-	(fix_bad_direct_key_sigs): New.
-	(import_one): Use it here.
 
-	* import.c (chk_self_sigs): Re-indent and slighly re-arrange code.
-	Use test macros for the sig class.
+2010-04-27  Werner Koch  <wk@g10code.com>
+
+	* passphrase.c (gpg_format_keydesc): New.
+	* pubkey-enc.c (get_it): Use it.
+	* sign.c (do_sign): Use it.
+
+2010-04-26  Werner Koch  <wk@g10code.com>
+
+	* keygen.c (keygen_set_std_prefs): Explicitly include Z0 in the
+	default preferences if no compression algorithms are available.
+	Remove a possible trailing space in the dummy_string.
+
+2010-04-23  Werner Koch  <wk@g10code.com>
+
+	* pubkey-enc.c (get_it): Use the agent for decryption.
+	* call-agent.c (agent_pkdecrypt, inq_ciphertext_cb): New.
+
+2010-04-22  Werner Koch  <wk@g10code.com>
+
+	* photoid.c (show_photos): Remove arg SK.
+
+	* pubkey-enc.c (get_session_key, get_it): Change to use the public
+	key object.
+	(get_it):  Remove card related stuff.  Now automagically handled
+	by the agent.
+
+	* skclist.c (build_sk_list): Remove UNLOCK arg.
+
+	* keylist.c (print_fingerprint): Remove arg SK.
+	* mainproc.c (list_node): Disable listing of secret key packets.
+
+	* keyring.c (struct keyring_name, struct keyring_handle): Remove
+	field SECRET.
+	(keyring_register_filename, keyring_new, orename_tmp_file)
+	(do_copy): Remove arg SECRET.
+	* keydb.c (struct resource_item): Remove field SECRET.
+	(keydb_add_resource): Remove arg SECRET.
+	(keydb_new): Remove code fro secret keyrings.
+
+	* gpg.c (main): Ignore --secret-keyring.  Remove all secret
+	keyring related code.
+
+2010-04-21  Werner Koch  <wk@g10code.com>
+
+	* pkclist.c (default_recipient): Change to use public keys.
+
+	* keydb.c (keydb_new): Remove arg SECRET.  Change all callers.
+
+	* getkey.c (get_seckey): Change to take a public key.
+	(have_secret_key): Rename to have_any_secret_key and make use of
+	the agent.
+	(key_byname): Rmemove unused arg SK.
+	(get_seckey_byname2): Remove and move code to
+	(get_seckey_byname): .. here.  Remove INLOCK arg.
+	(get_seckey_bynames): Remove.
+	(get_seckey_next): Remove.
+	(get_seckey_end): Remove.  Use get_pubkey_end instead.
+	(get_seckey_byfprint, get_seckeyblock_byfprint): Change to use
+	public keys.
+	(seckey_available): Rename to ..
+	(have_secret_key_with_kid): .. this and change to employ the
+	agent.  Change all callers.
+	(sk_from_block): Remove.
+
+	* call-agent.c (agent_probe_secret_key): New.
+	(agent_havekey): Remove.
+	* gpgv.c (agent_probe_secret_key): New.
+
+	* keyedit.c (keyedit_menu)
+	(sign_uids, menu_adduid, menu_deluid, menu_delkey)
+	(menu_addrevoker, menu_expire, menu_backsign)
+	(menu_set_primary_uid, menu_set_preferences)
+	(menu_set_keyserver_url, menu_set_notation, menu_revsig)
+	(menu_revuid, menu_revkey, menu_revsubkey): Remove all code to
+	manage the secret keyring.
+
+2010-04-20  Werner Koch  <wk@g10code.com>
+
+	* keylist.c (list_keyblock_colon): Print the keygrip.
+
+	* sign.c (do_sign): Call the agent to create the signature.
+	(mpi_from_sexp): New.
+	* keyid.c (keygrip_from_pk, hexkeygrip_from_pk): New.
+	* call-agent.c (agent_pksign): New.
+
+	* pkglue.c (pk_sign): Remove.
+
+	* keygen.c (generate_keypair): Do not ask for a passphrase.
+
+2010-04-15  Werner Koch  <wk@g10code.com>
+
+	* keygen.c (gen_dsa, gen_elg, gen_rsa): Remove args SEC_ROOT, DEK,
+	S2K and RET_SK.  Change to use the gpg-agent based key generation.
+	Factor common code out to ...
+	(common_gen): New.
+	(do_create): Remove args SEC_ROOT, DEK, S2K and RET_SK.
+	(do_generate_keypair, write_selfsigs, write_direct_sig)
+	(write_keybinding, make_backsig): Adjust for above changes.
+	(generate_subkeypair): Remove arg SEC_KEYBLOCK.
+	(genhelp_protect, genhelp_factors): Remove.
+	(get_parameter_dek, get_parameter_s2k): Remove.
+
+	* call-agent.c (start_agent): Add dummy arg CTRL.
+	(agent_havekey, keyinfo_status_cb, agent_get_keyinfo)
+	(agent_genkey): New.
+
+	* seckey-cert.c (check_secret_key): Remove
+	(is_secret_key_protected): Take a public key as arg.
+	(protect_secret_key): Remove.
+
+	* seskey.c (encode_md_value): Remove SK arg.
+
+2010-04-14  Werner Koch  <wk@g10code.com>
+
+	* cpr.c (myread) [W32CE]: Do not use raise.
+
+	* misc.c (check_compress_algo): Rewrite to handle the new HAVE_ZIP.
+	* compress.c (push_compress_filter2): Ditto.
+	(init_compress, do_compress, init_uncompress, do_uncompress)
+	(compress_filter) [!HAVE_ZIP]: Do not build.
+	* main.h (DEFAULT_COMPRESS_ALGO): Depend on HAVE_ZIP.
+	* keygen.c (keygen_set_std_prefs): Use check_compress_algo also
+	for ZIP and ZLIB.
+
+	* Makefile.am (install-exec-hook) [W32CE]: New.
+	(bin_PROGRAMS) [W32CE]: Do not build gpgv2.
+	(gpg2_LDADD): Add extra_syslibs.
+
+2010-04-06  Werner Koch  <wk@g10code.com>
+
+	* openfile.c (mkdir): Remove.
+	(try_make_homedir): Use gnupg_mkdir.
+
+2010-04-01  Werner Koch  <wk@g10code.com>
+
+	Use gpg_err_set_errno to set ERRNO.
+
+2010-03-26  Werner Koch  <wk@g10code.com>
+
+	* signal.c (pause_on_sigusr): Remove.  It was used in ancient gpg
+	version with shared memory IPC.  Last caller removed on	2006-04-18.
+
+2010-03-24  Werner Koch  <wk@g10code.com>
+
+	* openfile.c (CMP_FILENAME): Depend on HAVE_DOSISH_SYSTEM instead
+	of HAVE_DRIVE_LETTERS.
+
+2010-03-15  Werner Koch  <wk@g10code.com>
+
+	* card-util.c: Replace stdio by estream.
+	* keylist.c: Ditto.
 
 2010-03-12  Werner Koch  <wk@g10code.com>
 
@@ -116,50 +941,116 @@
 	(keyedit_passwd): Return the correct error or emit a success
 	status message.
 
-2010-02-25  Werner Koch  <wk@g10code.com>
+2010-03-11  Werner Koch  <wk@g10code.com>
 
-	* sign.c (hash_for): Force SHA1 only for v1 OpenPGP cards.  Fixes
-	bug#1194.
+	* misc.c (mpi_print): Change to take a estream_t arg.
+
+	* parse-packet.c (listfp): Change to an estream_t.  Change all
+	users to use estream functions.
+
+	* kbnode.c (dump_kbnode): Change to use log functions.
+	* pkclist.c (do_show_revocation_reason): Ditto
+
+	* armor.c (parse_header_line): Replace print_string by
+	es_print_sanitized.
+	(fake_packet): Ditto.
+	* keyedit.c (print_and_check_one_sig_colon): Ditto.
+	(show_key_with_all_names_colon): Ditto.
+	(ask_revoke_sig): Ditto.
+	* keylist.c (list_keyblock_colon): Ditto.
+	* mainproc.c (print_userid, list_node): Ditto.
+	* trustdb.c (dump_key_array): Ditto.
+	* gpg.c (list_config): ditto.
+
+	* gpg.c: Include "asshelp.h".
+	(main): Remove assuan_set_assuan_log_prefix.  Add
+	assuan_set_log_cb.
+	* server.c (gpg_server): Remove assuan_set_log_stream.
+
+2010-03-10  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (needed_libs): Remove libjnlib.a.
+
+	* main.h: Remove "estream.h".
+
+2010-03-08  Werner Koch  <wk@g10code.com>
+
+	* main.h: Include "estream.h"
+	* openfile.c (open_outfile): Replace dup/iobuf_fdopen by
+	iobuf_fdopen_nc.
+	* mainproc.c (proc_signature_packets_by_fd): Return error on
+	memory failure.
+	* plaintext.c (hash_datafile_by_fd): Ditto.
+	* verify.c (gpg_verify): Use iobuf_fdopen_nc.  Change OUT_FP to an
+	estream_t.
+	* server.c (cmd_verify): Do not dup the fds.
+
+	Use macros for iobuf_ioctl commands.
 
 2010-02-17  Werner Koch  <wk@g10code.com>
 
 	* keygen.c (ask_user_id): Avoid infinite loop in case of invalid
 	data.  Fixes bug#1186.
 
-2010-02-11  Marcus Brinkmann  <marcus@g10code.de>
-
-	From trunk 2009-09-23, 2009-11-02, 2009-11-25:
-
-	* call-agent.c: Include "scdaemon.h" before <assuan.h> because of
-	GPG_ERR_SOURCE_DEFAULT check.
-	(learn_status_cb, dummy_data_cb, get_serialno_cb, default_inq_cb)
-	(learn_status_cb, inq_writecert_parms, inq_writekey_parms)
-	(scd_genkey_cb, membuf_data_cb): Return gpg_error_t instead of
-	int.
-	* gpg.c: Include "scdaemon.h" before <assuan.h> because of
-	GPG_ERR_SOURCE_DEFAULT check.
-	(main): Update to new Assuan API.
-	* server.c: Include "scdaemon.h" before <assuan.h> because of
-	GPG_ERR_SOURCE_DEFAULT check.
-	(reset_notify, input_notify, output_notify): Update to
-	new assuan interface.
-	(option_handler, cmd_recipient, cmd_signer, cmd_encrypt)
-	(cmd_decrypt, cmd_verify, cmd_sign, cmd_import, cmd_export)
-	(cmd_delkeys, cmd_message, do_listkeys, cmd_listkeys)
-	(cmd_listsecretkeys, cmd_genkey, cmd_getinfo): Return gpg_error_t
-	instead of int.
-	(register_commands): Allocate assuan context before starting
-	server.  Use assuan_handler_t.  Add NULL arg to
-	assuan_register_command.
-	(gpg_server): Allocate assuan_context before starting server.
-	Use assuan_fd_t and assuan_fdopen on fds.
-
 2010-02-02  Werner Koch  <wk@g10code.com>
 
-	* card-util.c (card_edit): Change prompt to "gpg/card".
 	* keyedit.c (keyedit_menu): Change prompt to "gpg".
+	* card-util.c (card_edit): Change prompt to "gpg/card".
 
 2010-01-11  Werner Koch  <wk@g10code.com>
+
+	* sign.c (only_old_style, write_onepass_sig_packets, hash_for)
+	(write_signature_packets, print_status_sig_created)
+	(clearsign_file, make_keysig_packet, mk_notation_policy_etc)
+	(complete_sig, do_sign, update_keysig_packet): Replace all
+	secret key access by the matching public key.
+	* keylist.c (print_seckey_info): Ditto.
+	* revoke.c (gen_desig_revoke): Ditto.
+	* skclist.c (release_sk_list): Ditto.
+	* keyedit.c (sign_uids): Ditto.
+	* misc.c (get_signature_count): Ditto.
+	* main.h (struct expand_args): s/sk/pksk/.  Change all users.
+
+	* keyedit.c (keyedit_passwd): Finish implementation.
+
+2010-01-10  Werner Koch  <wk@g10code.com>
+
+	* skclist.c (GCRYCTL_FAKED_RANDOM_P): Remove because we require
+	libgcrypt 1.4.
+	(is_insecure, key_present_in_sk_list): Work with public keys.
+	(build_sk_list): Change to work on public keys.
+	* keydb.h (struct sk_list): Replace field SK by a PK field.
+
+	* keylist.c (list_keyblock_print): Always look for the public key
+	and ignore all secret key packets.
+	(list_keyblock_colon): Ditto.
+	(print_capabilities): Remove arg SK and all secret key stuff.
+	Adjust all callers.
+	(dump_attribs): Ditto.
+
+	* getkey.c (getkey_bynames, getkey_next, get_pubkey_end): New.
+	(getkey_byname): New.
+	(getkey_ctx_s): Add WANT_SECRET.
+	(key_byname): Set it.
+	(merge_keys_and_selfsig): Remove all the secret key merging.
+	(lookup): Simplify by removing secret key code.
+
+	* keylist.c (list_all): Scan public keys and use have_secret_key
+	to filter secret keys.
+	(list_one): Use the new get_key functions.
+
+	* gpg.h (kbnode_t): Add as alias for KBNODE.
+	* keydb.h (getkey_ctx_t): Add as alias for GETKEY_CTX.
+
+2010-01-09  Werner Koch  <wk@g10code.com>
+
+	* getkey.c, keylist.c: Re-indent.
+
+2010-01-08  Werner Koch  <wk@g10code.com>
+
+	* cpr.c (write_status_error): Rename to write_status_errcode.
+	Change all callers.
+	(write_status_error): New.
 
 	* gpg.c: Add option --passwd.
 	(aPasswd): New.
@@ -174,9 +1065,6 @@
 
 2009-12-21  Werner Koch  <wk@g10code.com>
 
-	* gpg.c (main): Add dummy options --skip-hidden-recipients and no
-	variant.
-
 	* call-agent.c (agent_get_s2k_count): New.
 	* gpg.c (main):  Set s2k_count to 0.
 	* (encode_s2k_iterations): Move ...
@@ -189,10 +1077,35 @@
 	* sig-check.c (do_check_messages): Evaluate the HAS_EXPIRED flag.
 	Fixes bug#1059.
 
+	* gpg.c: Add new option --faked-system-time.
+
 2009-12-15  Werner Koch  <wk@g10code.com>
+
+	* keydb.c (keydb_add_resource): s/readonly/read_only/g.
+	* keyring.c (keyring_register_filename): Ditto.
 
 	* tdbio.c (tdbio_set_dbname): Do not call log_fatal after creating
 	the directory.  Fixes bug#1169.  Reported by Daniel Leidert.
+
+2009-12-08  Werner Koch  <wk@g10code.com>
+
+	* keyring.h: Include userids.h.
+	* gpg.h (KEYDB_SEARCH_DESC): Remove.
+	* packet.h: Include userids.h.
+	(PKT_user_id): Declare using gpg_pkt_user_id_s.
+	* keydb.h (KeydbSearchMode, struct keydb_search_desc): Remove.  We
+	now use those in ../kbx.
+	* getkey.c (classify_user_id): Remove.  It is now in common/.
+	(key_byname): Adjust for changed classify_user_id.
+	* delkey.c (do_delete_key): Ditto.
+	* trustdb.c (register_trusted_key): Ditto.
+	* revoke.c (gen_desig_revoke, gen_revoke): Ditto.
+	* keyserver.c (parse_keyrec, keyserver_export, keyserver_import)
+	(keyidlist): Ditto.
+	* export.c (do_export_stream): Ditto.
+
+	* pkclist.c (find_and_check_key): Replace GPG_ERR_INV_NAME by
+	GPG_ERR_INV_USER_ID.
 
 2009-12-04  Werner Koch  <wk@g10code.com>
 
@@ -204,12 +1117,98 @@
 
 2009-12-03  Werner Koch  <wk@g10code.com>
 
-	* gpg.c (set_debug): Allow for numerical debug levels.  Print
+	* gpg.c (set_debug): Allow for numerical debug leveles.  Print
 	active debug flags.
+
+2009-11-27  Werner Koch  <wk@g10code.com>
+
+	* keyedit.c (cmds, keyedit_menu): New command "checkbkupkey".
+
+2009-11-25  Marcus Brinkmann  <marcus@g10code.de>
+
+	* server.c (gpg_server): Use assuan_fd_t and assuan_fdopen on fds.
+
+2009-11-23  Werner Koch  <wk@g10code.com>
 
 	* gpg.c (gpgconf_list): Add key "default_pubkey_algo".
 
+2009-11-18  Werner Koch  <wk@g10code.com>
+
+	* gpg.c: Add option --skip-hidden-recipients and no- variant.
+	* options.h (struct opt): Add field SKIP_HIDDEN_RECIPIENTS.
+	* pubkey-enc.c (get_session_key): Implement that option.
+
+2009-11-04  Werner Koch  <wk@g10code.com>
+
+	* server.c (register_commands): Add NULL arg to
+	assuan_register_command.
+
+2009-11-02  Marcus Brinkmann  <marcus@g10code.de>
+
+	* server.c (reset_notify, input_notify, output_notify): Update to
+	new assuan interface.
+	(register_commands): Use assuan_handler_t.
+
+2009-10-19  Werner Koch  <wk@g10code.com>
+
+	* options.h (glo_ctrl): Add field LASTERR.
+	* mainproc.c (proc_encrypted): Set LASTERR.
+	* server.c (cmd_decrypt): Check LASTERR.
+
+2009-10-02  Werner Koch  <wk@g10code.com>
+
+	* server.c (cmd_encrypt, cmd_decrypt): Implement.
+	* decrypt.c (decrypt_message_fd): New.
+	* options.h (struct opt): Add field OUTFP.
+	* plaintext.c (handle_plaintext): Support opt.outfp.
+
+	* encr-data.c: Rename to decrypt-data.c to reflect the action and
+	not the processed packet type.
+
+2009-10-02  Werner Koch  <wk@g10code.com>
+
+	* encr-data.c (decode_filter_context_s): Add fields PARTIAL and
+	LENGTH.
+	(decrypt_data): Set them.  Simplify premature EOF detection.
+	(mdc_decode_filter): Take fixed length packets in account.
+	(decode_filter): Ditto.  Better EOF detection.
+	* parse-packet.c (parse_encrypted): Store ed->LEN without the MDC
+	version byte.
+
+2009-09-30  Werner Koch  <wk@g10code.com>
+
+	* parse-packet.c (skip_packet, parse_gpg_control) <list_mode>: Take
+	care of premature EOFs.
+
+	* gpg.c (main): Remove obsolete GCRYCTL_DISABLE_INTERNAL_LOCKING.
+
+2009-09-29  Werner Koch  <wk@g10code.com>
+
+	* openfile.c (open_outfile): Re-indent.  Use xstrconcat.
+	(NAME_OF_DEV_NULL): New.
+	(open_outfile): Use it.
+	(overwrite_filep): Use it.  Also use case insensitive compare
+	when needed.  Re-indent.
+	(open_outfile): Add arg INP_FD.  Change all callers.
+
+	* encrypt.c (encrypt_crypt): Add new args FILEFD, OUTPUTFD and
+	PROVIDED_KEYS.  Change all callers.
+
 2009-09-28  Werner Koch  <wk@g10code.com>
+
+	* server.c (skip_options, has_option): New.
+	(cmd_recipient): Implement.
+
+	* keydb.h (pk_list_t): New.
+
+	* pkclist.c (send_status_inv_recp): New.  Replace direct calls.
+	(build_pk_list): Factor some code out to ...
+	(find_and_check_key): ... new.
+
+	* encode.c: Rename to encrypt.c.  Re-indent all.
+	* encrypt.c (encode_symmetric, encode_store, encode_seskey)
+	(encode_simple, encode_crypt, encode_filter)
+	(encode_crypt_files): Rename all to encrypt_*.  Change all callers.
 
 	* trustdb.c (get_validity_info): Take care of a NULL PK.  Fixes
 	bug#1138.
@@ -220,6 +1219,28 @@
 	* pkglue.c (pk_sign, pk_verify, pk_encrypt, pk_decrypt)
 	(pk_check_secret_key): Allow deprecated RSA identifiers 2 and 3.
 	Fixes bug#1139.
+
+2009-09-23  Marcus Brinkmann  <marcus@g10code.de>
+
+	* call-agent.c: Include "scdaemon.h" before <assuan.h> because of
+	GPG_ERR_SOURCE_DEFAULT check.
+	(learn_status_cb, dummy_data_cb, get_serialno_cb, default_inq_cb)
+	(learn_status_cb, inq_writecert_parms, inq_writekey_parms)
+	(scd_genkey_cb, membuf_data_cb): Return gpg_error_t instead of
+	int.
+	* gpg.c: Include "scdaemon.h" before <assuan.h> because of
+	GPG_ERR_SOURCE_DEFAULT check.
+	(main): Update to new Assuan API.
+	* server.c: Include "scdaemon.h" before <assuan.h> because of
+	GPG_ERR_SOURCE_DEFAULT check.
+	(option_handler, cmd_recipient, cmd_signer, cmd_encrypt)
+	(cmd_decrypt, cmd_verify, cmd_sign, cmd_import, cmd_export)
+	(cmd_delkeys, cmd_message, do_listkeys, cmd_listkeys)
+	(cmd_listsecretkeys, cmd_genkey, cmd_getinfo): Return gpg_error_t
+	instead of int.
+	(register_commands): Allocate assuan context before starting
+	server.
+	(gpg_server): Allocate assuan_context before starting server.
 
 2009-09-04  Werner Koch  <wk@g10code.com>
 
@@ -522,7 +1543,7 @@
 	(keyring_is_writable): Implement readonly feature.
 	(keyring_update_keyblock): Return GPG_ERR_EACCES for readonly
 	keyrings.
-	(keyring_insert_keyblock, keyring_delete_keyblock):
+	(keyring_insert_keyblock, keyring_delete_keyblock): Ditto.
 
 2009-04-01  Werner Koch  <wk@g10code.com>
 
@@ -1385,7 +2406,7 @@
 	* status.c (get_status_string): Ditto.
 	* mainproc.c (proc_plaintext): Emit it if multiple messages are
 	detected. Error out if more than one plaintext packet is
-        encountered.
+	encountered.
 	* mainproc.c (literals_seen): New.
 
 2007-02-26  Werner Koch  <wk@g10code.com>
@@ -11030,7 +12051,7 @@ Thu Feb 12 22:24:42 1998  Werner Koch  (wk@frodo)
 
 
  Copyright 1998,1999,2000,2001,2002,2003,2004,2005,
-	   2006,2007,2008,2009,2010 Free Software Foundation, Inc.
+	   2006,2007,2008,2009,2010,2011 Free Software Foundation, Inc.
 
  This file is free software; as a special exception the author gives
  unlimited permission to copy and/or distribute it, with or without
@@ -11039,3 +12060,7 @@ Thu Feb 12 22:24:42 1998  Werner Koch  (wk@frodo)
  This file is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+Local Variables:
+buffer-read-only: t
+End:

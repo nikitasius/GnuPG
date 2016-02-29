@@ -56,7 +56,7 @@ write_header( cipher_filter_context_t *cfx, IOBUF a )
     memset( &ed, 0, sizeof ed );
     ed.len = cfx->datalen;
     ed.extralen = blocksize+2;
-    ed.new_ctb = !ed.len && !RFC1991;
+    ed.new_ctb = !ed.len;
     if( cfx->dek->use_mdc ) {
 	ed.mdc_method = DIGEST_ALGO_SHA1;
 	gcry_md_open (&cfx->mdc_hash, DIGEST_ALGO_SHA1, 0);
@@ -157,7 +157,7 @@ cipher_filter( void *opaque, int control,
 	gcry_cipher_close (cfx->cipher_hd);
     }
     else if( control == IOBUFCTRL_DESC ) {
-	*(char**)buf = "cipher_filter";
+        mem2str (buf, "cipher_filter", *ret_len);
     }
     return rc;
 }

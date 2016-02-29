@@ -2,6 +2,8 @@
 @c This is part of the GnuPG manual.
 @c For copying conditions, see the file GnuPG.texi.
 
+@include defs.inc
+
 @node Helper Tools
 @chapter Helper Tools
 
@@ -13,12 +15,9 @@ GnuPG comes with a couple of smaller tools:
 * addgnupghome::          Create .gnupg home directories.
 * gpgconf::               Modify .gnupg home directories.
 * applygnupgdefaults::    Run gpgconf for all users.
-* gpgsm-gencert.sh::      Generate an X.509 certificate request.
 * gpg-preset-passphrase:: Put a passphrase into the cache.
 * gpg-connect-agent::     Communicate with a running agent.
-@ifset gpgtwoone
 * dirmngr-client::        How to use the Dirmngr client tool.
-@end ifset
 * gpgparsemail::          Parse a mail message into an annotated format
 * symcryptrun::           Call a simple symmetric encryption tool.
 * gpg-zip::               Encrypt or sign files into an archive.
@@ -305,7 +304,6 @@ Reload all or the given component. This is basically the same as sending
 a SIGHUP to the component.  Components which don't support reloading are
 ignored.
 
-@ifset gpgtwoone
 @item --launch [@var{component}]
 @opindex launch
 If the @var{component} is not already running, start it.
@@ -320,7 +318,6 @@ Kill the given component.  Components which support killing are
 gpg-agent and scdaemon.  Components which don't support reloading are
 ignored.  Note that as of now reload and kill have the same effect for
 scdaemon.
-@end ifset
 
 @end table
 
@@ -330,15 +327,20 @@ scdaemon.
 The following options may be used:
 
 @table @gnupgtabopt
-@c FIXME: Not yet supported.
-@c @item -o @var{file}
-@c @itemx --output @var{file}
-@c Use @var{file} as output file.
+
+@item -o @var{file}
+@itemx --output @var{file}
+Write output to @var{file}.  Default is to write to stdout.
 
 @item -v
 @itemx --verbose
 Outputs additional information while running.  Specifically, this
 extends numerical field values by human-readable descriptions.
+
+@item -q
+@itemx --quiet
+@opindex quiet
+Try to be as quiet as possible.
 
 @item -n
 @itemx --dry-run
@@ -998,42 +1000,6 @@ applygnupgdefaults
 
 
 @c
-@c    GPGSM-GENCERT.SH
-@c
-@node gpgsm-gencert.sh
-@section Generate an X.509 certificate request
-@manpage gpgsm-gencert.sh.1
-@ifset manverb
-.B gpgsm-gencert.sh
-\- Generate an X.509 certificate request
-@end ifset
-
-@mansect synopsis
-@ifset manverb
-.B  gpgsm-gencert.sh
-@end ifset
-
-@mansect description
-This is a simple tool to interactively generate a certificate request
-which will be printed to stdout.
-
-@manpause
-@noindent
-@command{gpgsm-gencert.sh} is invoked as:
-
-@samp{gpgsm-cencert.sh}
-
-@mansect see also
-@ifset isman
-@command{gpgsm}(1),
-@command{gpg-agent}(1),
-@command{scdaemon}(1)
-@end ifset
-@include see-also-note.texi
-
-
-
-@c
 @c   GPG-PRESET-PASSPHRASE
 @c
 @node gpg-preset-passphrase
@@ -1062,7 +1028,7 @@ machine startup.
 Passphrases set with this utility don't expire unless the
 @option{--forget} option is used to explicitly clear them from the
 cache --- or @command{gpg-agent} is either restarted or reloaded (by
-sending a SIGHUP to it).  Nite that the maximum cache time as set with
+sending a SIGHUP to it).  Note that the maximum cache time as set with
 @option{--max-cache-ttl} is still honored.  It is necessary to allow
 this passphrase presetting by starting @command{gpg-agent} with the
 @option{--allow-preset-passphrase}.
@@ -1199,9 +1165,12 @@ Try to be as quiet as possible.
 
 @item --agent-program @var{file}
 @opindex agent-program
-Specify the agent program to be started if none is running.
+Specify the agent program to be started if none is running.  The
+default value is determined by running @command{gpgconf} with the
+option @option{--list-dirs}.  Note that the pipe symbol (@code{|}) is
+used for a regression test suite hack and may thus not be used in the
+file name.
 
-@ifset gpgtwoone
 @item --dirmngr-program @var{file}
 @opindex dirmngr-program
 Specify the directory manager (keyserver client) program to be started
@@ -1212,7 +1181,6 @@ option @option{--dirmngr}.
 @opindex dirmngr
 Connect to a running directory manager (keyserver client) instead of
 to the gpg-agent.  If a dirmngr is not running, start it.
-@end ifset
 
 @item -S
 @itemx --raw-socket @var{name}
@@ -1237,7 +1205,13 @@ When using @option{-S} or @option{--exec}, @command{gpg-connect-agent}
 connects to the assuan server in extended mode to allow descriptor
 passing.  This option makes it use the old mode.
 
-@item --run @var{file}
+@item --no-autostart
+@opindex no-autostart
+Do not start the gpg-agent or the dirmngr if it has not yet been
+started.
+
+@item -r @var{file}
+@itemx --run @var{file}
 @opindex run
 Run the commands from @var{file} at startup and then continue with the
 regular input method.  Note, that commands given on the command line are
@@ -1352,7 +1326,7 @@ this operator.  A division by zero yields an empty string.
 @itemx |
 @itemx &
 Evaluate all arguments as long integers using @code{strtol} and apply
-the logical oeprators NOT, OR or AND.  The NOT operator works on the
+the logical operators NOT, OR or AND.  The NOT operator works on the
 last argument only.
 
 
@@ -1472,7 +1446,6 @@ Print a list of available control commands.
 @include see-also-note.texi
 @end ifset
 
-@ifset gpgtwoone
 @c
 @c   DIRMNGR-CLIENT
 @c
@@ -1527,7 +1500,7 @@ The return value of this command is
 
 @item 0
 The certificate under question is valid; i.e. there is a valid CRL
-available and it is not listed tehre or teh OCSP request returned that
+available and it is not listed there or the OCSP request returned that
 that certificate is valid.
 
 @item 1
@@ -1633,7 +1606,7 @@ Squid's @option{external_acl_type} option.
 @command{gpgsm}(1)
 @include see-also-note.texi
 @end ifset
-@end ifset
+
 
 @c
 @c   GPGPARSEMAIL

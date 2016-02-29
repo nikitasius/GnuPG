@@ -35,20 +35,20 @@
 
 #define INCLUDED_BY_MAIN_MODULE 1
 #include "gpg.h"
+#include "util.h"
 #include "packet.h"
 #include "iobuf.h"
-#include "util.h"
 #include "main.h"
 #include "options.h"
 #include "keydb.h"
 #include "trustdb.h"
-#include "cipher.h"
 #include "filter.h"
 #include "ttyio.h"
 #include "i18n.h"
 #include "sysutils.h"
 #include "status.h"
 #include "call-agent.h"
+#include "../common/init.h"
 
 
 enum cmd_and_opt_values {
@@ -57,20 +57,21 @@ enum cmd_and_opt_values {
   oVerbose	  = 'v',
   oBatch	  = 500,
   oKeyring,
-  oIgnoreTimeConflict,                      
+  oIgnoreTimeConflict,
   oStatusFD,
   oLoggerFD,
   oHomedir,
+  oWeakDigest,
   aTest
 };
 
 
 static ARGPARSE_OPTS opts[] = {
   ARGPARSE_group (300, N_("@\nOptions:\n ")),
-  
+
   ARGPARSE_s_n (oVerbose, "verbose", N_("verbose")),
   ARGPARSE_s_n (oQuiet,   "quiet",   N_("be somewhat more quiet")),
-  ARGPARSE_s_s (oKeyring, "keyring", 
+  ARGPARSE_s_s (oKeyring, "keyring",
                 N_("|FILE|take the keys from the keyring FILE")),
   ARGPARSE_s_n (oIgnoreTimeConflict, "ignore-time-conflict",
                 N_("make timestamp conflicts only a warning")),
@@ -78,6 +79,7 @@ static ARGPARSE_OPTS opts[] = {
                 N_("|FD|write status info to this FD")),
   ARGPARSE_s_i (oLoggerFD, "logger-fd", "@"),
   ARGPARSE_s_s (oHomedir, "homedir", "@"),
+  ARGPARSE_s_s (oWeakDigest, "weak-digest", "@"),
 
   ARGPARSE_end ()
 };
@@ -92,7 +94,7 @@ make_libversion (const char *libname, const char *(*getfnc)(const char*))
 {
   const char *s;
   char *result;
-  
+
   s = getfnc (NULL);
   result = xmalloc (strlen (libname) + 1 + strlen (s) + 1);
   strcpy (stpcpy (stpcpy (result, libname), " "), s);
@@ -107,7 +109,7 @@ my_strusage( int level )
 
   switch (level)
     {
-    case 11: p = "gpgv (GnuPG)";
+    case 11: p = "@GPG@v (GnuPG)";
       break;
     case 13: p = VERSION; break;
     case 17: p = PRINTABLE_OS_NAME; break;
@@ -140,15 +142,17 @@ main( int argc, char **argv )
   ARGPARSE_ARGS pargs;
   int rc=0;
   strlist_t sl;
-  strlist_t nrings=NULL;
+  strlist_t nrings = NULL;
   unsigned configlineno;
+  ctrl_t ctrl;
 
+  early_system_init ();
   set_strusage (my_strusage);
   log_set_prefix ("gpgv", 1);
 
   /* Make sure that our subsystems are ready.  */
   i18n_init();
-  init_common_subsystems ();
+  init_common_subsystems (&argc, &argv);
 
   if (!gcry_check_version (NEED_LIBGCRYPT_VERSION) )
     {
@@ -160,18 +164,18 @@ main( int argc, char **argv )
   gnupg_init_signals (0, NULL);
 
   opt.command_fd = -1; /* no command fd */
-  opt.pgp2_workarounds = 1;
-  opt.keyserver_options.options|=KEYSERVER_AUTO_KEY_RETRIEVE;
+  opt.keyserver_options.options |= KEYSERVER_AUTO_KEY_RETRIEVE;
   opt.trust_model = TM_ALWAYS;
   opt.batch = 1;
 
   opt.homedir = default_homedir ();
+  opt.weak_digests = NULL;
 
   tty_no_terminal(1);
   tty_batchmode(1);
-  disable_dotlock();
-
+  dotlock_disable ();
   gcry_control (GCRYCTL_INITIALIZATION_FINISHED, 0);
+  additional_weak_digest("MD5");
 
   pargs.argc = &argc;
   pargs.argv = &argv;
@@ -181,39 +185,48 @@ main( int argc, char **argv )
       switch (pargs.r_opt)
         {
         case oQuiet: opt.quiet = 1; break;
-        case oVerbose: 
-          opt.verbose++; 
+        case oVerbose:
+          opt.verbose++;
           opt.list_sigs=1;
           gcry_control (GCRYCTL_SET_VERBOSITY, (int)opt.verbose);
           break;
         case oKeyring: append_to_strlist( &nrings, pargs.r.ret_str); break;
         case oStatusFD: set_status_fd( pargs.r.ret_int ); break;
-        case oLoggerFD: 
+        case oLoggerFD:
           log_set_fd (translate_sys2libc_fd_int (pargs.r.ret_int, 1));
           break;
         case oHomedir: opt.homedir = pargs.r.ret_str; break;
+        case oWeakDigest:
+          additional_weak_digest(pargs.r.ret_str);
+          break;
         case oIgnoreTimeConflict: opt.ignore_time_conflict = 1; break;
         default : pargs.err = ARGPARSE_PRINT_ERROR; break;
 	}
     }
-  
+
   if (log_get_errorcount (0))
     g10_exit(2);
 
   if (opt.verbose > 1)
     set_packet_list_mode(1);
 
-  /* Note: We open all keyrings in read-only mode (flag value: 8).  */
+  /* Note: We open all keyrings in read-only mode.  */
   if (!nrings)  /* No keyring given: use default one. */
-    keydb_add_resource ("trustedkeys" EXTSEP_S "gpg", 8, 0);
+    keydb_add_resource ("trustedkeys" EXTSEP_S "kbx",
+                        (KEYDB_RESOURCE_FLAG_READONLY
+                         |KEYDB_RESOURCE_FLAG_GPGVDEF));
   for (sl = nrings; sl; sl = sl->next)
-    keydb_add_resource (sl->d, 8, 0 );
-   
+    keydb_add_resource (sl->d, KEYDB_RESOURCE_FLAG_READONLY);
+
   FREE_STRLIST (nrings);
-    
-  if ( (rc = verify_signatures( argc, argv ) ))
-    log_error("verify signatures failed: %s\n", g10_errstr(rc) );
-  
+
+  ctrl = xcalloc (1, sizeof *ctrl);
+
+  if ((rc = verify_signatures (ctrl, argc, argv)))
+    log_error("verify signatures failed: %s\n", gpg_strerror (rc) );
+
+  xfree (ctrl);
+
   /* cleanup */
   g10_exit (0);
   return 8; /*NOTREACHED*/
@@ -229,7 +242,7 @@ g10_exit( int rc )
 
 
 /* Stub:
- * We have to override the trustcheck from pkclist.c becuase 
+ * We have to override the trustcheck from pkclist.c because
  * this utility assumes that all keys in the keyring are trustworthy
  */
 int
@@ -253,7 +266,7 @@ read_trust_options(byte *trust_model, ulong *created, ulong *nextcheck,
   (void)min_cert_level;
 }
 
-/* Stub: 
+/* Stub:
  * We don't have the trustdb , so we have to provide some stub functions
  * instead
  */
@@ -266,7 +279,7 @@ cache_disabled_value(PKT_public_key *pk)
 }
 
 void
-check_trustdb_stale(void) 
+check_trustdb_stale(void)
 {
 }
 
@@ -279,10 +292,13 @@ get_validity_info (PKT_public_key *pk, PKT_user_id *uid)
 }
 
 unsigned int
-get_validity (PKT_public_key *pk, PKT_user_id *uid)
+get_validity (PKT_public_key *pk, PKT_user_id *uid, PKT_signature *sig,
+	      int may_ask)
 {
   (void)pk;
   (void)uid;
+  (void)sig;
+  (void)may_ask;
   return 0;
 }
 
@@ -325,7 +341,14 @@ struct keyserver_spec *
 keyserver_match (struct keyserver_spec *spec)
 {
   (void)spec;
-  return NULL; 
+  return NULL;
+}
+
+int
+keyserver_any_configured (ctrl_t ctrl)
+{
+  (void)ctrl;
+  return 0;
 }
 
 int
@@ -340,7 +363,7 @@ int
 keyserver_import_cert (const char *name)
 {
   (void)name;
-  return -1; 
+  return -1;
 }
 
 int
@@ -369,31 +392,33 @@ keyserver_import_ldap (const char *name)
 /* Stub:
  * No encryption here but mainproc links to these functions.
  */
-int
-get_session_key (PKT_pubkey_enc *k, DEK *dek)
+gpg_error_t
+get_session_key (ctrl_t ctrl, PKT_pubkey_enc *k, DEK *dek)
 {
+  (void)ctrl;
   (void)k;
   (void)dek;
-  return G10ERR_GENERAL;
+  return GPG_ERR_GENERAL;
 }
 
 /* Stub: */
-int
+gpg_error_t
 get_override_session_key (DEK *dek, const char *string)
 {
   (void)dek;
   (void)string;
-  return G10ERR_GENERAL;
+  return GPG_ERR_GENERAL;
 }
 
 /* Stub: */
 int
-decrypt_data (void *procctx, PKT_encrypted *ed, DEK *dek)
+decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek)
 {
+  (void)ctrl;
   (void)procctx;
   (void)ed;
   (void)dek;
-  return G10ERR_GENERAL;
+  return GPG_ERR_GENERAL;
 }
 
 
@@ -410,15 +435,15 @@ display_online_help (const char *keyword)
  * We don't use secret keys, but getkey.c links to this
  */
 int
-check_secret_key (PKT_secret_key *sk, int n)
+check_secret_key (PKT_public_key *pk, int n)
 {
-  (void)sk;
+  (void)pk;
   (void)n;
-  return G10ERR_GENERAL;
+  return GPG_ERR_GENERAL;
 }
 
 /* Stub:
- * No secret key, so no passphrase needed 
+ * No secret key, so no passphrase needed
  */
 DEK *
 passphrase_to_dek (u32 *keyid, int pubkey_algo,
@@ -446,7 +471,7 @@ passphrase_clear_cache (u32 *keyid, const char *cacheid, int algo)
 }
 
 struct keyserver_spec *
-parse_preferred_keyserver(PKT_signature *sig) 
+parse_preferred_keyserver(PKT_signature *sig)
 {
   (void)sig;
   return NULL;
@@ -463,14 +488,14 @@ parse_keyserver_uri (const char *uri, int require_scheme,
   return NULL;
 }
 
-void 
+void
 free_keyserver_spec (struct keyserver_spec *keyserver)
 {
   (void)keyserver;
 }
 
 /* Stubs to avoid linking to photoid.c */
-void 
+void
 show_photos (const struct user_attribute *attrs, int count, PKT_public_key *pk)
 {
   (void)attrs;
@@ -478,7 +503,7 @@ show_photos (const struct user_attribute *attrs, int count, PKT_public_key *pk)
   (void)pk;
 }
 
-int 
+int
 parse_image_header (const struct user_attribute *attr, byte *type, u32 *len)
 {
   (void)attr;
@@ -496,7 +521,7 @@ image_type_to_string (byte type, int string)
 }
 
 #ifdef ENABLE_CARD_SUPPORT
-int 
+int
 agent_scd_getattr (const char *name, struct agent_card_info_s *info)
 {
   (void)name;
@@ -506,26 +531,27 @@ agent_scd_getattr (const char *name, struct agent_card_info_s *info)
 #endif /* ENABLE_CARD_SUPPORT */
 
 /* We do not do any locking, so use these stubs here */
-void 
-disable_dotlock (void)
+void
+dotlock_disable (void)
 {
 }
 
-DOTLOCK 
-create_dotlock (const char *file_to_lock)
+dotlock_t
+dotlock_create (const char *file_to_lock, unsigned int flags)
 {
   (void)file_to_lock;
+  (void)flags;
   return NULL;
 }
 
-void 
-destroy_dotlock (DOTLOCK h)
+void
+dotlock_destroy (dotlock_t h)
 {
   (void)h;
 }
 
 int
-make_dotlock (DOTLOCK h, long timeout)
+dotlock_take (dotlock_t h, long timeout)
 {
   (void)h;
   (void)timeout;
@@ -533,14 +559,98 @@ make_dotlock (DOTLOCK h, long timeout)
 }
 
 int
-release_dotlock (DOTLOCK h)
+dotlock_release (dotlock_t h)
 {
   (void)h;
   return 0;
 }
 
-void 
-remove_lockfiles (void)
+void
+dotlock_remove_lockfiles (void)
 {
 }
 
+gpg_error_t
+agent_probe_secret_key (ctrl_t ctrl, PKT_public_key *pk)
+{
+  (void)ctrl;
+  (void)pk;
+  return gpg_error (GPG_ERR_NO_SECKEY);
+}
+
+gpg_error_t
+agent_probe_any_secret_key (ctrl_t ctrl, kbnode_t keyblock)
+{
+  (void)ctrl;
+  (void)keyblock;
+  return gpg_error (GPG_ERR_NO_SECKEY);
+}
+
+gpg_error_t
+agent_get_keyinfo (ctrl_t ctrl, const char *hexkeygrip, char **r_serialno)
+{
+  (void)ctrl;
+  (void)hexkeygrip;
+  *r_serialno = NULL;
+  return gpg_error (GPG_ERR_NO_SECKEY);
+}
+
+gpg_error_t
+gpg_dirmngr_get_pka (ctrl_t ctrl, const char *userid,
+                     unsigned char **r_fpr, size_t *r_fprlen,
+                     char **r_url)
+{
+  (void)ctrl;
+  (void)userid;
+  if (r_fpr)
+    *r_fpr = NULL;
+  if (r_fprlen)
+    *r_fprlen = 0;
+  if (r_url)
+    *r_url = NULL;
+  return gpg_error (GPG_ERR_NOT_FOUND);
+}
+
+gpg_error_t
+export_pubkey_buffer (ctrl_t ctrl, const char *keyspec, unsigned int options,
+                      export_stats_t stats,
+                      kbnode_t *r_keyblock, void **r_data, size_t *r_datalen)
+{
+  (void)ctrl;
+  (void)keyspec;
+  (void)options;
+  (void)stats;
+
+  *r_keyblock = NULL;
+  *r_data = NULL;
+  *r_datalen = 0;
+  return gpg_error (GPG_ERR_NOT_IMPLEMENTED);
+}
+
+gpg_error_t
+tofu_get_policy (PKT_public_key *pk, PKT_user_id *user_id,
+		 enum tofu_policy *policy)
+{
+  (void)pk;
+  (void)user_id;
+  (void)policy;
+  return gpg_error (GPG_ERR_GENERAL);
+}
+
+const char *
+tofu_policy_str (enum tofu_policy policy)
+{
+  (void)policy;
+
+  return "unknown";
+}
+
+void
+tofu_begin_batch_update (void)
+{
+}
+
+void
+tofu_end_batch_update (void)
+{
+}

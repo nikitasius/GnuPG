@@ -17,93 +17,121 @@
  * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
+/*
+* The keybox data format
 
-/* The keybox data formats
+   The KeyBox uses an augmented OpenPGP/X.509 key format.  This makes
+   random access to a keyblock/certificate easier and also gives the
+   opportunity to store additional information (e.g. the fingerprint)
+   along with the key.  All integers are stored in network byte order,
+   offsets are counted from the beginning of the Blob.
 
-The KeyBox uses an augmented OpenPGP/X.509 key format.  This makes
-random access to a keyblock/certificate easier and also gives the
-opportunity to store additional information (e.g. the fingerprint)
-along with the key.  All integers are stored in network byte order,
-offsets are counted from the beginning of the Blob.
+** Overview of blob types
 
-The first record of a plain KBX file has a special format:
+   | Byte 4 | Blob type    |
+   |--------+--------------|
+   |      0 | Empty blob   |
+   |      1 | First blob   |
+   |      2 | OpenPGP blob |
+   |      3 | X.509 blob   |
 
- u32  length of the first record
- byte Blob type (1)
- byte version number (1)
- byte reserved
- byte reserved
- u32  magic 'KBXf'
- u32  reserved
- u32  file_created_at
- u32  last_maintenance_run
- u32  reserved
- u32  reserved
+** The First blob
 
-The OpenPGP and X.509 blob are very similiar, things which are
-X.509 specific are noted like [X.509: xxx]
+   The first blob of a plain KBX file has a special format:
 
- u32  length of this blob (including these 4 bytes)
- byte Blob type (2) [X509: 3]
- byte version number of this blob type (1)
- u16  Blob flags
-	bit 0 = contains secret key material
-        bit 1 = ephemeral blob (e.g. used while quering external resources)
+   - u32  Length of this blob
+   - byte Blob type (1)
+   - byte Version number (1)
+   - u16  Header flags
+          bit 0 - RFU
+          bit 1 - Is being or has been used for OpenPGP blobs
+   - b4   Magic 'KBXf'
+   - u32  RFU
+   - u32  file_created_at
+   - u32  last_maintenance_run
+   - u32  RFU
+   - u32  RFU
 
- u32  offset to the OpenPGP keyblock or X509 DER encoded certificate
- u32  and its length
- u16  number of keys (at least 1!) [X509: always 1]
- u16  size of additional key information
- n times:
-   b20	The keys fingerprint
-	(fingerprints are always 20 bytes, MD5 left padded with zeroes)
-   u32	offset to the n-th key's keyID (a keyID is always 8 byte)
-        or 0 if not known which is the case only for X509.
-   u16	special key flags
-	 bit 0 = qualified signature (not yet implemented}
-   u16	reserved
- u16  size of serialnumber(may be zero) 
-   n  u16 (see above) bytes of serial number
- u16  number of user IDs
- u16  size of additional user ID information
- n times:
-   u32	offset to the n-th user ID
-   u32	length of this user ID.
-   u16	special user ID flags.
-	 bit 0 =
-   byte validity
-   byte reserved
-   [For X509, the first user ID is the Issuer, the second the Subject
-   and the others are subjectAltNames]
- u16  number of signatures
- u16  size of signature information (4)
-   u32	expiration time of signature with some special values:
-	0x00000000 = not checked
-	0x00000001 = missing key
-	0x00000002 = bad signature
-	0x10000000 = valid and expires at some date in 1978.
-	0xffffffff = valid and does not expire
- u8	assigned ownertrust [X509: not used]
- u8	all_validity 
-           OpenPGP:  see ../g10/trustdb/TRUST_* [not yet used]
-           X509: Bit 4 set := key has been revoked.  Note that this value
-                              matches TRUST_FLAG_REVOKED
- u16	reserved
- u32	recheck_after
- u32	Newest timestamp in the keyblock (useful for KS syncronsiation?)
- u32	Blob created at
- u32	size of reserved space (not including this field)
-      reserved space
+** The OpenPGP and X.509 blobs
 
-    Here we might want to put other data
+   The OpenPGP and X.509 blobs are very similar, things which are
+   X.509 specific are noted like [X.509: xxx]
 
-    Here comes the keyblock
+   - u32  Length of this blob (including these 4 bytes)
+   - byte Blob type
+           2 = OpenPGP
+           3 = X509
+   - byte Version number of this blob type
+           1 = The only defined value
+   - u16  Blob flags
+          bit 0 = contains secret key material (not used)
+          bit 1 = ephemeral blob (e.g. used while quering external resources)
+   - u32  Offset to the OpenPGP keyblock or the X.509 DER encoded
+          certificate
+   - u32  The length of the keyblock or certificate
+   - u16  [NKEYS] Number of keys (at least 1!) [X509: always 1]
+   - u16  Size of the key information structure (at least 28).
+   - NKEYS times:
+      - b20  The fingerprint of the key.
+             Fingerprints are always 20 bytes, MD5 left padded with zeroes.
+      - u32  Offset to the n-th key's keyID (a keyID is always 8 byte)
+             or 0 if not known which is the case only for X.509.
+      - u16  Key flags
+             bit 0 = qualified signature (not yet implemented}
+      - u16  RFU
+      - bN   Optional filler up to the specified length of this
+             structure.
+   - u16  Size of the serial number (may be zero)
+      -  bN  The serial number. N as giiven above.
+   - u16  Number of user IDs
+   - u16  [NUIDS] Size of user ID information structure
+   - NUIDS times:
 
-    maybe we put a signature here later.
+      For X509, the first user ID is the Issuer, the second the
+      Subject and the others are subjectAltNames.  For OpenPGP we only
+      store the information from UserID packets here.
 
- b16	MD5 checksum  (useful for KS syncronisation), we might also want to use
-    a mac here.
- b4    reserved
+      - u32  Blob offset to the n-th user ID
+      - u32  Length of this user ID.
+      - u16  User ID flags.
+             (not yet used)
+      - byte Validity
+      - byte RFU
+
+   - u16  [NSIGS] Number of signatures
+   - u16  Size of signature information (4)
+   - NSIGS times:
+      - u32  Expiration time of signature with some special values:
+             - 0x00000000 = not checked
+             - 0x00000001 = missing key
+             - 0x00000002 = bad signature
+             - 0x10000000 = valid and expires at some date in 1978.
+             - 0xffffffff = valid and does not expire
+   - u8	Assigned ownertrust [X509: not used]
+   - u8	All_Validity
+        OpenPGP: See ../g10/trustdb/TRUST_* [not yet used]
+        X509: Bit 4 set := key has been revoked.
+                           Note that this value matches TRUST_FLAG_REVOKED
+   - u16  RFU
+   - u32  Recheck_after
+   - u32  Latest timestamp in the keyblock (useful for KS syncronsiation?)
+   - u32  Blob created at
+   - u32  [NRES] Size of reserved space (not including this field)
+   - bN   Reserved space of size NRES for future use.
+   - bN   Arbitrary space for example used to store data which is not
+          part of the keyblock or certificate.  For example the v3 key
+          IDs go here.
+   - bN   Space for the keyblock or certificate.
+   - bN   RFU.  This is the remaining space after keyblock and before
+          the checksum.  Is is not covered by the checksum.
+   - b20  SHA-1 checksum (useful for KS syncronisation?)
+          Note, that KBX versions before GnuPG 2.1 used an MD5
+          checksum.  However it was only created but never checked.
+          Thus we do not expect problems if we switch to SHA-1.  If
+          the checksum fails and the first 4 bytes are zero, we can
+          try again with MD5.  SHA-1 has the advantage that it is
+          faster on CPUs with dedicated SHA-1 support.
+
 
 */
 
@@ -119,13 +147,12 @@ X.509 specific are noted like [X.509: xxx]
 #include "keybox-defs.h"
 #include <gcrypt.h>
 
-#ifdef KEYBOX_WITH_OPENPGP
-/* include stuff to parse the packets */
-#endif
 #ifdef KEYBOX_WITH_X509
 #include <ksba.h>
 #endif
 
+
+#include "../common/gettime.h"
 
 
 /* special values of the signature status */
@@ -154,6 +181,7 @@ struct keyboxblob_key {
   u16    flags;
 };
 struct keyboxblob_uid {
+  u32    off;
   ulong  off_addr;
   char   *name;     /* used only with x509 */
   u32    len;
@@ -178,7 +206,7 @@ struct keyboxblob {
   byte *blob;
   size_t bloblen;
   off_t fileoffset;
-  
+
   /* stuff used only by keybox_create_blob */
   unsigned char *serialbuf;
   const unsigned char *serial;
@@ -191,10 +219,10 @@ struct keyboxblob {
   u32  *sigs;
   struct fixup_list *fixups;
   int fixup_out_of_core;
-  
+
   struct keyid_list *temp_kids;
   struct membuf bufbuf; /* temporary store for the blob */
-  struct membuf *buf; 
+  struct membuf *buf;
 };
 
 
@@ -225,7 +253,7 @@ put_membuf (struct membuf *mb, const void *buf, size_t len)
   if (mb->len + len >= mb->size)
     {
       char *p;
-      
+
       mb->size += len + 1024;
       p = xtryrealloc (mb->buf, mb->size);
       if (!p)
@@ -235,7 +263,10 @@ put_membuf (struct membuf *mb, const void *buf, size_t len)
         }
       mb->buf = p;
     }
-  memcpy (mb->buf + mb->len, buf, len);
+  if (buf)
+    memcpy (mb->buf + mb->len, buf, len);
+  else
+    memset (mb->buf + mb->len, 0, len);
   mb->len += len;
 }
 
@@ -285,20 +316,21 @@ put32 (struct membuf *mb, u32 a )
   put_membuf (mb, tmp, 4);
 }
 
+
 
 /* Store a value in the fixup list */
 static void
 add_fixup (KEYBOXBLOB blob, u32 off, u32 val)
 {
   struct fixup_list *fl;
-  
+
   if (blob->fixup_out_of_core)
     return;
 
   fl = xtrycalloc(1, sizeof *fl);
   if (!fl)
     blob->fixup_out_of_core = 1;
-  else 
+  else
     {
       fl->off = off;
       fl->val = val;
@@ -307,177 +339,141 @@ add_fixup (KEYBOXBLOB blob, u32 off, u32 val)
     }
 }
 
-
-/*
- Some wrappers
-*/
-
-static u32
-make_timestamp (void)
-{
-  return time(NULL);
-}
-
 
 
-#ifdef KEYBOX_WITH_OPENPGP
 /*
-  OpenPGP specific stuff 
+  OpenPGP specific stuff
 */
 
 
-/*
-  We must store the keyid at some place because we can't calculate the
-  offset yet. This is only used for v3 keyIDs.  Function returns an
-  index value for later fixup or -1 for out of core. The value must be
-  a non-zero value */
+/* We must store the keyid at some place because we can't calculate
+   the offset yet. This is only used for v3 keyIDs.  Function returns
+   an index value for later fixup or -1 for out of core.  The value
+   must be a non-zero value. */
 static int
-pgp_temp_store_kid (KEYBOXBLOB blob, PKT_public_key *pk)
+pgp_temp_store_kid (KEYBOXBLOB blob, struct _keybox_openpgp_key_info *kinfo)
 {
   struct keyid_list *k, *r;
-  
-  k = xtrymalloc (sizeof *k); 
+
+  k = xtrymalloc (sizeof *k);
   if (!k)
     return -1;
-  k->kid[0] = pk->keyid[0] >> 24 ;
-  k->kid[1] = pk->keyid[0] >> 16 ;
-  k->kid[2] = pk->keyid[0] >>  8 ;
-  k->kid[3] = pk->keyid[0]	   ;
-  k->kid[4] = pk->keyid[0] >> 24 ;
-  k->kid[5] = pk->keyid[0] >> 16 ;
-  k->kid[6] = pk->keyid[0] >>  8 ;
-  k->kid[7] = pk->keyid[0]	   ;
+  memcpy (k->kid, kinfo->keyid, 8);
   k->seqno = 0;
   k->next = blob->temp_kids;
   blob->temp_kids = k;
-  for (r=k; r; r = r->next) 
+  for (r=k; r; r = r->next)
     k->seqno++;
-  
+
   return k->seqno;
 }
 
-static int
-pgp_create_key_part (KEYBOXBLOB blob, KBNODE keyblock)
+
+/* Helper for pgp_create_key_part.  */
+static gpg_error_t
+pgp_create_key_part_single (KEYBOXBLOB blob, int n,
+                            struct _keybox_openpgp_key_info *kinfo)
 {
-  KBNODE node;
   size_t fprlen;
-  int n;
+  int off;
 
-  for (n=0, node = keyblock; node; node = node->next)
+  fprlen = kinfo->fprlen;
+  if (fprlen > 20)
+    fprlen = 20;
+  memcpy (blob->keys[n].fpr, kinfo->fpr, fprlen);
+  if (fprlen != 20) /* v3 fpr - shift right and fill with zeroes. */
     {
-      if ( node->pkt->pkttype == PKT_PUBLIC_KEY
-           || node->pkt->pkttype == PKT_PUBLIC_SUBKEY ) 
-        {
-          PKT_public_key *pk = node->pkt->pkt.public_key;
-          char tmp[20];
-
-          fingerprint_from_pk (pk, tmp , &fprlen);
-          memcpy (blob->keys[n].fpr, tmp, 20);
-          if ( fprlen != 20 ) /*v3 fpr - shift right and fill with zeroes*/
-            {
-              assert (fprlen == 16);
-              memmove (blob->keys[n].fpr+4, blob->keys[n].fpr, 16);
-              memset (blob->keys[n].fpr, 0, 4);
-              blob->keys[n].off_kid = pgp_temp_store_kid (blob, pk);
-	    }
-          else
-            {
-              blob->keys[n].off_kid = 0; /* will be fixed up later */
-	    }
-          blob->keys[n].flags = 0;
-          n++;
-	}
-      else if ( node->pkt->pkttype == PKT_SECRET_KEY
-		  || node->pkt->pkttype == PKT_SECRET_SUBKEY ) 
-        {
-          never_reached (); /* actually not yet implemented */
-	}
+      memmove (blob->keys[n].fpr + 20 - fprlen, blob->keys[n].fpr, fprlen);
+      memset (blob->keys[n].fpr, 0, 20 - fprlen);
+      off = pgp_temp_store_kid (blob, kinfo);
+      if (off == -1)
+        return gpg_error_from_syserror ();
+      blob->keys[n].off_kid = off;
     }
+  else
+    blob->keys[n].off_kid = 0; /* Will be fixed up later */
+  blob->keys[n].flags = 0;
+  return 0;
+}
+
+
+static gpg_error_t
+pgp_create_key_part (KEYBOXBLOB blob, keybox_openpgp_info_t info)
+{
+  gpg_error_t err;
+  int n = 0;
+  struct _keybox_openpgp_key_info *kinfo;
+
+  err = pgp_create_key_part_single (blob, n++, &info->primary);
+  if (err)
+    return err;
+  if (info->nsubkeys)
+    for (kinfo = &info->subkeys; kinfo; kinfo = kinfo->next)
+      if ((err=pgp_create_key_part_single (blob, n++, kinfo)))
+        return err;
+
   assert (n == blob->nkeys);
   return 0;
 }
 
-static int
-pgp_create_uid_part (KEYBOXBLOB blob, KBNODE keyblock)
-{
-  KBNODE node;
-  int n;
 
-  for (n=0, node = keyblock; node; node = node->next)
+static void
+pgp_create_uid_part (KEYBOXBLOB blob, keybox_openpgp_info_t info)
+{
+  int n = 0;
+  struct _keybox_openpgp_uid_info *u;
+
+  if (info->nuids)
     {
-      if (node->pkt->pkttype == PKT_USER_ID)
+      for (u = &info->uids; u; u = u->next)
         {
-          PKT_user_id *u = node->pkt->pkt.user_id;
-          
+          blob->uids[n].off = u->off;
           blob->uids[n].len = u->len;
           blob->uids[n].flags = 0;
           blob->uids[n].validity = 0;
           n++;
-	}
+        }
     }
+
   assert (n == blob->nuids);
-  return 0;
 }
 
-static int
-pgp_create_sig_part (KEYBOXBLOB blob, KBNODE keyblock)
+
+static void
+pgp_create_sig_part (KEYBOXBLOB blob, u32 *sigstatus)
 {
-  KBNODE node;
   int n;
-  
-  for (n=0, node = keyblock; node; node = node->next)
+
+  for (n=0; n < blob->nsigs; n++)
     {
-      if (node->pkt->pkttype == PKT_SIGNATURE)
-        {
-          PKT_signature *sig = node->pkt->pkt.signature;
-          
-          blob->sigs[n] = 0;	/* FIXME: check the signature here */
-          n++;
-	}
+      blob->sigs[n] = sigstatus? sigstatus[n+1] : 0;
     }
-  assert( n == blob->nsigs );
-  return 0;
 }
 
+
 static int
-pgp_create_blob_keyblock (KEYBOXBLOB blob, KBNODE keyblock)
+pgp_create_blob_keyblock (KEYBOXBLOB blob,
+                          const unsigned char *image, size_t imagelen)
 {
   struct membuf *a = blob->buf;
-  KBNODE node;
-  int rc;
   int n;
   u32 kbstart = a->len;
 
-  add_fixup (blob, kbstart);
+  add_fixup (blob, 8, kbstart);
 
-  for (n = 0, node = keyblock; node; node = node->next)
-    {
-      rc = build_packet ( a, node->pkt );
-      if ( rc ) {
-        gpg_log_error ("build_packet(%d) for keyboxblob failed: %s\n",
-                      node->pkt->pkttype, gpg_errstr(rc) );
-        return GPGERR_WRITE_FILE;
-      }
-      if ( node->pkt->pkttype == PKT_USER_ID ) 
-        {
-          PKT_user_id *u = node->pkt->pkt.user_id;
-          /* build_packet has set the offset of the name into u ;
-           * now we can do the fixup */
-          add_fixup (blob, blob->uids[n].off_addr, u->stored_at);
-          n++;
-	}
-    }
-  assert (n == blob->nuids);
+  for (n = 0; n < blob->nuids; n++)
+    add_fixup (blob, blob->uids[n].off_addr, kbstart + blob->uids[n].off);
 
-  add_fixup (blob, a->len - kbstart);
+  put_membuf (a, image, imagelen);
+
+  add_fixup (blob, 12, a->len - kbstart);
   return 0;
 }
- 
-#endif /*KEYBOX_WITH_OPENPGP*/
+
 
 
 #ifdef KEYBOX_WITH_X509
-/* 
+/*
    X.509 specific stuff
  */
 
@@ -501,7 +497,7 @@ x509_create_blob_cert (KEYBOXBLOB blob, ksba_cert_t cert)
   add_fixup (blob, 12, a->len - kbstart);
   return 0;
 }
- 
+
 #endif /*KEYBOX_WITH_X509*/
 
 /* Write a stored keyID out to the buffer */
@@ -509,8 +505,8 @@ static void
 write_stored_kid (KEYBOXBLOB blob, int seqno)
 {
   struct keyid_list *r;
-  
-  for ( r = blob->temp_kids; r; r = r->next ) 
+
+  for ( r = blob->temp_kids; r; r = r->next )
     {
       if (r->seqno == seqno )
         {
@@ -526,8 +522,8 @@ static void
 release_kid_list (struct keyid_list *kl)
 {
   struct keyid_list *r, *r2;
-  
-  for ( r = kl; r; r = r2 ) 
+
+  for ( r = kl; r; r = r2 )
     {
       r2 = r->next;
       xfree (r);
@@ -543,7 +539,7 @@ create_blob_header (KEYBOXBLOB blob, int blobtype, int as_ephemeral)
   int i;
 
   put32 ( a, 0 ); /* blob length, needs fixup */
-  put8 ( a, blobtype);  
+  put8 ( a, blobtype);
   put8 ( a, 1 );  /* blob type version */
   put16 ( a, as_ephemeral? 2:0 ); /* blob flags */
 
@@ -595,14 +591,14 @@ create_blob_header (KEYBOXBLOB blob, int blobtype, int as_ephemeral)
 
   /* space where we write keyIDs and and other stuff so that the
      pointers can actually point to somewhere */
-  if (blobtype == BLOBTYPE_PGP)
+  if (blobtype == KEYBOX_BLOBTYPE_PGP)
     {
       /* We need to store the keyids for all pgp v3 keys because those key
          IDs are not part of the fingerprint.  While we are doing that, we
          fixup all the keyID offsets */
       for (i=0; i < blob->nkeys; i++ )
         {
-          if (blob->keys[i].off_kid) 
+          if (blob->keys[i].off_kid)
             { /* this is a v3 one */
               add_fixup (blob, blob->keys[i].off_kid_addr, a->len);
               write_stored_kid (blob, blob->keys[i].off_kid);
@@ -610,18 +606,18 @@ create_blob_header (KEYBOXBLOB blob, int blobtype, int as_ephemeral)
           else
             { /* the better v4 key IDs - just store an offset 8 bytes back */
               add_fixup (blob, blob->keys[i].off_kid_addr,
-                         blob->keys[i].off_kid_addr - 8); 
+                         blob->keys[i].off_kid_addr - 8);
             }
         }
     }
-  
-  if (blobtype == BLOBTYPE_X509)
+
+  if (blobtype == KEYBOX_BLOBTYPE_X509)
     {
       /* We don't want to point to ASN.1 encoded UserIDs (DNs) but to
          the utf-8 string represenation of them */
       for (i=0; i < blob->nuids; i++ )
         {
-          if (blob->uids[i].name) 
+          if (blob->uids[i].name)
             { /* this is a v3 one */
               add_fixup (blob, blob->uids[i].off_addr, a->len);
               put_membuf (blob->buf, blob->uids[i].name, blob->uids[i].len);
@@ -648,13 +644,11 @@ create_blob_finish (KEYBOXBLOB blob)
   struct membuf *a = blob->buf;
   unsigned char *p;
   unsigned char *pp;
-  int i;
   size_t n;
 
-  /* write a placeholder for the checksum */
-  for (i = 0; i < 16; i++ )
-    put32 (a, 0);  /* Hmmm: why put32() ?? */
-  
+  /* Write a placeholder for the checksum */
+  put_membuf (a, NULL, 20);
+
   /* get the memory area */
   n = 0; /* (Just to avoid compiler warning.) */
   p = get_membuf (a, &n);
@@ -681,8 +675,8 @@ create_blob_finish (KEYBOXBLOB blob)
       }
   }
 
-  /* calculate and store the MD5 checksum */
-  gcry_md_hash_buffer (GCRY_MD_MD5, p + n - 16, p, n - 16);
+  /* Compute and store the SHA-1 checksum. */
+  gcry_md_hash_buffer (GCRY_MD_SHA1, p + n - 20, p, n - 20);
 
   pp = xtrymalloc (n);
   if ( !pp )
@@ -690,92 +684,95 @@ create_blob_finish (KEYBOXBLOB blob)
   memcpy (pp , p, n);
   blob->blob = pp;
   blob->bloblen = n;
-  
+
   return 0;
 }
 
-
-#ifdef KEYBOX_WITH_OPENPGP
 
-int
-_keybox_create_pgp_blob (KEYBOXBLOB *r_blob, KBNODE keyblock, int as_ephemeral)
+
+gpg_error_t
+_keybox_create_openpgp_blob (KEYBOXBLOB *r_blob,
+                             keybox_openpgp_info_t info,
+                             const unsigned char *image,
+                             size_t imagelen,
+                             u32 *sigstatus,
+                             int as_ephemeral)
 {
-  int rc = 0;
-  KBNODE node;
+  gpg_error_t err;
   KEYBOXBLOB blob;
 
   *r_blob = NULL;
+
+  /* If we have a signature status vector, check that the number of
+     elements matches the actual number of signatures.  */
+  if (sigstatus && sigstatus[0] != info->nsigs)
+    return gpg_error (GPG_ERR_INTERNAL);
+
   blob = xtrycalloc (1, sizeof *blob);
   if (!blob)
     return gpg_error_from_syserror ();
 
-  /* fixme: Do some sanity checks on the keyblock */
-
-  /* count userids and keys so that we can allocate the arrays */
-  for (node = keyblock; node; node = node->next) 
-    {
-      switch (node->pkt->pkttype)
-        {
-        case PKT_PUBLIC_KEY:
-        case PKT_SECRET_KEY:
-        case PKT_PUBLIC_SUBKEY:
-        case PKT_SECRET_SUBKEY: blob->nkeys++; break;
-        case PKT_USER_ID:  blob->nuids++; break;
-        case PKT_SIGNATURE: blob->nsigs++; break;
-        default: break;
-	}
-    }
-
+  blob->nkeys = 1 + info->nsubkeys;
   blob->keys = xtrycalloc (blob->nkeys, sizeof *blob->keys );
-  blob->uids = xtrycalloc (blob->nuids, sizeof *blob->uids );
-  blob->sigs = xtrycalloc (blob->nsigs, sizeof *blob->sigs );
-  if (!blob->keys || !blob->uids || !blob->sigs)
+  if (!blob->keys)
     {
-      rc = gpg_error (GPG_ERR_ENOMEM);
+      err = gpg_error_from_syserror ();
       goto leave;
     }
 
-  rc = pgp_create_key_part ( blob, keyblock );
-  if (rc)
+  blob->nuids = info->nuids;
+  if (blob->nuids)
+    {
+      blob->uids = xtrycalloc (blob->nuids, sizeof *blob->uids );
+      if (!blob->uids)
+        {
+          err = gpg_error_from_syserror ();
+          goto leave;
+        }
+    }
+
+  blob->nsigs = info->nsigs;
+  if (blob->nsigs)
+    {
+      blob->sigs = xtrycalloc (blob->nsigs, sizeof *blob->sigs );
+      if (!blob->sigs)
+        {
+          err = gpg_error_from_syserror ();
+          goto leave;
+        }
+    }
+
+  err = pgp_create_key_part (blob, info);
+  if (err)
     goto leave;
-  rc = pgp_create_uid_part ( blob, keyblock );
-  if (rc)
-    goto leave;
-  rc = pgp_create_sig_part ( blob, keyblock );
-  if (rc)
-    goto leave;
-  
+  pgp_create_uid_part (blob, info);
+  pgp_create_sig_part (blob, sigstatus);
+
   init_membuf (&blob->bufbuf, 1024);
   blob->buf = &blob->bufbuf;
-  rc = create_blob_header (blob, BLOBTYPE_OPENPGP, as_ephemeral);
-  if (rc)
+  err = create_blob_header (blob, KEYBOX_BLOBTYPE_PGP, as_ephemeral);
+  if (err)
     goto leave;
-  rc = pgp_create_blob_keyblock (blob, keyblock);
-  if (rc)
+  err = pgp_create_blob_keyblock (blob, image, imagelen);
+  if (err)
     goto leave;
-  rc = create_blob_trailer (blob);
-  if (rc)
+  err = create_blob_trailer (blob);
+  if (err)
     goto leave;
-  rc = create_blob_finish ( blob );
-  if (rc)
+  err = create_blob_finish (blob);
+  if (err)
     goto leave;
 
-  
  leave:
   release_kid_list (blob->temp_kids);
   blob->temp_kids = NULL;
-  if (rc)
-    {
-      keybox_release_blob (blob);
-      *r_blob = NULL;
-    }
+  if (err)
+    _keybox_release_blob (blob);
   else
-    {
-      *r_blob = blob;
-    }
-  return rc;
+    *r_blob = blob;
+  return err;
 }
-#endif /*KEYBOX_WITH_OPENPGP*/
+
 
 #ifdef KEYBOX_WITH_X509
 
@@ -877,7 +874,7 @@ _keybox_create_x509_blob (KEYBOXBLOB *r_blob, ksba_cert_t cert,
       rc = gpg_error_from_syserror ();
       goto leave;
     }
-  
+
   p = ksba_cert_get_issuer (cert, 0);
   if (!p)
     {
@@ -890,7 +887,7 @@ _keybox_create_x509_blob (KEYBOXBLOB *r_blob, ksba_cert_t cert,
       if (blob->nuids >= max_names)
         {
           char **tmp;
-          
+
           max_names += 100;
           tmp = xtryrealloc (names, max_names * sizeof *names);
           if (!tmp)
@@ -904,9 +901,9 @@ _keybox_create_x509_blob (KEYBOXBLOB *r_blob, ksba_cert_t cert,
       if (!i && (p=x509_email_kludge (p)))
         names[blob->nuids++] = p; /* due to !i we don't need to check bounds*/
     }
-  
+
   /* space for signature information */
-  blob->nsigs = 1; 
+  blob->nsigs = 1;
 
   blob->keys = xtrycalloc (blob->nkeys, sizeof *blob->keys );
   blob->uids = xtrycalloc (blob->nuids, sizeof *blob->uids );
@@ -940,7 +937,7 @@ _keybox_create_x509_blob (KEYBOXBLOB *r_blob, ksba_cert_t cert,
   init_membuf (&blob->bufbuf, 1024);
   blob->buf = &blob->bufbuf;
   /* write out what we already have */
-  rc = create_blob_header (blob, BLOBTYPE_X509, as_ephemeral);
+  rc = create_blob_header (blob, KEYBOX_BLOBTYPE_X509, as_ephemeral);
   if (rc)
     goto leave;
   rc = x509_create_blob_cert (blob, cert);
@@ -953,16 +950,16 @@ _keybox_create_x509_blob (KEYBOXBLOB *r_blob, ksba_cert_t cert,
   if (rc)
     goto leave;
 
-  
+
  leave:
   release_kid_list (blob->temp_kids);
   blob->temp_kids = NULL;
-  if (blob && names)
+  if (names)
     {
       for (i=0; i < blob->nuids; i++)
-        xfree (names[i]); 
+        xfree (names[i]);
+      xfree (names);
     }
-  xfree (names);
   if (rc)
     {
       _keybox_release_blob (blob);
@@ -983,7 +980,7 @@ _keybox_new_blob (KEYBOXBLOB *r_blob,
                   unsigned char *image, size_t imagelen, off_t off)
 {
   KEYBOXBLOB blob;
-  
+
   *r_blob = NULL;
   blob = xtrycalloc (1, sizeof *blob);
   if (!blob)
@@ -1032,9 +1029,9 @@ _keybox_get_blob_fileoffset (KEYBOXBLOB blob)
 
 
 void
-_keybox_update_header_blob (KEYBOXBLOB blob)
+_keybox_update_header_blob (KEYBOXBLOB blob, int for_openpgp)
 {
-  if (blob->bloblen >= 32 && blob->blob[4] == BLOBTYPE_HEADER)
+  if (blob->bloblen >= 32 && blob->blob[4] == KEYBOX_BLOBTYPE_HEADER)
     {
       u32 val = make_timestamp ();
 
@@ -1043,5 +1040,8 @@ _keybox_update_header_blob (KEYBOXBLOB blob)
       blob->blob[20+1] = (val >> 16);
       blob->blob[20+2] = (val >>  8);
       blob->blob[20+3] = (val      );
+
+      if (for_openpgp)
+        blob->blob[7] |= 0x02;  /* OpenPGP data may be available.  */
     }
 }

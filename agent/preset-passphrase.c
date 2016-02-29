@@ -44,12 +44,11 @@
 # include <windows.h>  /* To initialize the sockets.  fixme */
 #endif
 
-#define JNLIB_NEED_LOG_LOGV
 #include "agent.h"
-#include "minip12.h"
 #include "simple-pwquery.h"
 #include "i18n.h"
 #include "sysutils.h"
+#include "../common/init.h"
 
 
 enum cmd_and_opt_values
@@ -90,7 +89,7 @@ my_strusage (int level)
   const char *p;
   switch (level)
     {
-    case 11: p = "gpg-preset-passphrase (GnuPG)";
+    case 11: p = "gpg-preset-passphrase (@GNUPG@)";
       break;
     case 13: p = VERSION; break;
     case 17: p = PRINTABLE_OS_NAME; break;
@@ -212,12 +211,13 @@ main (int argc, char **argv)
   int cmd = 0;
   const char *keygrip = NULL;
 
+  early_system_init ();
   set_strusage (my_strusage);
   log_set_prefix ("gpg-preset-passphrase", 1);
 
   /* Make sure that our subsystems are ready.  */
   i18n_init ();
-  init_common_subsystems ();
+  init_common_subsystems (&argc, &argv);
 
   opt_homedir = default_homedir ();
 
@@ -248,7 +248,7 @@ main (int argc, char **argv)
 
   /* Tell simple-pwquery about the the standard socket name.  */
   {
-    char *tmp = make_filename (opt_homedir, "S.gpg-agent", NULL);
+    char *tmp = make_filename (opt_homedir, GPG_AGENT_SOCK_NAME, NULL);
     simple_pw_set_socket (tmp);
     xfree (tmp);
   }

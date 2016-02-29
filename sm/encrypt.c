@@ -1,5 +1,6 @@
 /* encrypt.c - Encrypt a message
- * Copyright (C) 2001, 2003, 2004, 2007, 2008 Free Software Foundation, Inc.
+ * Copyright (C) 2001, 2003, 2004, 2007, 2008,
+ *               2010 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -22,7 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <unistd.h> 
+#include <unistd.h>
 #include <time.h>
 #include <assert.h>
 
@@ -45,8 +46,11 @@ struct dek_s {
 };
 typedef struct dek_s *DEK;
 
-struct encrypt_cb_parm_s {
-  FILE *fp;
+
+/* Callback parameters for the encryption.  */
+struct encrypt_cb_parm_s
+{
+  estream_t fp;
   DEK dek;
   int eof_seen;
   int ready;
@@ -70,10 +74,10 @@ init_dek (DEK dek)
   mode = gcry_cipher_mode_from_oid (dek->algoid);
   if (!dek->algo || !mode)
     {
-      log_error ("unsupported algorithm `%s'\n", dek->algoid);
+      log_error ("unsupported algorithm '%s'\n", dek->algoid);
       return gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM);
     }
-  
+
   /* Extra check for algorithms we consider to be too weak for
      encryption, although we support them for decryption.  Note that
      there is another check below discriminating on the key length. */
@@ -81,8 +85,8 @@ init_dek (DEK dek)
     {
     case GCRY_CIPHER_DES:
     case GCRY_CIPHER_RFC2268_40:
-      log_error ("cipher algorithm `%s' not allowed: too weak\n",
-                 gcry_cipher_algo_name (dek->algo));
+      log_error ("cipher algorithm '%s' not allowed: too weak\n",
+                 gnupg_cipher_algo_name (dek->algo));
       return gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM);
     default:
       break;
@@ -98,18 +102,18 @@ init_dek (DEK dek)
 
   /* Make sure we don't use weak keys. */
   if (dek->keylen < 100/8)
-    { 
-      log_error ("key length of `%s' too small\n", dek->algoid);
+    {
+      log_error ("key length of '%s' too small\n", dek->algoid);
       return gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM);
     }
-  
+
   rc = gcry_cipher_open (&dek->chd, dek->algo, mode, GCRY_CIPHER_SECURE);
   if (rc)
     {
       log_error ("failed to create cipher context: %s\n", gpg_strerror (rc));
       return rc;
     }
-  
+
   for (i=0; i < 8; i++)
     {
       gcry_randomize (dek->key, dek->keylen, GCRY_STRONG_RANDOM );
@@ -135,7 +139,7 @@ init_dek (DEK dek)
       dek->chd = NULL;
       return rc;
     }
-  
+
   return 0;
 }
 
@@ -156,7 +160,7 @@ encode_session_key (DEK dek, gcry_sexp_t * r_data)
   rc = gcry_sexp_sscan (&data, NULL, p, strlen (p));
   xfree (p);
   *r_data = data;
-  return rc;    
+  return rc;
 }
 
 
@@ -206,10 +210,13 @@ encrypt_dek (const DEK dek, ksba_cert_t cert, unsigned char **encval)
   rc = gcry_pk_encrypt (&s_ciph, s_data, s_pkey);
   gcry_sexp_release (s_data);
   gcry_sexp_release (s_pkey);
-  
+
   /* Reformat it. */
-  rc = make_canon_sexp (s_ciph, encval, NULL);
-  gcry_sexp_release (s_ciph);
+  if (!rc)
+    {
+      rc = make_canon_sexp (s_ciph, encval, NULL);
+      gcry_sexp_release (s_ciph);
+    }
   return rc;
 }
 
@@ -233,28 +240,28 @@ encrypt_cb (void *cb_value, char *buffer, size_t count, size_t *nread)
 
   if (count < blklen)
     BUG ();
-     
+
   if (!parm->eof_seen)
     { /* fillup the buffer */
       p = parm->buffer;
       for (n=parm->buflen; n < parm->bufsize; n++)
         {
-          int c = getc (parm->fp);
+          int c = es_getc (parm->fp);
           if (c == EOF)
             {
-              if (ferror (parm->fp))
+              if (es_ferror (parm->fp))
                 {
                   parm->readerror = errno;
                   return -1;
                 }
               parm->eof_seen = 1;
-              break; 
+              break;
             }
           p[n] = c;
         }
       parm->buflen = n;
     }
-  
+
   n = parm->buflen < count? parm->buflen : count;
   n = n/blklen * blklen;
   if (n)
@@ -283,13 +290,13 @@ encrypt_cb (void *cb_value, char *buffer, size_t count, size_t *nread)
 
 
 
-/* Perform an encrypt operation.  
+/* Perform an encrypt operation.
 
    Encrypt the data received on DATA-FD and write it to OUT_FP.  The
    recipients are take from the certificate given in recplist; if this
    is NULL it will be encrypted for a default recipient */
 int
-gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, FILE *out_fp)
+gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
 {
   int rc = 0;
   Base64Context b64writer = NULL;
@@ -302,7 +309,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, FILE *out_fp)
   struct encrypt_cb_parm_s encparm;
   DEK dek = NULL;
   int recpno;
-  FILE *data_fp = NULL;
+  estream_t data_fp = NULL;
   certlist_t cl;
   int count;
 
@@ -337,10 +344,11 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, FILE *out_fp)
       goto leave;
     }
 
-  data_fp = fdopen ( dup (data_fd), "rb");
+  /* Fixme:  We should use the unlocked version of the es functions.  */
+  data_fp = es_fdopen_nc (data_fd, "rb");
   if (!data_fp)
     {
-      rc = gpg_error (gpg_err_code_from_errno (errno));
+      rc = gpg_error_from_syserror ();
       log_error ("fdopen() failed: %s\n", strerror (errno));
       goto leave;
     }
@@ -356,7 +364,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, FILE *out_fp)
   encparm.fp = data_fp;
 
   ctrl->pem_name = "ENCRYPTED MESSAGE";
-  rc = gpgsm_create_writer (&b64writer, ctrl, out_fp, NULL, &writer);
+  rc = gpgsm_create_writer (&b64writer, ctrl, out_fp, &writer);
   if (rc)
     {
       log_error ("can't create writer: %s\n", gpg_strerror (rc));
@@ -395,7 +403,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, FILE *out_fp)
     }
 
   /* Create a session key */
-  dek = xtrycalloc_secure (1, sizeof *dek); 
+  dek = xtrycalloc_secure (1, sizeof *dek);
   if (!dek)
     rc = out_of_core ();
   else
@@ -428,7 +436,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, FILE *out_fp)
       rc = out_of_core ();
       goto leave;
     }
-  
+
   audit_log_s (ctrl->audit, AUDIT_SESSION_KEY, dek->algoid);
 
   /* Gather certificates of recipients, encrypt the session key for
@@ -436,7 +444,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, FILE *out_fp)
   for (recpno = 0, cl = recplist; cl; recpno++, cl = cl->next)
     {
       unsigned char *encval;
-      
+
       rc = encrypt_dek (dek, cl->cert, &encval);
       if (rc)
         {
@@ -445,7 +453,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, FILE *out_fp)
                      recpno, gpg_strerror (rc));
           goto leave;
         }
-      
+
       err = ksba_cms_add_recipient (cms, cl->cert);
       if (err)
         {
@@ -456,7 +464,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, FILE *out_fp)
           xfree (encval);
           goto leave;
         }
-      
+
       err = ksba_cms_set_enc_val (cms, recpno, encval);
       xfree (encval);
       audit_log_cert (ctrl->audit, AUDIT_ENCRYPTED_TO, cl->cert, err);
@@ -471,7 +479,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, FILE *out_fp)
 
   /* Main control loop for encryption. */
   recpno = 0;
-  do 
+  do
     {
       err = ksba_cms_build (cms, &stopreason);
       if (err)
@@ -481,7 +489,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, FILE *out_fp)
           goto leave;
         }
     }
-  while (stopreason != KSBA_SR_READY);   
+  while (stopreason != KSBA_SR_READY);
 
   if (encparm.readerror)
     {
@@ -492,7 +500,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, FILE *out_fp)
 
 
   rc = gpgsm_finish_writer (b64writer);
-  if (rc) 
+  if (rc)
     {
       log_error ("write failed: %s\n", gpg_strerror (rc));
       goto leave;
@@ -504,10 +512,9 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, FILE *out_fp)
   ksba_cms_release (cms);
   gpgsm_destroy_writer (b64writer);
   ksba_reader_release (reader);
-  keydb_release (kh); 
+  keydb_release (kh);
   xfree (dek);
-  if (data_fp)
-    fclose (data_fp);
+  es_fclose (data_fp);
   xfree (encparm.buffer);
   return rc;
 }

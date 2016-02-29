@@ -17,12 +17,13 @@
  * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 #ifndef GNUPG_G10_CALL_AGENT_H
-#define GNUPG_G10_CALL_AGENT_H 
+#define GNUPG_G10_CALL_AGENT_H
 
 
-struct agent_card_info_s 
+struct agent_card_info_s
 {
   int error;         /* private. */
+  char *reader;      /* Reader information.  */
   char *apptype;     /* Malloced application type string.  */
   char *serialno;    /* malloced hex string. */
   char *disp_name;   /* malloced. */
@@ -55,12 +56,16 @@ struct agent_card_info_s
   int chvretry[3];   /* Allowed retries for the CHV; 0 = blocked. */
   struct {           /* Array with key attributes.  */
     int algo;              /* Algorithm identifier.  */
-    unsigned int nbits;    /* Supported keysize.  */
-  } key_attr[3];      
+    union {
+      unsigned int nbits;  /* Supported keysize.  */
+      const char *curve;   /* Name of curve.  */
+    };
+  } key_attr[3];
   struct {
     unsigned int ki:1;     /* Key import available.  */
     unsigned int aac:1;    /* Algorithm attributes are changeable.  */
   } extcap;
+  unsigned int status_indicator;
 };
 
 struct agent_card_genkey_s {
@@ -76,10 +81,17 @@ struct agent_card_genkey_s {
 void agent_release_card_info (struct agent_card_info_s *info);
 
 /* Return card info. */
-int agent_learn (struct agent_card_info_s *info);
+int agent_scd_learn (struct agent_card_info_s *info, int force);
+
+/* Send an APDU to the card.  */
+gpg_error_t agent_scd_apdu (const char *hexapdu, unsigned int *r_sw);
 
 /* Update INFO with the attribute NAME. */
 int agent_scd_getattr (const char *name, struct agent_card_info_s *info);
+
+/* Send the KEYTOCARD command. */
+int agent_keytocard (const char *hexgrip, int keyno, int force,
+                     const char *serialno, const char *timestamp);
 
 /* Send a SETATTR command to the SCdaemon. */
 int agent_scd_setattr (const char *name,
@@ -97,16 +109,6 @@ int agent_scd_writekey (int keyno, const char *serialno,
 /* Send a GENKEY command to the SCdaemon. */
 int agent_scd_genkey (struct agent_card_genkey_s *info, int keyno, int force,
                       const char *serialno, u32 createtime);
-
-/* Send a PKSIGN command to the SCdaemon. */
-int agent_scd_pksign (const char *keyid, int hashalgo,
-                      const unsigned char *indata, size_t indatalen,
-                      unsigned char **r_buf, size_t *r_buflen);
-
-/* Send a PKDECRYPT command to the SCdaemon. */
-int agent_scd_pkdecrypt (const char *serialno,
-                         const unsigned char *indata, size_t indatalen,
-                         unsigned char **r_buf, size_t *r_buflen);
 
 /* Send a READKEY command to the SCdaemon. */
 int agent_scd_readcert (const char *certidstr,
@@ -140,6 +142,67 @@ gpg_error_t gpg_agent_get_confirmation (const char *desc);
 /* Return the S2K iteration count as computed by gpg-agent.  */
 gpg_error_t agent_get_s2k_count (unsigned long *r_count);
 
+/* Check whether a secret key for public key PK is available.  Returns
+   0 if the secret key is available. */
+gpg_error_t agent_probe_secret_key (ctrl_t ctrl, PKT_public_key *pk);
+
+/* Ask the agent whether a secret key is availabale for any of the
+   keys (primary or sub) in KEYBLOCK.  Returns 0 if available.  */
+gpg_error_t agent_probe_any_secret_key (ctrl_t ctrl, kbnode_t keyblock);
+
+
+/* Return infos about the secret key with HEXKEYGRIP.  */
+gpg_error_t agent_get_keyinfo (ctrl_t ctrl, const char *hexkeygrip,
+                               char **r_serialno);
+
+/* Generate a new key.  */
+gpg_error_t agent_genkey (ctrl_t ctrl, char **cache_nonce_addr,
+                          const char *keyparms, int no_protection,
+                          const char *passphrase,
+                          gcry_sexp_t *r_pubkey);
+
+/* Read a public key.  */
+gpg_error_t agent_readkey (ctrl_t ctrl, int fromcard, const char *hexkeygrip,
+                           unsigned char **r_pubkey);
+
+/* Create a signature.  */
+gpg_error_t agent_pksign (ctrl_t ctrl, const char *cache_nonce,
+                          const char *hexkeygrip, const char *desc,
+                          u32 *keyid, u32 *mainkeyid, int pubkey_algo,
+                          unsigned char *digest, size_t digestlen,
+                          int digestalgo,
+                          gcry_sexp_t *r_sigval);
+
+/* Decrypt a ciphertext.  */
+gpg_error_t agent_pkdecrypt (ctrl_t ctrl, const char *keygrip, const char *desc,
+                             u32 *keyid, u32 *mainkeyid, int pubkey_algo,
+                             gcry_sexp_t s_ciphertext,
+                             unsigned char **r_buf, size_t *r_buflen,
+                             int *r_padding);
+
+/* Retrieve a key encryption key.  */
+gpg_error_t agent_keywrap_key (ctrl_t ctrl, int forexport,
+                               void **r_kek, size_t *r_keklen);
+
+/* Send a key to the agent.  */
+gpg_error_t agent_import_key (ctrl_t ctrl, const char *desc,
+                              char **cache_nonce_addr, const void *key,
+                              size_t keylen, int unattended, int force);
+
+/* Receive a key from the agent.  */
+gpg_error_t agent_export_key (ctrl_t ctrl, const char *keygrip,
+                              const char *desc, char **cache_nonce_addr,
+                              unsigned char **r_result, size_t *r_resultlen);
+
+/* Delete a key from the agent.  */
+gpg_error_t agent_delete_key (ctrl_t ctrl, const char *hexkeygrip,
+                              const char *desc);
+
+/* Change the passphrase of a key.  */
+gpg_error_t agent_passwd (ctrl_t ctrl, const char *hexkeygrip, const char *desc,
+                          char **cache_nonce_addr, char **passwd_nonce_addr);
+/* Get the version reported by gpg-agent.  */
+gpg_error_t agent_get_version (ctrl_t ctrl, char **r_version);
+
 
 #endif /*GNUPG_G10_CALL_AGENT_H*/
-

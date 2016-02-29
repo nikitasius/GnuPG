@@ -3,12 +3,22 @@
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -31,8 +41,6 @@ enum
     STATUS_ERRSIG,
 
     STATUS_BADARMOR,
-
-    STATUS_RSA_OR_IDEA,
 
     STATUS_TRUST_UNDEFINED,
     STATUS_TRUST_NEVER,
@@ -57,11 +65,15 @@ enum
     STATUS_GOODMDC,
     STATUS_BADMDC,
     STATUS_ERRMDC,
+
     STATUS_IMPORTED,
     STATUS_IMPORT_OK,
     STATUS_IMPORT_PROBLEM,
     STATUS_IMPORT_RES,
     STATUS_IMPORT_CHECK,
+
+    STATUS_EXPORTED,
+    STATUS_EXPORT_RES,
 
     STATUS_FILE_START,
     STATUS_FILE_DONE,
@@ -86,8 +98,6 @@ enum
     STATUS_NOTATION_NAME,
     STATUS_NOTATION_DATA,
     STATUS_POLICY_URL,
-    STATUS_BEGIN_STREAM,
-    STATUS_END_STREAM,
     STATUS_KEY_CREATED,
     STATUS_USERID_HINT,
     STATUS_UNEXPECTED,
@@ -99,7 +109,6 @@ enum
     STATUS_ALREADY_SIGNED,
     STATUS_KEYEXPIRED,
     STATUS_KEYREVOKED,
-    STATUS_SIGEXPIRED,
     STATUS_EXPSIG,
     STATUS_EXPKEYSIG,
 
@@ -125,10 +134,19 @@ enum
     STATUS_PKA_TRUST_GOOD,
 
     STATUS_TRUNCATED,
+    STATUS_MOUNTPOINT,
+
+    STATUS_PINENTRY_LAUNCHED,
+
+    STATUS_PLAINTEXT_FOLLOWS,   /* Used by g13-syshelp  */
+
     STATUS_ERROR,
+    STATUS_WARNING,
+    STATUS_SUCCESS,
     STATUS_FAILURE,
-    STATUS_SUCCESS
-};
+
+    STATUS_INQUIRE_MAXLEN
+  };
 
 
 const char *get_status_string (int code);

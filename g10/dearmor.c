@@ -53,18 +53,18 @@ dearmor_file( const char *fname )
       {
         iobuf_close (inp);
         inp = NULL;
-        errno = EPERM;
+        gpg_err_set_errno (EPERM);
       }
     if (!inp) {
         rc = gpg_error_from_syserror ();
-	log_error(_("can't open `%s': %s\n"), fname? fname: "[stdin]",
+	log_error(_("can't open '%s': %s\n"), fname? fname: "[stdin]",
 					strerror(errno) );
 	goto leave;
     }
 
     push_armor_filter ( afx, inp );
 
-    if( (rc = open_outfile( fname, 0, &out )) )
+    if( (rc = open_outfile (-1, fname, 0, 0, &out)) )
 	goto leave;
 
     while( (c = iobuf_get(inp)) != -1 )
@@ -100,17 +100,17 @@ enarmor_file( const char *fname )
       {
         iobuf_close (inp);
         inp = NULL;
-        errno = EPERM;
+        gpg_err_set_errno (EPERM);
       }
     if (!inp) {
         rc = gpg_error_from_syserror ();
-	log_error(_("can't open `%s': %s\n"), fname? fname: "[stdin]",
+	log_error(_("can't open '%s': %s\n"), fname? fname: "[stdin]",
                   strerror(errno) );
 	goto leave;
     }
 
 
-    if( (rc = open_outfile( fname, 1, &out )) )
+    if( (rc = open_outfile (-1, fname, 1, 0, &out )) )
 	goto leave;
 
     afx->what = 4;
@@ -130,5 +130,3 @@ enarmor_file( const char *fname )
     release_armor_context (afx);
     return rc;
 }
-
-

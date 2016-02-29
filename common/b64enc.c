@@ -1,14 +1,25 @@
 /* b64enc.c - Simple Base64 encoder.
- * Copyright (C) 2001, 2003, 2004, 2008 Free Software Foundation, Inc.
+ * Copyright (C) 2001, 2003, 2004, 2008, 2010,
+ *               2011 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -33,25 +44,25 @@
 #define B64ENC_USE_PGPCRC   32
 
 /* The base-64 character list */
-static unsigned char bintoasc[64] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" 
-                                    "abcdefghijklmnopqrstuvwxyz" 
-                                    "0123456789+/"; 
+static unsigned char bintoasc[64] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                    "abcdefghijklmnopqrstuvwxyz"
+                                    "0123456789+/";
 
 /* Stuff required to create the OpenPGP CRC.  This crc_table has been
    created using this code:
 
    #include <stdio.h>
    #include <stdint.h>
-   
+
    #define CRCPOLY 0x864CFB
-   
+
    int
    main (void)
    {
      int i, j;
      uint32_t t;
      uint32_t crc_table[256];
-   
+
      crc_table[0] = 0;
      for (i=j=0; j < 128; j++ )
        {
@@ -69,7 +80,7 @@ static unsigned char bintoasc[64] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
              crc_table[i++] = t ^ CRCPOLY;
    	}
        }
-   
+
      puts ("static const u32 crc_table[256] = {");
      for (i=j=0; i < 256; i++)
        {
@@ -136,6 +147,31 @@ static const u32 crc_table[256] = {
 };
 
 
+static gpg_error_t
+enc_start (struct b64state *state, FILE *fp, estream_t stream,
+           const char *title)
+{
+  memset (state, 0, sizeof *state);
+  state->fp = fp;
+  state->stream = stream;
+  state->lasterr = 0;
+  if (title && !*title)
+    state->flags |= B64ENC_NO_LINEFEEDS;
+  else if (title)
+    {
+      if (!strncmp (title, "PGP ", 4))
+        {
+          state->flags |= B64ENC_USE_PGPCRC;
+          state->crc = CRCINIT;
+        }
+      state->title = xtrystrdup (title);
+      if (!state->title)
+        state->lasterr = gpg_error_from_syserror ();
+    }
+  return state->lasterr;
+}
+
+
 /* Prepare for base-64 writing to the stream FP.  If TITLE is not NULL
    and not an empty string, this string will be used as the title for
    the armor lines, with TITLE being an empty string, we don't write
@@ -148,22 +184,24 @@ static const u32 crc_table[256] = {
 gpg_error_t
 b64enc_start (struct b64state *state, FILE *fp, const char *title)
 {
-  memset (state, 0, sizeof *state);
-  state->fp = fp;
-  if (title && !*title)
-    state->flags |= B64ENC_NO_LINEFEEDS;
-  else if (title)
-    {
-      if (!strncmp (title, "PGP ", 4))
-        {
-          state->flags |= B64ENC_USE_PGPCRC;
-          state->crc = CRCINIT;
-        }
-      state->title = xtrystrdup (title);
-      if (!state->title)
-        return gpg_error_from_syserror ();
-    }
-  return 0;
+  return enc_start (state, fp, NULL, title);
+}
+
+/* Same as b64enc_start but takes an estream.  */
+gpg_error_t
+b64enc_start_es (struct b64state *state, estream_t fp, const char *title)
+{
+  return enc_start (state, NULL, fp, title);
+}
+
+
+static int
+my_fputs (const char *string, struct b64state *state)
+{
+  if (state->stream)
+    return es_fputs (string, state->stream);
+  else
+    return fputs (string, state->fp);
 }
 
 
@@ -176,13 +214,15 @@ b64enc_write (struct b64state *state, const void *buffer, size_t nbytes)
   unsigned char radbuf[4];
   int idx, quad_count;
   const unsigned char *p;
-  FILE *fp = state->fp;
 
+  if (state->lasterr)
+    return state->lasterr;
 
   if (!nbytes)
     {
-      if (buffer && fflush (fp))
-        goto write_error;
+      if (buffer)
+        if (state->stream? es_fflush (state->stream) : fflush (state->fp))
+          goto write_error;
       return 0;
     }
 
@@ -190,15 +230,15 @@ b64enc_write (struct b64state *state, const void *buffer, size_t nbytes)
     {
       if (state->title)
         {
-          if ( fputs ("-----BEGIN ", fp) == EOF
-               || fputs (state->title, fp) == EOF
-               || fputs ("-----\n", fp) == EOF)
+          if ( my_fputs ("-----BEGIN ", state) == EOF
+               || my_fputs (state->title, state) == EOF
+               || my_fputs ("-----\n", state) == EOF)
             goto write_error;
-          if ( (state->flags & B64ENC_USE_PGPCRC) 
-               && fputs ("\n", fp) == EOF)
+          if ( (state->flags & B64ENC_USE_PGPCRC)
+               && my_fputs ("\n", state) == EOF)
             goto write_error;
         }
-        
+
       state->flags |= B64ENC_DID_HEADER;
     }
 
@@ -213,7 +253,7 @@ b64enc_write (struct b64state *state, const void *buffer, size_t nbytes)
       u32 crc = state->crc;
 
       for (p=buffer, n=nbytes; n; p++, n-- )
-        crc = (crc << 8) ^ crc_table[((crc >> 16)&0xff) ^ *p];
+        crc = ((u32)crc << 8) ^ crc_table[((crc >> 16)&0xff) ^ *p];
       state->crc = (crc & 0x00ffffff);
     }
 
@@ -228,16 +268,27 @@ b64enc_write (struct b64state *state, const void *buffer, size_t nbytes)
           tmp[1] = bintoasc[(((*radbuf<<4)&060)|((radbuf[1] >> 4)&017))&077];
           tmp[2] = bintoasc[(((radbuf[1]<<2)&074)|((radbuf[2]>>6)&03))&077];
           tmp[3] = bintoasc[radbuf[2]&077];
-          for (idx=0; idx < 4; idx++)
-            putc (tmp[idx], fp);
-          idx = 0;
-          if (ferror (fp))
-            goto write_error;
-          if (++quad_count >= (64/4)) 
+          if (state->stream)
+            {
+              for (idx=0; idx < 4; idx++)
+                es_putc (tmp[idx], state->stream);
+              idx = 0;
+              if (es_ferror (state->stream))
+                goto write_error;
+            }
+          else
+            {
+              for (idx=0; idx < 4; idx++)
+                putc (tmp[idx], state->fp);
+              idx = 0;
+              if (ferror (state->fp))
+                goto write_error;
+            }
+          if (++quad_count >= (64/4))
             {
               quad_count = 0;
               if (!(state->flags & B64ENC_NO_LINEFEEDS)
-                  && fputs ("\n", fp) == EOF)
+                  && my_fputs ("\n", state) == EOF)
                 goto write_error;
             }
         }
@@ -248,8 +299,15 @@ b64enc_write (struct b64state *state, const void *buffer, size_t nbytes)
   return 0;
 
  write_error:
-  return gpg_error_from_syserror ();
+  state->lasterr = gpg_error_from_syserror ();
+  if (state->title)
+    {
+      xfree (state->title);
+      state->title = NULL;
+    }
+  return state->lasterr;
 }
+
 
 gpg_error_t
 b64enc_finish (struct b64state *state)
@@ -257,14 +315,15 @@ b64enc_finish (struct b64state *state)
   gpg_error_t err = 0;
   unsigned char radbuf[4];
   int idx, quad_count;
-  FILE *fp;
   char tmp[4];
+
+  if (state->lasterr)
+    return state->lasterr;
 
   if (!(state->flags & B64ENC_DID_HEADER))
     goto cleanup;
 
   /* Flush the base64 encoding */
-  fp = state->fp;
   idx = state->idx;
   quad_count = state->quad_count;
   assert (idx < 4);
@@ -279,23 +338,32 @@ b64enc_finish (struct b64state *state)
           tmp[2] = '=';
           tmp[3] = '=';
         }
-      else 
-        { 
+      else
+        {
           tmp[1] = bintoasc[(((*radbuf<<4)&060)|((radbuf[1]>>4)&017))&077];
           tmp[2] = bintoasc[((radbuf[1] << 2) & 074) & 077];
           tmp[3] = '=';
         }
-      for (idx=0; idx < 4; idx++)
-        putc (tmp[idx], fp);
-      idx = 0;
-      if (ferror (fp))
-        goto write_error;
-      
-      if (++quad_count >= (64/4)) 
+      if (state->stream)
+        {
+          for (idx=0; idx < 4; idx++)
+            es_putc (tmp[idx], state->stream);
+          if (es_ferror (state->stream))
+            goto write_error;
+        }
+      else
+        {
+          for (idx=0; idx < 4; idx++)
+            putc (tmp[idx], state->fp);
+          if (ferror (state->fp))
+            goto write_error;
+        }
+
+      if (++quad_count >= (64/4))
         {
           quad_count = 0;
           if (!(state->flags & B64ENC_NO_LINEFEEDS)
-              && fputs ("\n", fp) == EOF)
+              && my_fputs ("\n", state) == EOF)
             goto write_error;
         }
     }
@@ -303,13 +371,13 @@ b64enc_finish (struct b64state *state)
   /* Finish the last line and write the trailer. */
   if (quad_count
       && !(state->flags & B64ENC_NO_LINEFEEDS)
-      && fputs ("\n", fp) == EOF)
+      && my_fputs ("\n", state) == EOF)
     goto write_error;
-  
+
   if ( (state->flags & B64ENC_USE_PGPCRC) )
     {
       /* Write the CRC.  */
-      putc ('=', fp);
+      my_fputs ("=", state);
       radbuf[0] = state->crc >>16;
       radbuf[1] = state->crc >> 8;
       radbuf[2] = state->crc;
@@ -317,20 +385,30 @@ b64enc_finish (struct b64state *state)
       tmp[1] = bintoasc[(((*radbuf<<4)&060)|((radbuf[1]>>4)&017))&077];
       tmp[2] = bintoasc[(((radbuf[1]<<2)&074)|((radbuf[2]>>6)&03))&077];
       tmp[3] = bintoasc[radbuf[2]&077];
-      for (idx=0; idx < 4; idx++)
-        putc (tmp[idx], fp);
-      if (ferror (fp))
-        goto write_error;
+      if (state->stream)
+        {
+          for (idx=0; idx < 4; idx++)
+            es_putc (tmp[idx], state->stream);
+          if (es_ferror (state->stream))
+            goto write_error;
+        }
+      else
+        {
+          for (idx=0; idx < 4; idx++)
+            putc (tmp[idx], state->fp);
+          if (ferror (state->fp))
+            goto write_error;
+        }
       if (!(state->flags & B64ENC_NO_LINEFEEDS)
-          && fputs ("\n", fp) == EOF)
+          && my_fputs ("\n", state) == EOF)
         goto write_error;
     }
 
   if (state->title)
     {
-      if ( fputs ("-----END ", fp) == EOF
-           || fputs (state->title, fp) == EOF
-           || fputs ("-----\n", fp) == EOF)
+      if ( my_fputs ("-----END ", state) == EOF
+           || my_fputs (state->title, state) == EOF
+           || my_fputs ("-----\n", state) == EOF)
         goto write_error;
     }
 
@@ -346,6 +424,7 @@ b64enc_finish (struct b64state *state)
       state->title = NULL;
     }
   state->fp = NULL;
+  state->stream = NULL;
+  state->lasterr = err;
   return err;
 }
-

@@ -1,5 +1,6 @@
-/* call-dirmngr.c - communication with the dromngr
- * Copyright (C) 2002, 2003, 2005, 2007, 2008 Free Software Foundation, Inc.
+/* call-dirmngr.c - Communication with the dirmngr
+ * Copyright (C) 2002, 2003, 2005, 2007, 2008,
+ *               2010  Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -33,6 +34,7 @@
 
 #include "i18n.h"
 #include "keydb.h"
+#include "asshelp.h"
 
 
 struct membuf {
@@ -51,8 +53,6 @@ static assuan_context_t dirmngr2_ctx = NULL;
 
 static int dirmngr_ctx_locked;
 static int dirmngr2_ctx_locked;
-
-static int force_pipe_server = 0;
 
 struct inq_certificate_parm_s {
   ctrl_t ctrl;
@@ -149,6 +149,41 @@ get_membuf (struct membuf *mb, size_t *len)
 }
 
 
+/* Print a warning if the server's version number is less than our
+   version number.  Returns an error code on a connection problem.  */
+static gpg_error_t
+warn_version_mismatch (ctrl_t ctrl, assuan_context_t ctx,
+                       const char *servername, int mode)
+{
+  gpg_error_t err;
+  char *serverversion;
+  const char *myversion = strusage (13);
+
+  err = get_assuan_server_version (ctx, mode, &serverversion);
+  if (err)
+    log_error (_("error getting version from '%s': %s\n"),
+               servername, gpg_strerror (err));
+  else if (!compare_version_strings (serverversion, myversion))
+    {
+      char *warn;
+
+      warn = xtryasprintf (_("server '%s' is older than us (%s < %s)"),
+                           servername, serverversion, myversion);
+      if (!warn)
+        err = gpg_error_from_syserror ();
+      else
+        {
+          log_info (_("WARNING: %s\n"), warn);
+          gpgsm_status2 (ctrl, STATUS_WARNING, "server_version_mismatch 0",
+                         warn, NULL);
+          xfree (warn);
+        }
+    }
+  xfree (serverversion);
+  return err;
+}
+
+
 /* This function prepares the dirmngr for a new session.  The
    audit-events option is used so that other dirmngr clients won't get
    disturbed by such events.  */
@@ -156,6 +191,9 @@ static void
 prepare_dirmngr (ctrl_t ctrl, assuan_context_t ctx, gpg_error_t err)
 {
   struct keyserver_spec *server;
+
+  if (!err)
+    err = warn_version_mismatch (ctrl, ctx, DIRMNGR_NAME, 0);
 
   if (!err)
     {
@@ -181,9 +219,11 @@ prepare_dirmngr (ctrl_t ctrl, assuan_context_t ctx, gpg_error_t err)
 		server->host, server->port, user, pass, base);
       line[DIM (line) - 1] = 0;
 
-      err = assuan_transact (ctx, line, NULL, NULL, NULL, NULL, NULL, NULL);
-      if (gpg_err_code (err) == GPG_ERR_ASS_UNKNOWN_CMD)
-	err = 0;  /* Allow the use of old dirmngr versions.  */
+      assuan_transact (ctx, line, NULL, NULL, NULL, NULL, NULL, NULL);
+      /* The code below is not required becuase we don't return an error.  */
+      /* err = [above call]  */
+      /* if (gpg_err_code (err) == GPG_ERR_ASS_UNKNOWN_CMD) */
+      /*   err = 0;  /\* Allow the use of old dirmngr versions.  *\/ */
 
       server = server->next;
     }
@@ -191,17 +231,14 @@ prepare_dirmngr (ctrl_t ctrl, assuan_context_t ctx, gpg_error_t err)
 
 
 
-/* Try to connect to the agent via socket or fork it off and work by
-   pipes.  Handle the server's initial greeting */
-static int
+/* Return a new assuan context for a Dirmngr connection.  */
+static gpg_error_t
 start_dirmngr_ext (ctrl_t ctrl, assuan_context_t *ctx_r)
 {
-  int rc;
-  char *infostr, *p;
-  assuan_context_t ctx = NULL;
-  int try_default = 0;
+  gpg_error_t err;
+  assuan_context_t ctx;
 
-  if (opt.disable_dirmngr)
+  if (opt.disable_dirmngr || ctrl->offline)
     return gpg_error (GPG_ERR_NO_DIRMNGR);
 
   if (*ctx_r)
@@ -210,129 +247,25 @@ start_dirmngr_ext (ctrl_t ctrl, assuan_context_t *ctx_r)
   /* Note: if you change this to multiple connections, you also need
      to take care of the implicit option sending caching. */
 
-#ifdef HAVE_W32_SYSTEM
-  infostr = NULL;
-  opt.prefer_system_dirmngr = 1;
-#else
-  infostr = force_pipe_server? NULL : getenv ("DIRMNGR_INFO");
-#endif /*HAVE_W32_SYSTEM*/
-  if (infostr && !*infostr)
-    infostr = NULL;
-  else if (infostr)
-    infostr = xstrdup (infostr);
-
-  if (opt.prefer_system_dirmngr && !force_pipe_server && !infostr)
+  err = start_new_dirmngr (&ctx, GPG_ERR_SOURCE_DEFAULT,
+                           opt.homedir, opt.dirmngr_program,
+                           opt.autostart, opt.verbose, DBG_IPC,
+                           gpgsm_status2, ctrl);
+  if (!opt.autostart && gpg_err_code (err) == GPG_ERR_NO_DIRMNGR)
     {
-      infostr = xstrdup (dirmngr_socket_name ());
-      try_default = 1;
-    }
+      static int shown;
 
-  rc = assuan_new (&ctx);
-  if (rc)
-    {
-      log_error ("can't allocate assuan context: %s\n", gpg_strerror (rc));
-      return rc;
-    }
-
-  if (!infostr)
-    {
-      const char *pgmname;
-      const char *argv[3];
-      int no_close_list[3];
-      int i;
-
-      if (!opt.dirmngr_program || !*opt.dirmngr_program)
-        opt.dirmngr_program = gnupg_module_name (GNUPG_MODULE_NAME_DIRMNGR);
-      if ( !(pgmname = strrchr (opt.dirmngr_program, '/')))
-        pgmname = opt.dirmngr_program;
-      else
-        pgmname++;
-
-      if (opt.verbose)
-        log_info (_("no running dirmngr - starting `%s'\n"),
-                  opt.dirmngr_program);
-
-      if (fflush (NULL))
+      if (!shown)
         {
-          gpg_error_t tmperr = gpg_error (gpg_err_code_from_errno (errno));
-          log_error ("error flushing pending output: %s\n", strerror (errno));
-          return tmperr;
+          shown = 1;
+          log_info (_("no dirmngr running in this session\n"));
         }
-
-      argv[0] = pgmname;
-      argv[1] = "--server";
-      argv[2] = NULL;
-
-      i=0;
-      if (log_get_fd () != -1)
-        no_close_list[i++] = assuan_fd_from_posix_fd (log_get_fd ());
-      no_close_list[i++] = assuan_fd_from_posix_fd (fileno (stderr));
-      no_close_list[i] = -1;
-
-      /* connect to the agent and perform initial handshaking */
-      rc = assuan_pipe_connect (ctx, opt.dirmngr_program, argv,
-                                no_close_list, NULL, NULL, 0);
     }
-  else
-    {
-      int prot;
-      int pid;
+  prepare_dirmngr (ctrl, ctx, err);
+  if (err)
+    return err;
 
-      if (!try_default)
-        {
-          if ( !(p = strchr (infostr, PATHSEP_C)) || p == infostr)
-            {
-              log_error (_("malformed DIRMNGR_INFO environment variable\n"));
-              xfree (infostr);
-              force_pipe_server = 1;
-              return start_dirmngr_ext (ctrl, ctx_r);
-            }
-          *p++ = 0;
-          pid = atoi (p);
-          while (*p && *p != PATHSEP_C)
-            p++;
-          prot = *p? atoi (p+1) : 0;
-          if (prot != 1)
-            {
-              log_error (_("dirmngr protocol version %d is not supported\n"),
-                         prot);
-              xfree (infostr);
-              force_pipe_server = 1;
-              return start_dirmngr_ext (ctrl, ctx_r);
-            }
-        }
-      else
-        pid = -1;
-
-      rc = assuan_socket_connect (ctx, infostr, pid, 0);
-#ifdef HAVE_W32_SYSTEM
-      if (rc)
-        log_debug ("connecting dirmngr at `%s' failed\n", infostr);
-#endif
-
-      xfree (infostr);
-#ifndef HAVE_W32_SYSTEM
-      if (gpg_err_code (rc) == GPG_ERR_ASS_CONNECT_FAILED)
-        {
-          log_info (_("can't connect to the dirmngr - trying fall back\n"));
-          force_pipe_server = 1;
-          return start_dirmngr_ext (ctrl, ctx_r);
-        }
-#endif /*!HAVE_W32_SYSTEM*/
-    }
-
-  prepare_dirmngr (ctrl, ctx, rc);
-
-  if (rc)
-    {
-      assuan_release (ctx);
-      log_error ("can't connect to the dirmngr: %s\n", gpg_strerror (rc));
-      return gpg_error (GPG_ERR_NO_DIRMNGR);
-    }
   *ctx_r = ctx;
-
-  if (DBG_ASSUAN)
-    log_debug ("connection to dirmngr established\n");
   return 0;
 }
 
@@ -346,7 +279,7 @@ start_dirmngr (ctrl_t ctrl)
   dirmngr_ctx_locked = 1;
 
   err = start_dirmngr_ext (ctrl, &dirmngr_ctx);
-  /* We do not check ERR but the existance of a context because the
+  /* We do not check ERR but the existence of a context because the
      error might come from a failed command send to the dirmngr.
      Fixme: Why don't we close the drimngr context if we encountered
      an error in prepare_dirmngr?  */
@@ -399,47 +332,40 @@ static gpg_error_t
 inq_certificate (void *opaque, const char *line)
 {
   struct inq_certificate_parm_s *parm = opaque;
+  const char *s;
   int rc;
+  size_t n;
   const unsigned char *der;
   size_t derlen;
   int issuer_mode = 0;
   ksba_sexp_t ski = NULL;
 
-  if (!strncmp (line, "SENDCERT", 8) && (line[8] == ' ' || !line[8]))
+  if ((s = has_leading_keyword (line, "SENDCERT")))
     {
-      line += 8;
+      line = s;
     }
-  else if (!strncmp (line, "SENDCERT_SKI", 12) && (line[12]==' ' || !line[12]))
+  else if ((s = has_leading_keyword (line, "SENDCERT_SKI")))
     {
-      size_t n;
-
       /* Send a certificate where a sourceKeyIdentifier is included. */
-      line += 12;
-      while (*line == ' ')
-        line++;
+      line = s;
       ski = make_simple_sexp_from_hexstr (line, &n);
       line += n;
       while (*line == ' ')
         line++;
     }
-  else if (!strncmp (line, "SENDISSUERCERT", 14)
-           && (line[14] == ' ' || !line[14]))
+  else if ((s = has_leading_keyword (line, "SENDISSUERCERT")))
     {
-      line += 14;
+      line = s;
       issuer_mode = 1;
     }
-  else if (!strncmp (line, "ISTRUSTED", 9) && (line[9]==' ' || !line[9]))
+  else if ((s = has_leading_keyword (line, "ISTRUSTED")))
     {
       /* The server is asking us whether the certificate is a trusted
          root certificate.  */
-      const char *s;
-      size_t n;
       char fpr[41];
       struct rootca_flags_s rootca_flags;
 
-      line += 9;
-      while (*line == ' ')
-        line++;
+      line = s;
 
       for (s=line,n=0; hexdigitp (s); s++, n++)
         ;
@@ -457,7 +383,7 @@ inq_certificate (void *opaque, const char *line)
     }
   else
     {
-      log_error ("unsupported inquiry `%s'\n", line);
+      log_error ("unsupported inquiry '%s'\n", line);
       return gpg_error (GPG_ERR_ASS_UNKNOWN_INQUIRE);
     }
 
@@ -516,7 +442,6 @@ unhexify_fpr (const char *hexstr, unsigned char *fpr)
     ;
   if (*s || (n != 40))
     return 0; /* no fingerprint (invalid or wrong length). */
-  n /= 2;
   for (s=hexstr, n=0; *s; s += 2, n++)
     fpr[n] = xtoi_2 (s);
   return 1; /* okay */
@@ -527,22 +452,21 @@ static gpg_error_t
 isvalid_status_cb (void *opaque, const char *line)
 {
   struct isvalid_status_parm_s *parm = opaque;
+  const char *s;
 
-  if (!strncmp (line, "PROGRESS", 8) && (line[8]==' ' || !line[8]))
+  if ((s = has_leading_keyword (line, "PROGRESS")))
     {
       if (parm->ctrl)
         {
-          for (line += 8; *line == ' '; line++)
-            ;
+          line = s;
           if (gpgsm_status (parm->ctrl, STATUS_PROGRESS, line))
             return gpg_error (GPG_ERR_ASS_CANCELED);
         }
     }
-  else if (!strncmp (line, "ONLY_VALID_IF_CERT_VALID", 24)
-      && (line[24]==' ' || !line[24]))
+  else if ((s = has_leading_keyword (line, "ONLY_VALID_IF_CERT_VALID")))
     {
       parm->seen++;
-      if (!line[24] || !unhexify_fpr (line+25, parm->fpr))
+      if (!*s || !unhexify_fpr (s, parm->fpr))
         parm->seen++; /* Bumb it to indicate an error. */
     }
   return 0;
@@ -810,23 +734,22 @@ static gpg_error_t
 lookup_status_cb (void *opaque, const char *line)
 {
   struct lookup_parm_s *parm = opaque;
+  const char *s;
 
-  if (!strncmp (line, "PROGRESS", 8) && (line[8]==' ' || !line[8]))
+  if ((s = has_leading_keyword (line, "PROGRESS")))
     {
       if (parm->ctrl)
         {
-          for (line += 8; *line == ' '; line++)
-            ;
+          line = s;
           if (gpgsm_status (parm->ctrl, STATUS_PROGRESS, line))
             return gpg_error (GPG_ERR_ASS_CANCELED);
         }
     }
-  else if (!strncmp (line, "TRUNCATED", 9) && (line[9]==' ' || !line[9]))
+  else if ((s = has_leading_keyword (line, "TRUNCATED")))
     {
       if (parm->ctrl)
         {
-          for (line +=9; *line == ' '; line++)
-            ;
+          line = s;
           gpgsm_status (parm->ctrl, STATUS_TRUNCATED, line);
         }
     }
@@ -933,7 +856,7 @@ get_cached_cert (assuan_context_t ctx,
   char hexfpr[2*20+1];
   struct membuf mb;
   char *buf;
-  size_t buflen;
+  size_t buflen = 0;
   ksba_cert_t cert;
 
   *r_cert = NULL;
@@ -995,16 +918,17 @@ static gpg_error_t
 run_command_inq_cb (void *opaque, const char *line)
 {
   struct run_command_parm_s *parm = opaque;
+  const char *s;
   int rc = 0;
 
-  if ( !strncmp (line, "SENDCERT", 8) && (line[8] == ' ' || !line[8]) )
+  if ((s = has_leading_keyword (line, "SENDCERT")))
     { /* send the given certificate */
       int err;
       ksba_cert_t cert;
       const unsigned char *der;
       size_t derlen;
 
-      line += 8;
+      line = s;
       if (!*line)
         return gpg_error (GPG_ERR_ASS_PARAMETER);
 
@@ -1024,14 +948,14 @@ run_command_inq_cb (void *opaque, const char *line)
           ksba_cert_release (cert);
         }
     }
-  else if ( !strncmp (line, "PRINTINFO", 9) && (line[9] == ' ' || !line[9]) )
+  else if ((s = has_leading_keyword (line, "PRINTINFO")))
     { /* Simply show the message given in the argument. */
-      line += 9;
+      line = s;
       log_info ("dirmngr: %s\n", line);
     }
   else
     {
-      log_error ("unsupported inquiry `%s'\n", line);
+      log_error ("unsupported inquiry '%s'\n", line);
       rc = gpg_error (GPG_ERR_ASS_UNKNOWN_INQUIRE);
     }
 
@@ -1042,17 +966,17 @@ static gpg_error_t
 run_command_status_cb (void *opaque, const char *line)
 {
   ctrl_t ctrl = opaque;
+  const char *s;
 
   if (opt.verbose)
     {
       log_info ("dirmngr status: %s\n", line);
     }
-  if (!strncmp (line, "PROGRESS", 8) && (line[8]==' ' || !line[8]))
+  if ((s = has_leading_keyword (line, "PROGRESS")))
     {
       if (ctrl)
         {
-          for (line += 8; *line == ' '; line++)
-            ;
+          line = s;
           if (gpgsm_status (ctrl, STATUS_PROGRESS, line))
             return gpg_error (GPG_ERR_ASS_CANCELED);
         }

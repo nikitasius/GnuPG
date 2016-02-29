@@ -25,23 +25,14 @@
 
 #include "keybox-defs.h"
 #include <gcrypt.h>
-#include "../include/host2net.h"
+#include "host2net.h"
 
 /* Argg, we can't include ../common/util.h */
 char *bin2hexcolon (const void *buffer, size_t length, char *stringbuf);
 
+#define get32(a) buf32_to_ulong ((a))
+#define get16(a) buf16_to_ulong ((a))
 
-static ulong
-get32 (const byte *buffer)
-{
-  return buf32_to_ulong (buffer);
-}
-
-static ulong
-get16 (const byte *buffer)
-{
-  return buf16_to_ulong (buffer);
-}
 
 void
 print_string (FILE *fp, const byte *p, size_t n, int delim)
@@ -73,6 +64,57 @@ print_string (FILE *fp, const byte *p, size_t n, int delim)
 
 
 static int
+print_checksum (const byte *buffer, size_t length, size_t unhashed, FILE *fp)
+{
+  const byte *p;
+  int i;
+  int hashlen;
+  unsigned char digest[20];
+
+  fprintf (fp, "Checksum: ");
+  if (unhashed && unhashed < 20)
+    {
+      fputs ("[specified unhashed sized too short]\n", fp);
+      return 0;
+    }
+  if (!unhashed)
+    {
+      unhashed = 16;
+      hashlen = 16;
+    }
+  else
+    hashlen = 20;
+  if (length < 5+unhashed)
+    {
+      fputs ("[blob too short for a checksum]\n", fp);
+      return 0;
+    }
+
+  p = buffer + length - hashlen;
+  for (i=0; i < hashlen; p++, i++)
+    fprintf (fp, "%02x", *p);
+
+  if (hashlen == 16) /* Compatibility method.  */
+    {
+      gcry_md_hash_buffer (GCRY_MD_MD5, digest, buffer, length - 16);
+      if (!memcmp (buffer + length - 16, digest, 16))
+        fputs (" [valid]\n", fp);
+      else
+        fputs (" [bad]\n", fp);
+    }
+  else
+    {
+      gcry_md_hash_buffer (GCRY_MD_SHA1, digest, buffer, length - unhashed);
+      if (!memcmp (buffer + length - hashlen, digest, hashlen))
+        fputs (" [valid]\n", fp);
+      else
+        fputs (" [bad]\n", fp);
+    }
+  return 0;
+}
+
+
+static int
 dump_header_blob (const byte *buffer, size_t length, FILE *fp)
 {
   unsigned long n;
@@ -83,6 +125,25 @@ dump_header_blob (const byte *buffer, size_t length, FILE *fp)
       return -1;
     }
   fprintf (fp, "Version: %d\n", buffer[5]);
+
+  n = get16 (buffer + 6);
+  fprintf( fp, "Flags:   %04lX", n);
+  if (n)
+    {
+      int any = 0;
+
+      fputs (" (", fp);
+      if ((n & 2))
+        {
+          if (any)
+            putc (',', fp);
+          fputs ("openpgp", fp);
+          any++;
+        }
+      putc (')', fp);
+    }
+  putc ('\n', fp);
+
   if ( memcmp (buffer+8, "KBXf", 4))
     fprintf (fp, "[Error: invalid magic number]\n");
 
@@ -101,12 +162,13 @@ _keybox_dump_blob (KEYBOXBLOB blob, FILE *fp)
 {
   const byte *buffer;
   size_t length;
-  int type;
+  int type, i;
   ulong n, nkeys, keyinfolen;
   ulong nuids, uidinfolen;
   ulong nsigs, siginfolen;
   ulong rawdata_off, rawdata_len;
   ulong nserial;
+  ulong unhashed;
   const byte *p;
 
   buffer = _keybox_get_blob_image (blob, &length);
@@ -127,17 +189,17 @@ _keybox_dump_blob (KEYBOXBLOB blob, FILE *fp)
   type = buffer[4];
   switch (type)
     {
-    case BLOBTYPE_EMPTY:
+    case KEYBOX_BLOBTYPE_EMPTY:
       fprintf (fp, "Type:   Empty\n");
       return 0;
 
-    case BLOBTYPE_HEADER:
+    case KEYBOX_BLOBTYPE_HEADER:
       fprintf (fp, "Type:   Header\n");
       return dump_header_blob (buffer, length, fp);
-    case BLOBTYPE_PGP:
+    case KEYBOX_BLOBTYPE_PGP:
       fprintf (fp, "Type:   OpenPGP\n");
       break;
-    case BLOBTYPE_X509:
+    case KEYBOX_BLOBTYPE_X509:
       fprintf (fp, "Type:   X.509\n");
       break;
     default:
@@ -182,14 +244,18 @@ _keybox_dump_blob (KEYBOXBLOB blob, FILE *fp)
   fprintf( fp, "Data-Offset: %lu\n", rawdata_off );
   fprintf( fp, "Data-Length: %lu\n", rawdata_len );
   if (rawdata_off > length || rawdata_len > length
-      || rawdata_off+rawdata_off > length)
+      || rawdata_off+rawdata_len > length
+      || rawdata_len + 4 > length
+      || rawdata_off+rawdata_len + 4 > length)
     fprintf (fp, "[Error: raw data larger than blob]\n");
+  unhashed = length - rawdata_off - rawdata_len;
+  fprintf (fp, "Unhashed: %lu\n", unhashed);
 
   nkeys = get16 (buffer + 16);
   fprintf (fp, "Key-Count: %lu\n", nkeys );
   if (!nkeys)
     fprintf (fp, "[Error: no keys]\n");
-  if (nkeys > 1 && type == BLOBTYPE_X509)
+  if (nkeys > 1 && type == KEYBOX_BLOBTYPE_X509)
     fprintf (fp, "[Error: only one key allowed for X509]\n");
 
   keyinfolen = get16 (buffer + 18 );
@@ -198,7 +264,6 @@ _keybox_dump_blob (KEYBOXBLOB blob, FILE *fp)
   p = buffer + 20;
   for (n=0; n < nkeys; n++, p += keyinfolen)
     {
-      int i;
       ulong kidoff, kflags;
 
       fprintf (fp, "Key-Fpr[%lu]: ", n );
@@ -240,13 +305,13 @@ _keybox_dump_blob (KEYBOXBLOB blob, FILE *fp)
 
       uidoff = get32( p );
       uidlen = get32( p+4 );
-      if (type == BLOBTYPE_X509 && !n)
+      if (type == KEYBOX_BLOBTYPE_X509 && !n)
         {
           fprintf (fp, "Issuer-Off: %lu\n", uidoff );
           fprintf (fp, "Issuer-Len: %lu\n", uidlen );
           fprintf (fp, "Issuer: \"");
         }
-      else if (type == BLOBTYPE_X509 && n == 1)
+      else if (type == KEYBOX_BLOBTYPE_X509 && n == 1)
         {
           fprintf (fp, "Subject-Off: %lu\n", uidoff );
           fprintf (fp, "Subject-Len: %lu\n", uidlen );
@@ -261,12 +326,12 @@ _keybox_dump_blob (KEYBOXBLOB blob, FILE *fp)
       print_string (fp, buffer+uidoff, uidlen, '\"');
       fputs ("\"\n", fp);
       uflags = get16 (p + 8);
-      if (type == BLOBTYPE_X509 && !n)
+      if (type == KEYBOX_BLOBTYPE_X509 && !n)
         {
           fprintf (fp, "Issuer-Flags: %04lX\n", uflags );
           fprintf (fp, "Issuer-Validity: %d\n", p[10] );
         }
-      else if (type == BLOBTYPE_X509 && n == 1)
+      else if (type == KEYBOX_BLOBTYPE_X509 && n == 1)
         {
           fprintf (fp, "Subject-Flags: %04lX\n", uflags );
           fprintf (fp, "Subject-Validity: %d\n", p[10] );
@@ -284,46 +349,73 @@ _keybox_dump_blob (KEYBOXBLOB blob, FILE *fp)
   fprintf (fp, "Sig-Info-Length: %lu\n", siginfolen );
   /* fixme: check bounds  */
   p += 4;
-  for (n=0; n < nsigs; n++, p += siginfolen)
-    {
-      ulong sflags;
+  {
+    int in_range = 0;
+    ulong first = 0;
 
-      sflags = get32 (p);
-      fprintf (fp, "Sig-Expire[%lu]: ", n );
-      if (!sflags)
-        fputs ("[not checked]", fp);
-      else if (sflags == 1 )
-        fputs ("[missing key]", fp);
-      else if (sflags == 2 )
-        fputs ("[bad signature]", fp);
-      else if (sflags < 0x10000000)
-        fprintf (fp, "[bad flag %0lx]", sflags);
-      else if (sflags == 0xffffffff)
-        fputs ("0", fp );
-      else
-        fputs ("a time"/*strtimestamp( sflags )*/, fp );
-      putc ('\n', fp );
-    }
+    for (n=0; n < nsigs; n++, p += siginfolen)
+      {
+        ulong sflags;
 
+        sflags = get32 (p);
+        if (!in_range && !sflags)
+          {
+            in_range = 1;
+            first = n;
+            continue;
+          }
+        if (in_range && !sflags)
+          continue;
+        if (in_range)
+          {
+            fprintf (fp, "Sig-Expire[%lu-%lu]: [not checked]\n", first, n-1);
+            in_range = 0;
+          }
+
+        fprintf (fp, "Sig-Expire[%lu]: ", n );
+        if (!sflags)
+          fputs ("[not checked]", fp);
+        else if (sflags == 1 )
+          fputs ("[missing key]", fp);
+        else if (sflags == 2 )
+          fputs ("[bad signature]", fp);
+        else if (sflags < 0x10000000)
+          fprintf (fp, "[bad flag %0lx]", sflags);
+        else if (sflags == (ulong)(-1))
+          fputs ("[good - does not expire]", fp );
+        else
+          fprintf (fp, "[good - expires at %lu]", sflags);
+        putc ('\n', fp );
+      }
+    if (in_range)
+      fprintf (fp, "Sig-Expire[%lu-%lu]: [not checked]\n", first, n-1);
+  }
   fprintf (fp, "Ownertrust: %d\n", p[0] );
   fprintf (fp, "All-Validity: %d\n", p[1] );
   p += 4;
-  n = get32 (p); p += 4;
+  n = get32 (p);
+  p += 4;
   fprintf (fp, "Recheck-After: %lu\n", n );
-  n = get32 (p ); p += 4;
+  n = get32 (p );
+  p += 4;
   fprintf( fp, "Latest-Timestamp: %lu\n", n );
-  n = get32 (p ); p += 4;
+  n = get32 (p );
+  p += 4;
   fprintf (fp, "Created-At: %lu\n", n );
-  n = get32 (p ); p += 4;
+  n = get32 (p );
   fprintf (fp, "Reserved-Space: %lu\n", n );
 
-  /* check that the keyblock is at the correct offset and other bounds */
-  /*fprintf (fp, "Blob-Checksum: [MD5-hash]\n");*/
+  if (n >= 4 && unhashed >= 24)
+    {
+      n = get32 ( buffer + length - unhashed);
+      fprintf (fp, "Storage-Flags: %08lx\n", n );
+    }
+  print_checksum (buffer, length, unhashed, fp);
   return 0;
 }
 
 
-/* Compute the SHA_1 checksum of teh rawdata in BLOB and aput it into
+/* Compute the SHA-1 checksum of the rawdata in BLOB and put it into
    DIGEST. */
 static int
 hash_blob_rawdata (KEYBOXBLOB blob, unsigned char *digest)
@@ -344,12 +436,12 @@ hash_blob_rawdata (KEYBOXBLOB blob, unsigned char *digest)
   type = buffer[4];
   switch (type)
     {
-    case BLOBTYPE_PGP:
-    case BLOBTYPE_X509:
+    case KEYBOX_BLOBTYPE_PGP:
+    case KEYBOX_BLOBTYPE_X509:
       break;
 
-    case BLOBTYPE_EMPTY:
-    case BLOBTYPE_HEADER:
+    case KEYBOX_BLOBTYPE_EMPTY:
+    case KEYBOX_BLOBTYPE_HEADER:
     default:
       memset (digest, 0, 20);
       return 0;
@@ -383,6 +475,7 @@ struct file_stats_s
   unsigned long non_flagged;
   unsigned long secret_flagged;
   unsigned long ephemeral_flagged;
+  unsigned long skipped_long_blobs;
 };
 
 static int
@@ -410,16 +503,16 @@ update_stats (KEYBOXBLOB blob, struct file_stats_s *s)
   type = buffer[4];
   switch (type)
     {
-    case BLOBTYPE_EMPTY:
+    case KEYBOX_BLOBTYPE_EMPTY:
       s->empty_blob_count++;
       return 0;
-    case BLOBTYPE_HEADER:
+    case KEYBOX_BLOBTYPE_HEADER:
       s->header_blob_count++;
       return 0;
-    case BLOBTYPE_PGP:
+    case KEYBOX_BLOBTYPE_PGP:
       s->pgp_blob_count++;
       break;
-    case BLOBTYPE_X509:
+    case KEYBOX_BLOBTYPE_X509:
       s->x509_blob_count++;
       break;
     default:
@@ -464,8 +557,8 @@ open_file (const char **filename, FILE *outfp)
   if (!fp)
     {
       int save_errno = errno;
-      fprintf (outfp, "can't open `%s': %s\n", *filename, strerror(errno));
-      errno = save_errno;
+      fprintf (outfp, "can't open '%s': %s\n", *filename, strerror(errno));
+      gpg_err_set_errno (save_errno);
     }
   return fp;
 }
@@ -486,8 +579,25 @@ _keybox_dump_file (const char *filename, int stats_only, FILE *outfp)
   if (!(fp = open_file (&filename, outfp)))
     return gpg_error_from_syserror ();
 
-  while ( !(rc = _keybox_read_blob (&blob, fp)) )
+  for (;;)
     {
+      rc = _keybox_read_blob (&blob, fp);
+      if (gpg_err_code (rc) == GPG_ERR_TOO_LARGE
+          && gpg_err_source (rc) == GPG_ERR_SOURCE_KEYBOX)
+        {
+          if (stats_only)
+            stats.skipped_long_blobs++;
+          else
+            {
+              fprintf (outfp, "BEGIN-RECORD: %lu\n", count );
+              fprintf (outfp, "# Record too large\nEND-RECORD\n");
+            }
+          count++;
+          continue;
+        }
+      if (rc)
+        break;
+
       if (stats_only)
         {
           update_stats (blob, &stats);
@@ -504,7 +614,7 @@ _keybox_dump_file (const char *filename, int stats_only, FILE *outfp)
   if (rc == -1)
     rc = 0;
   if (rc)
-    fprintf (outfp, "error reading `%s': %s\n", filename, gpg_strerror (rc));
+    fprintf (outfp, "# error reading '%s': %s\n", filename, gpg_strerror (rc));
 
   if (fp != stdin)
     fclose (fp);
@@ -528,14 +638,17 @@ _keybox_dump_file (const char *filename, int stats_only, FILE *outfp)
                stats.non_flagged,
                stats.secret_flagged,
                stats.ephemeral_flagged);
+        if (stats.skipped_long_blobs)
+          fprintf (outfp, "   skipped long blobs: %8lu\n",
+                   stats.skipped_long_blobs);
         if (stats.unknown_blob_count)
           fprintf (outfp, "   unknown blob types: %8lu\n",
                    stats.unknown_blob_count);
         if (stats.too_short_blobs)
-          fprintf (outfp, "      too short blobs: %8lu\n",
+          fprintf (outfp, "      too short blobs: %8lu (error)\n",
                    stats.too_short_blobs);
         if (stats.too_large_blobs)
-          fprintf (outfp, "      too large blobs: %8lu\n",
+          fprintf (outfp, "      too large blobs: %8lu (error)\n",
                    stats.too_large_blobs);
     }
 
@@ -585,7 +698,7 @@ _keybox_dump_find_dups (const char *filename, int print_them, FILE *outfp)
   if (!dupitems)
     {
       gpg_error_t tmperr = gpg_error_from_syserror ();
-      fprintf (outfp, "error allocating array for `%s': %s\n",
+      fprintf (outfp, "error allocating array for '%s': %s\n",
                filename, strerror(errno));
       return tmperr;
     }
@@ -596,7 +709,7 @@ _keybox_dump_find_dups (const char *filename, int print_them, FILE *outfp)
       unsigned char digest[20];
 
       if (hash_blob_rawdata (blob, digest))
-        fprintf (outfp, "error in blob %ld of `%s'\n", recno, filename);
+        fprintf (outfp, "error in blob %ld of '%s'\n", recno, filename);
       else if (memcmp (digest, zerodigest, 20))
         {
           if (dupitems_count >= dupitems_size)
@@ -608,7 +721,7 @@ _keybox_dump_find_dups (const char *filename, int print_them, FILE *outfp)
               if (!tmp)
                 {
                   gpg_error_t tmperr = gpg_error_from_syserror ();
-                  fprintf (outfp, "error reallocating array for `%s': %s\n",
+                  fprintf (outfp, "error reallocating array for '%s': %s\n",
                            filename, strerror(errno));
                   free (dupitems);
                   return tmperr;
@@ -625,7 +738,7 @@ _keybox_dump_find_dups (const char *filename, int print_them, FILE *outfp)
   if (rc == -1)
     rc = 0;
   if (rc)
-    fprintf (outfp, "error reading `%s': %s\n", filename, gpg_strerror (rc));
+    fprintf (outfp, "error reading '%s': %s\n", filename, gpg_strerror (rc));
   if (fp != stdin)
     fclose (fp);
 
@@ -684,7 +797,7 @@ _keybox_dump_cut_records (const char *filename, unsigned long from,
   if (rc == -1)
     rc = 0;
   if (rc)
-    fprintf (stderr, "error reading `%s': %s\n", filename, gpg_strerror (rc));
+    fprintf (stderr, "error reading '%s': %s\n", filename, gpg_strerror (rc));
  leave:
   if (fp != stdin)
     fclose (fp);

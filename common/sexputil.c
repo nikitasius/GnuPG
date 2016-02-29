@@ -1,14 +1,25 @@
 /* sexputil.c - Utility functions for S-expressions.
  * Copyright (C) 2005, 2007, 2009 Free Software Foundation, Inc.
+ * Copyright (C) 2013 Werner Koch
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -36,7 +47,92 @@
 #include "sexp-parse.h"
 
 
-/* Helper function to create a a canonical encoded S-expression from a
+/* Return a malloced string with the S-expression CANON in advanced
+   format.  Returns NULL on error.  */
+static char *
+sexp_to_string (gcry_sexp_t sexp)
+{
+  size_t n;
+  char *result;
+
+  if (!sexp)
+    return NULL;
+  n = gcry_sexp_sprint (sexp, GCRYSEXP_FMT_ADVANCED, NULL, 0);
+  if (!n)
+    return NULL;
+  result = xtrymalloc (n);
+  if (!result)
+    return NULL;
+  n = gcry_sexp_sprint (sexp, GCRYSEXP_FMT_ADVANCED, result, n);
+  if (!n)
+    BUG ();
+
+  return result;
+}
+
+
+/* Return a malloced string with the S-expression CANON in advanced
+   format.  Returns NULL on error.  */
+char *
+canon_sexp_to_string (const unsigned char *canon, size_t canonlen)
+{
+  size_t n;
+  gcry_sexp_t sexp;
+  char *result;
+
+  n = gcry_sexp_canon_len (canon, canonlen, NULL, NULL);
+  if (!n)
+    return NULL;
+  if (gcry_sexp_sscan (&sexp, NULL, canon, n))
+    return NULL;
+  result = sexp_to_string (sexp);
+  gcry_sexp_release (sexp);
+  return result;
+}
+
+
+/* Print the canonical encoded S-expression in SEXP in advanced
+   format.  SEXPLEN may be passed as 0 is SEXP is known to be valid.
+   With TEXT of NULL print just the raw S-expression, with TEXT just
+   an empty string, print a trailing linefeed, otherwise print an
+   entire debug line. */
+void
+log_printcanon (const char *text, const unsigned char *sexp, size_t sexplen)
+{
+  if (text && *text)
+    log_debug ("%s ", text);
+  if (sexp)
+    {
+      char *buf = canon_sexp_to_string (sexp, sexplen);
+      log_printf ("%s", buf? buf : "[invalid S-expression]");
+      xfree (buf);
+    }
+  if (text)
+    log_printf ("\n");
+}
+
+
+/* Print the gcryp S-expression in SEXP in advanced format.  With TEXT
+   of NULL print just the raw S-expression, with TEXT just an empty
+   string, print a trailing linefeed, otherwise print an entire debug
+   line. */
+void
+log_printsexp (const char *text, gcry_sexp_t sexp)
+{
+  if (text && *text)
+    log_debug ("%s ", text);
+  if (sexp)
+    {
+      char *buf = sexp_to_string (sexp);
+      log_printf ("%s", buf? buf : "[invalid S-expression]");
+      xfree (buf);
+    }
+  if (text)
+    log_printf ("\n");
+}
+
+
+/* Helper function to create a canonical encoded S-expression from a
    Libgcrypt S-expression object.  The function returns 0 on success
    and the malloced canonical S-expression is stored at R_BUFFER and
    the allocated length at R_BUFLEN.  On error an error code is
@@ -52,7 +148,7 @@ make_canon_sexp (gcry_sexp_t sexp, unsigned char **r_buffer, size_t *r_buflen)
   *r_buffer = NULL;
   if (r_buflen)
     *r_buflen = 0;;
-  
+
   len = gcry_sexp_sprint (sexp, GCRYSEXP_FMT_CANON, NULL, 0);
   if (!len)
     return gpg_error (GPG_ERR_BUG);
@@ -70,6 +166,36 @@ make_canon_sexp (gcry_sexp_t sexp, unsigned char **r_buffer, size_t *r_buflen)
   return 0;
 }
 
+
+/* Same as make_canon_sexp but pad the buffer to multiple of 64
+   bits.  If SECURE is set, secure memory will be allocated.  */
+gpg_error_t
+make_canon_sexp_pad (gcry_sexp_t sexp, int secure,
+                     unsigned char **r_buffer, size_t *r_buflen)
+{
+  size_t len;
+  unsigned char *buf;
+
+  *r_buffer = NULL;
+  if (r_buflen)
+    *r_buflen = 0;;
+
+  len = gcry_sexp_sprint (sexp, GCRYSEXP_FMT_CANON, NULL, 0);
+  if (!len)
+    return gpg_error (GPG_ERR_BUG);
+  len += (8 - len % 8) % 8;
+  buf = secure? xtrycalloc_secure (1, len) : xtrycalloc (1, len);
+  if (!buf)
+    return gpg_error_from_syserror ();
+  if (!gcry_sexp_sprint (sexp, GCRYSEXP_FMT_CANON, buf, len))
+    return gpg_error (GPG_ERR_BUG);
+
+  *r_buffer = buf;
+  if (r_buflen)
+    *r_buflen = len;
+
+  return 0;
+}
 
 /* Return the so called "keygrip" which is the SHA-1 hash of the
    public key parameters expressed in a way depended on the algorithm.
@@ -99,7 +225,7 @@ keygrip_from_canon_sexp (const unsigned char *key, size_t keylen,
 
 
 /* Compare two simple S-expressions like "(3:foo)".  Returns 0 if they
-   are identical or !0 if they are not.  Not that this function can't
+   are identical or !0 if they are not.  Note that this function can't
    be used for sorting. */
 int
 cmp_simple_canon_sexp (const unsigned char *a_orig,
@@ -136,7 +262,7 @@ cmp_simple_canon_sexp (const unsigned char *a_orig,
 }
 
 
-/* Create a simple S-expression from the hex string at LIBNE.  Returns
+/* Create a simple S-expression from the hex string at LINE.  Returns
    a newly allocated buffer with that canonical encoded S-expression
    or NULL in case of an error.  On return the number of characters
    scanned in LINE will be stored at NSCANNED.  This fucntions stops
@@ -159,7 +285,7 @@ make_simple_sexp_from_hexstr (const char *line, size_t *nscanned)
     *nscanned = n;
   if (!n)
     return NULL;
-  len = ((n+1) & ~0x01)/2; 
+  len = ((n+1) & ~0x01)/2;
   numbufp = smklen (numbuf, sizeof numbuf, len, &numbuflen);
   buf = xtrymalloc (1 + numbuflen + len + 1 + 1);
   if (!buf)
@@ -209,7 +335,7 @@ hash_algo_from_sigval (const unsigned char *sigval)
   if (sskip (&s, &depth) || depth)
     return 0; /* Invalid S-expression.  */
   if (*s != '(')
-    return 0; /* No futher list.  */
+    return 0; /* No further list.  */
   /* Check whether this is (hash ALGO).  */
   s++;
   n = snext (&s);
@@ -222,7 +348,7 @@ hash_algo_from_sigval (const unsigned char *sigval)
     return 0; /* Algorithm string is missing or too long.  */
   memcpy (buffer, s, n);
   buffer[n] = 0;
-  
+
   return gcry_md_map_name (buffer);
 }
 
@@ -244,16 +370,16 @@ make_canon_sexp_from_rsa_pk (const void *m_arg, size_t mlen,
   char mlen_str[35];
   char elen_str[35];
   unsigned char *keybuf, *p;
-  const char const part1[] = "(10:public-key(3:rsa(1:n";
-  const char const part2[] = ")(1:e";
-  const char const part3[] = ")))";
+  const char part1[] = "(10:public-key(3:rsa(1:n";
+  const char part2[] = ")(1:e";
+  const char part3[] = ")))";
 
   /* Remove leading zeroes.  */
   for (; mlen && !*m; mlen--, m++)
     ;
   for (; elen && !*e; elen--, e++)
     ;
-      
+
   /* Insert a leading zero if the number would be zero or interpreted
      as negative.  */
   if (!mlen || (m[0] & 0x80))
@@ -270,7 +396,7 @@ make_canon_sexp_from_rsa_pk (const void *m_arg, size_t mlen,
                        + strlen (part3) + 1);
   if (!keybuf)
     return NULL;
-  
+
   p = stpcpy (keybuf, part1);
   p = stpcpy (p, mlen_str);
   if (m_extra)
@@ -284,7 +410,7 @@ make_canon_sexp_from_rsa_pk (const void *m_arg, size_t mlen,
   memcpy (p, e, elen);
   p += elen;
   p = stpcpy (p, part3);
- 
+
   if (r_len)
     *r_len = p - keybuf;
 
@@ -292,7 +418,7 @@ make_canon_sexp_from_rsa_pk (const void *m_arg, size_t mlen,
 }
 
 
-/* Return the so parameters of a public RSA key expressed as an
+/* Return the parameters of a public RSA key expressed as an
    canonical encoded S-expression.  */
 gpg_error_t
 get_rsa_pk_from_canon_sexp (const unsigned char *keydata, size_t keydatalen,
@@ -343,8 +469,8 @@ get_rsa_pk_from_canon_sexp (const unsigned char *keydata, size_t keydatalen,
 
           switch (*tok)
             {
-            case 'n': mpi = &rsa_n; mpi_len = &rsa_n_len; break; 
-            case 'e': mpi = &rsa_e; mpi_len = &rsa_e_len; break; 
+            case 'n': mpi = &rsa_n; mpi_len = &rsa_n_len; break;
+            case 'e': mpi = &rsa_e; mpi_len = &rsa_e_len; break;
             default:  mpi = NULL;   mpi_len = NULL; break;
             }
           if (mpi && *mpi)
@@ -386,17 +512,18 @@ get_rsa_pk_from_canon_sexp (const unsigned char *keydata, size_t keydatalen,
 
 
 /* Return the algo of a public RSA expressed as an canonical encoded
-   S-expression.  On error the algo is set to 0. */
+   S-expression.  The return value is a statically allocated
+   string.  On error that string is set to NULL. */
 gpg_error_t
 get_pk_algo_from_canon_sexp (const unsigned char *keydata, size_t keydatalen,
-                             int *r_algo)
+                             const char **r_algo)
 {
   gpg_error_t err;
   const unsigned char *buf, *tok;
   size_t buflen, toklen;
   int depth;
-    
-  *r_algo = 0;
+
+  *r_algo = NULL;
 
   buf = keydata;
   buflen = keydatalen;
@@ -415,15 +542,17 @@ get_pk_algo_from_canon_sexp (const unsigned char *keydata, size_t keydatalen,
     return gpg_error (GPG_ERR_BAD_PUBKEY);
 
   if (toklen == 3 && !memcmp ("rsa", tok, toklen))
-    *r_algo = GCRY_PK_RSA;
+    *r_algo = "rsa";
   else if (toklen == 3 && !memcmp ("dsa", tok, toklen))
-    *r_algo = GCRY_PK_DSA;
+    *r_algo = "dsa";
   else if (toklen == 3 && !memcmp ("elg", tok, toklen))
-    *r_algo = GCRY_PK_ELG;
+    *r_algo = "elg";
   else if (toklen == 5 && !memcmp ("ecdsa", tok, toklen))
-    *r_algo = GCRY_PK_ECDSA;
+    *r_algo = "ecdsa";
+  else if (toklen == 5 && !memcmp ("eddsa", tok, toklen))
+    *r_algo = "eddsa";
   else
-    return  gpg_error (GPG_ERR_PUBKEY_ALGO);
+    return gpg_error (GPG_ERR_PUBKEY_ALGO);
 
   return 0;
 }

@@ -4,7 +4,7 @@
  * This file is free software; as a special exception the author gives
  * unlimited permission to copy and/or distribute it, with or without
  * modifications, as long as this notice is preserved.
- * 
+ *
  * This file is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY, to the extent permitted by law; without even
  * the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
@@ -22,7 +22,7 @@
 
 
 /* Replace libgcrypt's malloc functions which are used by
-   ../jnlib/libjnlib.a .  ../common/util.h defines macros to map them
+   ../common/libcommon.a .  ../common/util.h defines macros to map them
    to xmalloc etc. */
 static void
 out_of_memory (void)
@@ -115,30 +115,48 @@ gcry_free (void *a)
 
 /* We need this dummy because exechelp.c uses gcry_control to
    terminate the secure memeory.  */
-gcry_error_t 
+gcry_error_t
 gcry_control (enum gcry_ctl_cmds cmd, ...)
 {
   (void)cmd;
   return 0;
 }
 
-void 
+void
 gcry_set_outofcore_handler (gcry_handler_no_mem_t h, void *opaque)
 {
   (void)h;
   (void)opaque;
 }
 
-void 
+void
 gcry_set_fatalerror_handler (gcry_handler_error_t fnc, void *opaque)
 {
   (void)fnc;
   (void)opaque;
 }
 
-void 
+void
 gcry_set_log_handler (gcry_handler_log_t f, void *opaque)
 {
   (void)f;
   (void)opaque;
+}
+
+
+void
+gcry_create_nonce (void *buffer, size_t length)
+{
+  (void)buffer;
+  (void)length;
+
+  log_fatal ("unexpected call to gcry_create_nonce\n");
+}
+
+
+const char *
+gcry_cipher_algo_name (int algo)
+{
+  (void)algo;
+  return "?";
 }

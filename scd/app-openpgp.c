@@ -1,6 +1,6 @@
 /* app-openpgp.c - The OpenPGP card application.
  * Copyright (C) 2003, 2004, 2005, 2007, 2008,
- *               2009, 2013 Free Software Foundation, Inc.
+ *               2009, 2013, 2014, 2015 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -45,6 +45,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <assert.h>
 #include <time.h>
@@ -56,17 +57,18 @@
 #include "options.h"
 #include "errors.h"
 #include "memory.h"
-#include "util.h"
 #include "cardglue.h"
 #else /* GNUPG_MAJOR_VERSION != 1 */
 #include "scdaemon.h"
 #endif /* GNUPG_MAJOR_VERSION != 1 */
 
+#include "util.h"
 #include "i18n.h"
 #include "iso7816.h"
 #include "app-common.h"
 #include "tlv.h"
-#include "../include/host2net.h"
+#include "host2net.h"
+#include "openpgpdefs.h"
 
 
 /* A table describing the DOs of the card.  */
@@ -113,8 +115,20 @@ static struct {
   { 0x0103, 0,    0, 0, 0, 0, 0, 0, "Private DO 3"},
   { 0x0104, 0,    0, 0, 0, 0, 0, 0, "Private DO 4"},
   { 0x7F21, 1,    0, 1, 0, 0, 0, 1, "Cardholder certificate"},
+  /* V3.0 */
+  { 0x7F74, 0,    0, 1, 0, 0, 0, 0, "General Feature Management"},
+  { 0x00D5, 0,    0, 1, 0, 0, 0, 0, "AES key data"},
   { 0 }
 };
+
+
+/* Type of keys.  */
+typedef enum
+  {
+    KEY_TYPE_ECC,
+    KEY_TYPE_RSA,
+  }
+key_type_t;
 
 
 /* The format of RSA private keys.  */
@@ -172,13 +186,15 @@ struct app_local_s {
   struct
   {
     unsigned int is_v2:1;              /* This is a v2.0 compatible card.  */
+    unsigned int sm_supported:1;       /* Secure Messaging is supported.  */
     unsigned int get_challenge:1;
     unsigned int key_import:1;
     unsigned int change_force_chv:1;
     unsigned int private_dos:1;
     unsigned int algo_attr_change:1;   /* Algorithm attributes changeable.  */
-    unsigned int sm_supported:1;       /* Secure Messaging is supported.  */
-    unsigned int sm_aes128:1;          /* Use AES-128 for SM.  */
+    unsigned int has_decrypt:1;        /* Support symmetric decryption.  */
+    unsigned int has_button:1;
+    unsigned int sm_algo:2;            /* Symmetric crypto algo for SM.  */
     unsigned int max_certlen_3:16;
     unsigned int max_get_challenge:16; /* Maximum size for get_challenge.  */
     unsigned int max_cmd_data:16;      /* Maximum data size for a command.  */
@@ -200,17 +216,26 @@ struct app_local_s {
     int fixedlen_admin;
   } pinpad;
 
-  struct
-  {
-    unsigned int n_bits;     /* Size of the modulus in bits.  The rest
-                                of this strucuire is only valid if
-                                this is not 0.  */
-    unsigned int e_bits;     /* Size of the public exponent in bits.  */
-    rsa_key_format_t format;
-  } keyattr[3];
-
+   struct
+   {
+    key_type_t key_type;
+    union {
+      struct {
+        unsigned int n_bits;     /* Size of the modulus in bits.  The rest
+                                    of this strucuire is only valid if
+                                    this is not 0.  */
+        unsigned int e_bits;     /* Size of the public exponent in bits.  */
+        rsa_key_format_t format;
+      } rsa;
+      struct {
+        const char *oid;
+        int flags;
+      } ecc;
+    };
+   } keyattr[3];
 };
 
+#define ECC_FLAG_DJB_TWEAK (1 << 0)
 
 
 /***** Local prototypes  *****/
@@ -513,17 +538,17 @@ dump_all_do (int slot)
       if (gpg_err_code (rc) == GPG_ERR_NO_OBJ)
         ;
       else if (rc)
-        log_info ("DO `%s' not available: %s\n",
+        log_info ("DO '%s' not available: %s\n",
                   data_objects[i].desc, gpg_strerror (rc));
       else
         {
           if (data_objects[i].binary)
             {
-              log_info ("DO `%s': ", data_objects[i].desc);
+              log_info ("DO '%s': ", data_objects[i].desc);
               log_printhex ("", buffer, buflen);
             }
           else
-            log_info ("DO `%s': `%.*s'\n",
+            log_info ("DO '%s': '%.*s'\n",
                       data_objects[i].desc,
                       (int)buflen, buffer); /* FIXME: sanitize */
 
@@ -546,14 +571,14 @@ dump_all_do (int slot)
                     {
                       if (data_objects[j].binary)
                         {
-                          log_info ("DO `%s': ", data_objects[j].desc);
+                          log_info ("DO '%s': ", data_objects[j].desc);
                           if (valuelen > 200)
                             log_info ("[%u]\n", (unsigned int)valuelen);
                           else
                             log_printhex ("", value, valuelen);
                         }
                       else
-                        log_info ("DO `%s': `%.*s'\n",
+                        log_info ("DO '%s': '%.*s'\n",
                                   data_objects[j].desc,
                                   (int)valuelen, value); /* FIXME: sanitize */
                     }
@@ -705,24 +730,41 @@ parse_login_data (app_t app)
   xfree (relptr);
 }
 
+
+#define MAX_ARGS_STORE_FPR 3
+
 /* Note, that FPR must be at least 20 bytes. */
 static gpg_error_t
-store_fpr (app_t app, int keynumber, u32 timestamp,
-           const unsigned char *m, size_t mlen,
-           const unsigned char *e, size_t elen,
-           unsigned char *fpr, unsigned int card_version)
+store_fpr (app_t app, int keynumber, u32 timestamp, unsigned char *fpr,
+           int algo, ...)
 {
   unsigned int n, nbits;
   unsigned char *buffer, *p;
   int tag, tag2;
   int rc;
+  const unsigned char *m[MAX_ARGS_STORE_FPR];
+  size_t mlen[MAX_ARGS_STORE_FPR];
+  va_list ap;
+  int argc;
+  int i;
 
-  for (; mlen && !*m; mlen--, m++) /* strip leading zeroes */
-    ;
-  for (; elen && !*e; elen--, e++) /* strip leading zeroes */
-    ;
+  n = 6;    /* key packet version, 4-byte timestamps, and algorithm */
+  if (algo == PUBKEY_ALGO_ECDH)
+    argc = 3;
+  else
+    argc = 2;
 
-  n = 6 + 2 + mlen + 2 + elen;
+  va_start (ap, algo);
+  for (i = 0; i < argc; i++)
+    {
+      m[i] = va_arg (ap, const unsigned char *);
+      mlen[i] = va_arg (ap, size_t);
+      if (algo == PUBKEY_ALGO_RSA || i == 1)
+        n += 2;
+      n += mlen[i];
+    }
+  va_end (ap);
+
   p = buffer = xtrymalloc (3 + n);
   if (!buffer)
     return gpg_error_from_syserror ();
@@ -735,21 +777,25 @@ store_fpr (app_t app, int keynumber, u32 timestamp,
   *p++ = timestamp >> 16;
   *p++ = timestamp >>  8;
   *p++ = timestamp;
-  *p++ = 1; /* RSA */
-  nbits = count_bits (m, mlen);
-  *p++ = nbits >> 8;
-  *p++ = nbits;
-  memcpy (p, m, mlen); p += mlen;
-  nbits = count_bits (e, elen);
-  *p++ = nbits >> 8;
-  *p++ = nbits;
-  memcpy (p, e, elen); p += elen;
+  *p++ = algo;
+
+  for (i = 0; i < argc; i++)
+    {
+      if (algo == PUBKEY_ALGO_RSA || i == 1)
+        {
+          nbits = count_bits (m[i], mlen[i]);
+          *p++ = nbits >> 8;
+          *p++ = nbits;
+        }
+      memcpy (p, m[i], mlen[i]);
+      p += mlen[i];
+    }
 
   gcry_md_hash_buffer (GCRY_MD_SHA1, fpr, buffer, n+3);
 
   xfree (buffer);
 
-  tag = (card_version > 0x0007? 0xC7 : 0xC6) + keynumber;
+  tag = (app->card_version > 0x0007? 0xC7 : 0xC6) + keynumber;
   flush_cache_item (app, 0xC5);
   tag2 = 0xCE + keynumber;
   flush_cache_item (app, 0xCD);
@@ -758,7 +804,7 @@ store_fpr (app_t app, int keynumber, u32 timestamp,
   if (rc)
     log_error (_("failed to store the fingerprint: %s\n"),gpg_strerror (rc));
 
-  if (!rc && card_version > 0x0100)
+  if (!rc && app->card_version > 0x0100)
     {
       unsigned char buf[4];
 
@@ -847,18 +893,30 @@ send_key_data (ctrl_t ctrl, const char *name,
 
 
 static void
-send_key_attr (ctrl_t ctrl, app_t app, const char *keyword, int number)
+send_key_attr (ctrl_t ctrl, app_t app, const char *keyword, int keyno)
 {
   char buffer[200];
 
-  assert (number >=0 && number < DIM(app->app_local->keyattr));
+  assert (keyno >=0 && keyno < DIM(app->app_local->keyattr));
 
-  /* We only support RSA thus the algo identifier is fixed to 1.  */
-  snprintf (buffer, sizeof buffer, "%d 1 %u %u %d",
-            number+1,
-            app->app_local->keyattr[number].n_bits,
-            app->app_local->keyattr[number].e_bits,
-            app->app_local->keyattr[number].format);
+  if (app->app_local->keyattr[keyno].key_type == KEY_TYPE_RSA)
+    snprintf (buffer, sizeof buffer, "%d 1 rsa%u %u %d",
+              keyno+1,
+              app->app_local->keyattr[keyno].rsa.n_bits,
+              app->app_local->keyattr[keyno].rsa.e_bits,
+              app->app_local->keyattr[keyno].rsa.format);
+  else if (app->app_local->keyattr[keyno].key_type == KEY_TYPE_ECC)
+    {
+      snprintf (buffer, sizeof buffer, "%d %d %s",
+                keyno+1,
+                keyno==1? PUBKEY_ALGO_ECDH :
+                app->app_local->keyattr[keyno].ecc.flags?
+                PUBKEY_ALGO_EDDSA : PUBKEY_ALGO_ECDSA,
+                openpgp_oid_to_curve (app->app_local->keyattr[keyno].ecc.oid, 0));
+    }
+  else
+    snprintf (buffer, sizeof buffer, "%d 0 0 UNKNOWN", keyno+1);
+
   send_status_direct (ctrl, keyword, buffer);
 }
 
@@ -929,10 +987,11 @@ do_getattr (app_t app, ctrl_t ctrl, const char *name)
     }
   if (table[idx].special == -2)
     {
-      char tmp[100];
+      char tmp[110];
 
       snprintf (tmp, sizeof tmp,
-                "gc=%d ki=%d fc=%d pd=%d mcl3=%u aac=%d sm=%d",
+                "gc=%d ki=%d fc=%d pd=%d mcl3=%u aac=%d "
+                "sm=%d si=%u dec=%d bt=%d",
                 app->app_local->extcap.get_challenge,
                 app->app_local->extcap.key_import,
                 app->app_local->extcap.change_force_chv,
@@ -940,8 +999,13 @@ do_getattr (app_t app, ctrl_t ctrl, const char *name)
                 app->app_local->extcap.max_certlen_3,
                 app->app_local->extcap.algo_attr_change,
                 (app->app_local->extcap.sm_supported
-                 ? (app->app_local->extcap.sm_aes128? 7 : 2)
-                 : 0));
+                 ? (app->app_local->extcap.sm_algo == 0? CIPHER_ALGO_3DES :
+                    (app->app_local->extcap.sm_algo == 1?
+                     CIPHER_ALGO_AES : CIPHER_ALGO_AES256))
+                 : 0),
+                app->app_local->status_indicator,
+                app->app_local->extcap.has_decrypt,
+                app->app_local->extcap.has_button);
       send_status_info (ctrl, table[idx].name, tmp, strlen (tmp), NULL, 0);
       return 0;
     }
@@ -1070,7 +1134,7 @@ retrieve_key_material (FILE *fp, const char *hexkeyid,
   for (;;)
     {
       char *p;
-      char *fields[6];
+      char *fields[6] = { NULL, NULL, NULL, NULL, NULL, NULL };
       int nfields;
       size_t max_length;
       gcry_mpi_t mpi;
@@ -1159,8 +1223,8 @@ retrieve_key_material (FILE *fp, const char *hexkeyid,
 /* Get the public key for KEYNO and store it as an S-expresion with
    the APP handle.  On error that field gets cleared.  If we already
    know about the public key we will just return.  Note that this does
-   not mean a key is available; this is soley indicated by the
-   presence of the app->app_local->pk[KEYNO-1].key field.
+   not mean a key is available; this is solely indicated by the
+   presence of the app->app_local->pk[KEYNO].key field.
 
    Note that GnuPG 1.x does not need this and it would be too time
    consuming to send it just for the fun of it. However, given that we
@@ -1173,15 +1237,17 @@ get_public_key (app_t app, int keyno)
   gpg_error_t err = 0;
   unsigned char *buffer;
   const unsigned char *keydata, *m, *e;
-  size_t buflen, keydatalen, mlen, elen;
+  size_t buflen, keydatalen;
+  size_t mlen = 0;
+  size_t elen = 0;
   unsigned char *mbuf = NULL;
   unsigned char *ebuf = NULL;
   char *keybuf = NULL;
-  char *keybuf_p;
+  gcry_sexp_t s_pkey;
+  size_t len;
 
-  if (keyno < 1 || keyno > 3)
+  if (keyno < 0 || keyno > 2)
     return gpg_error (GPG_ERR_INV_ID);
-  keyno--;
 
   /* Already cached? */
   if (app->app_local->pk[keyno].read_done)
@@ -1229,51 +1295,34 @@ get_public_key (app_t app, int keyno)
           goto leave;
         }
 
-      m = find_tlv (keydata, keydatalen, 0x0081, &mlen);
-      if (!m)
+      if (app->app_local->keyattr[keyno].key_type == KEY_TYPE_RSA)
         {
-          err = gpg_error (GPG_ERR_CARD);
-          log_error (_("response does not contain the RSA modulus\n"));
-          goto leave;
-        }
-
-
-      e = find_tlv (keydata, keydatalen, 0x0082, &elen);
-      if (!e)
-        {
-          err = gpg_error (GPG_ERR_CARD);
-          log_error (_("response does not contain the RSA public exponent\n"));
-          goto leave;
-        }
-
-      /* Prepend numbers with a 0 if needed.  */
-      if (mlen && (*m & 0x80))
-        {
-          mbuf = xtrymalloc ( mlen + 1);
-          if (!mbuf)
+          m = find_tlv (keydata, keydatalen, 0x0081, &mlen);
+          if (!m)
             {
-              err = gpg_error_from_syserror ();
+              err = gpg_error (GPG_ERR_CARD);
+              log_error (_("response does not contain the RSA modulus\n"));
               goto leave;
             }
-          *mbuf = 0;
-          memcpy (mbuf+1, m, mlen);
-          mlen++;
-          m = mbuf;
-        }
-      if (elen && (*e & 0x80))
-        {
-          ebuf = xtrymalloc ( elen + 1);
-          if (!ebuf)
+
+          e = find_tlv (keydata, keydatalen, 0x0082, &elen);
+          if (!e)
             {
-              err = gpg_error_from_syserror ();
+              err = gpg_error (GPG_ERR_CARD);
+              log_error (_("response does not contain the RSA public exponent\n"));
               goto leave;
             }
-          *ebuf = 0;
-          memcpy (ebuf+1, e, elen);
-          elen++;
-          e = ebuf;
         }
-
+      else
+        {
+          m = find_tlv (keydata, keydatalen, 0x0086, &mlen);
+          if (!m)
+            {
+              err = gpg_error (GPG_ERR_CARD);
+              log_error (_("response does not contain the EC public point\n"));
+              goto leave;
+            }
+        }
     }
   else
     {
@@ -1302,9 +1351,8 @@ get_public_key (app_t app, int keyno)
 	}
       hexkeyid = fpr + 24;
 
-      ret = estream_asprintf (&command,
-			      "gpg --list-keys --with-colons --with-key-data '%s'",
-			      fpr);
+      ret = gpgrt_asprintf
+        (&command, "gpg --list-keys --with-colons --with-key-data '%s'", fpr);
       if (ret < 0)
 	{
 	  err = gpg_error_from_syserror ();
@@ -1330,29 +1378,88 @@ get_public_key (app_t app, int keyno)
 	}
     }
 
-  /* Allocate a buffer to construct the S-expression.  */
-  /* FIXME: We should provide a generalized S-expression creation
-     mechanism. */
-  keybuf = xtrymalloc (50 + 2*35 + mlen + elen + 1);
-  if (!keybuf)
+  mbuf = xtrymalloc (mlen + 1);
+  if (!mbuf)
     {
       err = gpg_error_from_syserror ();
       goto leave;
     }
 
-  sprintf (keybuf, "(10:public-key(3:rsa(1:n%u:", (unsigned int) mlen);
-  keybuf_p = keybuf + strlen (keybuf);
-  memcpy (keybuf_p, m, mlen);
-  keybuf_p += mlen;
-  sprintf (keybuf_p, ")(1:e%u:", (unsigned int)elen);
-  keybuf_p += strlen (keybuf_p);
-  memcpy (keybuf_p, e, elen);
-  keybuf_p += elen;
-  strcpy (keybuf_p, ")))");
-  keybuf_p += strlen (keybuf_p);
+  if ((app->app_local->keyattr[keyno].key_type == KEY_TYPE_RSA
+       || (app->app_local->keyattr[keyno].key_type == KEY_TYPE_ECC
+           && !app->app_local->keyattr[keyno].ecc.flags))
+      && mlen && (*m & 0x80))
+    {               /* Prepend numbers with a 0 if needed for MPI.  */
+      *mbuf = 0;
+      memcpy (mbuf+1, m, mlen);
+      mlen++;
+    }
+  else if (app->app_local->keyattr[keyno].key_type == KEY_TYPE_ECC
+           && app->app_local->keyattr[keyno].ecc.flags)
+    {               /* Prepend 0x40 prefix.  */
+      *mbuf = 0x40;
+      memcpy (mbuf+1, m, mlen);
+      mlen++;
+    }
+  else
+    memcpy (mbuf, m, mlen);
+
+  if (app->app_local->keyattr[keyno].key_type == KEY_TYPE_RSA)
+    {
+      ebuf = xtrymalloc (elen + 1);
+      if (!ebuf)
+        {
+          err = gpg_error_from_syserror ();
+          goto leave;
+        }
+      /* Prepend numbers with a 0 if needed.  */
+      if (elen && (*e & 0x80))
+        {
+          *ebuf = 0;
+          memcpy (ebuf+1, e, elen);
+          elen++;
+        }
+      else
+        memcpy (ebuf, e, elen);
+
+      err = gcry_sexp_build (&s_pkey, NULL, "(public-key(rsa(n%b)(e%b)))",
+                             (int)mlen, mbuf, (int)elen, ebuf);
+    }
+  else if (app->app_local->keyattr[keyno].key_type == KEY_TYPE_ECC)
+    {
+      char *format;
+
+      if (!app->app_local->keyattr[keyno].ecc.flags)
+        format = "(public-key(ecc(curve%s)(q%b)))";
+      else if (keyno == 1)
+        format = "(public-key(ecc(curve%s)(flags djb-tweak)(q%b)))";
+      else
+        format = "(public-key(ecc(curve%s)(flags eddsa)(q%b)))";
+
+      err = gcry_sexp_build (&s_pkey, NULL, format,
+                openpgp_oid_to_curve (app->app_local->keyattr[keyno].ecc.oid, 1),
+                             (int)mlen, mbuf);
+    }
+  else
+    err = gpg_error (GPG_ERR_NOT_IMPLEMENTED);
+
+  if (err)
+    goto leave;
+
+  len = gcry_sexp_sprint (s_pkey, GCRYSEXP_FMT_CANON, NULL, 0);
+
+  keybuf = xtrymalloc (len);
+  if (!keybuf)
+    {
+      gcry_sexp_release (s_pkey);
+      err = gpg_error_from_syserror ();
+      goto leave;
+    }
+  gcry_sexp_sprint (s_pkey, GCRYSEXP_FMT_CANON, keybuf, len);
+  gcry_sexp_release (s_pkey);
 
   app->app_local->pk[keyno].key = (unsigned char*)keybuf;
-  app->app_local->pk[keyno].keylen = (keybuf_p - keybuf);
+  app->app_local->pk[keyno].keylen = len - 1; /* Decrement for trailing '\0' */
 
  leave:
   /* Set a flag to indicate that we tried to read the key.  */
@@ -1361,17 +1468,18 @@ get_public_key (app_t app, int keyno)
   xfree (buffer);
   xfree (mbuf);
   xfree (ebuf);
-  return 0;
+  return err;
 }
 #endif /* GNUPG_MAJOR_VERSION > 1 */
 
 
 
-/* Send the KEYPAIRINFO back. KEYNO needs to be in the range [1,3].
+/* Send the KEYPAIRINFO back. KEY needs to be in the range [1,3].
    This is used by the LEARN command. */
 static gpg_error_t
-send_keypair_info (app_t app, ctrl_t ctrl, int keyno)
+send_keypair_info (app_t app, ctrl_t ctrl, int key)
 {
+  int keyno = key - 1;
   gpg_error_t err = 0;
   /* Note that GnuPG 1.x does not need this and it would be too time
      consuming to send it just for the fun of it. */
@@ -1384,19 +1492,19 @@ send_keypair_info (app_t app, ctrl_t ctrl, int keyno)
   if (err)
     goto leave;
 
-  assert (keyno >= 1 && keyno <= 3);
-  if (!app->app_local->pk[keyno-1].key)
+  assert (keyno >= 0 && keyno <= 2);
+  if (!app->app_local->pk[keyno].key)
     goto leave; /* No such key - ignore. */
 
-  err = keygrip_from_canon_sexp (app->app_local->pk[keyno-1].key,
-                                 app->app_local->pk[keyno-1].keylen,
+  err = keygrip_from_canon_sexp (app->app_local->pk[keyno].key,
+                                 app->app_local->pk[keyno].keylen,
                                  grip);
   if (err)
     goto leave;
 
   bin2hex (grip, 20, gripstr);
 
-  sprintf (idbuf, "OPENPGP.%d", keyno);
+  sprintf (idbuf, "OPENPGP.%d", keyno+1);
   send_status_info (ctrl, "KEYPAIRINFO",
                     gripstr, 40,
                     idbuf, strlen (idbuf),
@@ -1440,7 +1548,7 @@ do_learn_status (app_t app, ctrl_t ctrl, unsigned int flags)
   send_keypair_info (app, ctrl, 2);
   send_keypair_info (app, ctrl, 3);
   /* Note: We do not send the Cardholder Certificate, because that is
-     relativly long and for OpenPGP applications not really needed.  */
+     relatively long and for OpenPGP applications not really needed.  */
   return 0;
 }
 
@@ -1459,11 +1567,11 @@ do_readkey (app_t app, const char *keyid, unsigned char **pk, size_t *pklen)
   unsigned char *buf;
 
   if (!strcmp (keyid, "OPENPGP.1"))
-    keyno = 1;
+    keyno = 0;
   else if (!strcmp (keyid, "OPENPGP.2"))
-    keyno = 2;
+    keyno = 1;
   else if (!strcmp (keyid, "OPENPGP.3"))
-    keyno = 3;
+    keyno = 2;
   else
     return gpg_error (GPG_ERR_INV_ID);
 
@@ -1471,10 +1579,10 @@ do_readkey (app_t app, const char *keyid, unsigned char **pk, size_t *pklen)
   if (err)
     return err;
 
-  buf = app->app_local->pk[keyno-1].key;
+  buf = app->app_local->pk[keyno].key;
   if (!buf)
     return gpg_error (GPG_ERR_NO_PUBKEY);
-  *pklen = app->app_local->pk[keyno-1].keylen;;
+  *pklen = app->app_local->pk[keyno].keylen;;
   *pk = xtrymalloc (*pklen);
   if (!*pk)
     {
@@ -1567,7 +1675,7 @@ check_pinpad_request (app_t app, pininfo_t *pininfo, int admin_pin)
 }
 
 
-/* Verify a CHV either using using the pinentry or if possibile by
+/* Verify a CHV either using using the pinentry or if possible by
    using a pinpad.  PINCB and PINCB_ARG describe the usual callback
    for the pinentry.  CHVNO must be either 1 or 2. SIGCOUNT is only
    used with CHV1.  PINVALUE is the address of a pointer which will
@@ -1766,8 +1874,11 @@ build_enter_admin_pin_prompt (app_t app, char **r_prompt)
   remaining = value[6];
   xfree (relptr);
 
-  log_info(_("%d Admin PIN attempts remaining before card"
-             " is permanently locked\n"), remaining);
+  log_info (ngettext("%d Admin PIN attempt remaining before card"
+                     " is permanently locked\n",
+                     "%d Admin PIN attempts remaining before card"
+                     " is permanently locked\n",
+                     remaining), remaining);
 
   if (remaining < 3)
     {
@@ -1907,6 +2018,7 @@ do_setattr (app_t app, const char *name,
     { "SM-KEY-ENC",   0x00D1, 3, 0, 1 },
     { "SM-KEY-MAC",   0x00D2, 3, 0, 1 },
     { "KEY-ATTR",     0,      0, 3, 1 },
+    { "AESKEY",       0x00D5, 3, 0, 1 },
     { NULL, 0 }
   };
   int exmode;
@@ -1948,7 +2060,7 @@ do_setattr (app_t app, const char *name,
     exmode = 0;
   rc = iso7816_put_data (app->slot, exmode, table[idx].tag, value, valuelen);
   if (rc)
-    log_error ("failed to set `%s': %s\n", table[idx].name, gpg_strerror (rc));
+    log_error ("failed to set '%s': %s\n", table[idx].name, gpg_strerror (rc));
 
   if (table[idx].special == 1)
     app->force_chv1 = (valuelen && *value == 0);
@@ -2265,8 +2377,7 @@ do_change_pin (app_t app, ctrl_t ctrl,  const char *chvnostr,
             }
           rc = iso7816_change_reference_data_kp (app->slot, 0x80 + chvno, 0,
                                                  &pininfo);
-          /* Dismiss the prompt. */
-          pincb (pincb_arg, NULL, NULL);
+          pincb (pincb_arg, NULL, NULL); /* Dismiss the prompt. */
         }
       else
         rc = iso7816_change_reference_data (app->slot, 0x80 + chvno,
@@ -2373,8 +2484,6 @@ add_tlv (unsigned char *buffer, unsigned int tag, size_t length)
 }
 
 
-/* Build the private key template as specified in the OpenPGP specs
-   v2.0 section 4.3.3.7.  */
 static gpg_error_t
 build_privkey_template (app_t app, int keyno,
                         const unsigned char *rsa_n, size_t rsa_n_len,
@@ -2401,7 +2510,7 @@ build_privkey_template (app_t app, int keyno,
   *result = NULL;
   *resultlen = 0;
 
-  switch (app->app_local->keyattr[keyno].format)
+  switch (app->app_local->keyattr[keyno].rsa.format)
     {
     case RSA_STD:
     case RSA_STD_N:
@@ -2414,7 +2523,7 @@ build_privkey_template (app_t app, int keyno,
     }
 
   /* Get the required length for E. Rounded up to the nearest byte  */
-  rsa_e_reqlen = (app->app_local->keyattr[keyno].e_bits + 7) / 8;
+  rsa_e_reqlen = (app->app_local->keyattr[keyno].rsa.e_bits + 7) / 8;
   assert (rsa_e_len <= rsa_e_reqlen);
 
   /* Build the 7f48 cardholder private key template.  */
@@ -2430,8 +2539,8 @@ build_privkey_template (app_t app, int keyno,
   tp += add_tlv (tp, 0x93, rsa_q_len);
   datalen += rsa_q_len;
 
-  if (app->app_local->keyattr[keyno].format == RSA_CRT
-      || app->app_local->keyattr[keyno].format == RSA_CRT_N)
+  if (app->app_local->keyattr[keyno].rsa.format == RSA_CRT
+      || app->app_local->keyattr[keyno].rsa.format == RSA_CRT_N)
     {
       tp += add_tlv (tp, 0x94, rsa_u_len);
       datalen += rsa_u_len;
@@ -2441,8 +2550,8 @@ build_privkey_template (app_t app, int keyno,
       datalen += rsa_dq_len;
     }
 
-  if (app->app_local->keyattr[keyno].format == RSA_STD_N
-      || app->app_local->keyattr[keyno].format == RSA_CRT_N)
+  if (app->app_local->keyattr[keyno].rsa.format == RSA_STD_N
+      || app->app_local->keyattr[keyno].rsa.format == RSA_CRT_N)
     {
       tp += add_tlv (tp, 0x97, rsa_n_len);
       datalen += rsa_n_len;
@@ -2494,8 +2603,8 @@ build_privkey_template (app_t app, int keyno,
   memcpy (tp, rsa_q, rsa_q_len);
   tp += rsa_q_len;
 
-  if (app->app_local->keyattr[keyno].format == RSA_CRT
-      || app->app_local->keyattr[keyno].format == RSA_CRT_N)
+  if (app->app_local->keyattr[keyno].rsa.format == RSA_CRT
+      || app->app_local->keyattr[keyno].rsa.format == RSA_CRT_N)
     {
       memcpy (tp, rsa_u, rsa_u_len);
       tp += rsa_u_len;
@@ -2505,8 +2614,8 @@ build_privkey_template (app_t app, int keyno,
       tp += rsa_dq_len;
     }
 
-  if (app->app_local->keyattr[keyno].format == RSA_STD_N
-      || app->app_local->keyattr[keyno].format == RSA_CRT_N)
+  if (app->app_local->keyattr[keyno].rsa.format == RSA_STD_N
+      || app->app_local->keyattr[keyno].rsa.format == RSA_CRT_N)
     {
       memcpy (tp, rsa_n, rsa_n_len);
       tp += rsa_n_len;
@@ -2521,58 +2630,99 @@ build_privkey_template (app_t app, int keyno,
   return 0;
 }
 
+static gpg_error_t
+build_ecc_privkey_template (app_t app, int keyno,
+                            const unsigned char *ecc_d, size_t ecc_d_len,
+                            unsigned char **result, size_t *resultlen)
+{
+  unsigned char privkey[2];
+  size_t privkey_len;
+  unsigned char exthdr[2+2+1];
+  size_t exthdr_len;
+  unsigned char suffix[2+1];
+  size_t suffix_len;
+  unsigned char *tp;
+  size_t datalen;
+  unsigned char *template;
+  size_t template_size;
+
+  (void)app;
+
+  *result = NULL;
+  *resultlen = 0;
+
+  /* Build the 7f48 cardholder private key template.  */
+  datalen = 0;
+  tp = privkey;
+
+  tp += add_tlv (tp, 0x92, ecc_d_len);
+  datalen += ecc_d_len;
+
+  privkey_len = tp - privkey;
+
+  /* Build the extended header list without the private key template.  */
+  tp = exthdr;
+  *tp++ = keyno ==0 ? 0xb6 : keyno == 1? 0xb8 : 0xa4;
+  *tp++ = 0;
+  tp += add_tlv (tp, 0x7f48, privkey_len);
+  exthdr_len = tp - exthdr;
+
+  /* Build the 5f48 suffix of the data.  */
+  tp = suffix;
+  tp += add_tlv (tp, 0x5f48, datalen);
+  suffix_len = tp - suffix;
+
+  /* Now concatenate everything.  */
+  template_size = (1 + 1   /* 0x4d and len. */
+                   + exthdr_len
+                   + privkey_len
+                   + suffix_len
+                   + datalen);
+  tp = template = xtrymalloc_secure (template_size);
+  if (!template)
+    return gpg_error_from_syserror ();
+
+  tp += add_tlv (tp, 0x4d, exthdr_len + privkey_len + suffix_len + datalen);
+  memcpy (tp, exthdr, exthdr_len);
+  tp += exthdr_len;
+  memcpy (tp, privkey, privkey_len);
+  tp += privkey_len;
+  memcpy (tp, suffix, suffix_len);
+  tp += suffix_len;
+
+  memcpy (tp, ecc_d, ecc_d_len);
+  tp += ecc_d_len;
+
+  assert (tp - template == template_size);
+
+  *result = template;
+  *resultlen = tp - template;
+  return 0;
+}
+
 
 /* Helper for do_writekley to change the size of a key.  Not ethat
    this deletes the entire key without asking.  */
 static gpg_error_t
-change_keyattr (app_t app, int keyno, unsigned int nbits,
+change_keyattr (app_t app, int keyno, const unsigned char *buf, size_t buflen,
                 gpg_error_t (*pincb)(void*, const char *, char **),
                 void *pincb_arg)
 {
   gpg_error_t err;
-  unsigned char *buffer;
-  size_t buflen;
-  void *relptr;
 
   assert (keyno >=0 && keyno <= 2);
-
-  if (nbits > 4096)
-    return gpg_error (GPG_ERR_TOO_LARGE);
-
-  /* Read the current attributes into a buffer.  */
-  relptr = get_one_do (app, 0xC1+keyno, &buffer, &buflen, NULL);
-  if (!relptr)
-    return gpg_error (GPG_ERR_CARD);
-  if (buflen < 6 || buffer[0] != 1)
-    {
-      /* Attriutes too short or not an RSA key.  */
-      xfree (relptr);
-      return gpg_error (GPG_ERR_CARD);
-    }
-
-  /* We only change n_bits and don't touch anything else.  Before we
-     do so, we round up NBITS to a sensible way in the same way as
-     gpg's key generation does it.  This may help to sort out problems
-     with a few bits too short keys.  */
-  nbits = ((nbits + 31) / 32) * 32;
-  buffer[1] = (nbits >> 8);
-  buffer[2] = nbits;
 
   /* Prepare for storing the key.  */
   err = verify_chv3 (app, pincb, pincb_arg);
   if (err)
-    {
-      xfree (relptr);
-      return err;
-    }
+    return err;
 
   /* Change the attribute.  */
-  err = iso7816_put_data (app->slot, 0, 0xC1+keyno, buffer, buflen);
-  xfree (relptr);
+  err = iso7816_put_data (app->slot, 0, 0xC1+keyno, buf, buflen);
   if (err)
-    log_error ("error changing size of key %d to %u bits\n", keyno+1, nbits);
+    log_error ("error changing key attribute (key=%d)\n", keyno+1);
   else
-    log_info ("size of key %d changed to %u bits\n", keyno+1, nbits);
+    log_info ("key attribute changed (key=%d)\n", keyno+1);
   flush_cache (app);
   parse_algorithm_attribute (app, keyno);
   app->did_chv1 = 0;
@@ -2582,18 +2732,58 @@ change_keyattr (app_t app, int keyno, unsigned int nbits,
 }
 
 
-/* Helper to process an setattr command for name KEY-ATTR.  It expects
-   a string "--force <keyno> <algo> <nbits>" in (VALUE,VALUELEN).  */
+static gpg_error_t
+change_rsa_keyattr (app_t app, int keyno, unsigned int nbits,
+                    gpg_error_t (*pincb)(void*, const char *, char **),
+                    void *pincb_arg)
+{
+  gpg_error_t err = 0;
+  unsigned char *buf;
+  size_t buflen;
+  void *relptr;
+
+  /* Read the current attributes into a buffer.  */
+  relptr = get_one_do (app, 0xC1+keyno, &buf, &buflen, NULL);
+  if (!relptr)
+    err = gpg_error (GPG_ERR_CARD);
+  else if (buflen < 6 || buf[0] != PUBKEY_ALGO_RSA)
+    {
+      /* Attriutes too short or not an RSA key.  */
+      xfree (relptr);
+      err = gpg_error (GPG_ERR_CARD);
+    }
+  else
+    {
+      /* We only change n_bits and don't touch anything else.  Before we
+         do so, we round up NBITS to a sensible way in the same way as
+         gpg's key generation does it.  This may help to sort out problems
+         with a few bits too short keys.  */
+      nbits = ((nbits + 31) / 32) * 32;
+      buf[1] = (nbits >> 8);
+      buf[2] = nbits;
+      err = change_keyattr (app, keyno, buf, buflen, pincb, pincb_arg);
+      xfree (relptr);
+    }
+
+  return err;
+}
+
+
+/* Helper to process an setattr command for name KEY-ATTR.
+   In (VALUE,VALUELEN), it expects following string:
+        RSA: "--force <key> <algo> rsa<nbits>"
+        ECC: "--force <key> <algo> <curvename>"
+  */
 static gpg_error_t
 change_keyattr_from_string (app_t app,
                             gpg_error_t (*pincb)(void*, const char *, char **),
                             void *pincb_arg,
                             const void *value, size_t valuelen)
 {
-  gpg_error_t err;
+  gpg_error_t err = 0;
   char *string;
-  int keyno, algo;
-  unsigned int nbits;
+  int key, keyno, algo;
+  int n = 0;
 
   /* VALUE is expected to be a string but not guaranteed to be
      terminated.  Thus copy it to an allocated buffer first. */
@@ -2606,42 +2796,77 @@ change_keyattr_from_string (app_t app,
   /* Because this function deletes the key we require the string
      "--force" in the data to make clear that something serious might
      happen.  */
-  if (sscanf (string, " --force %d %d %u", &keyno, &algo, &nbits) != 3)
-    err = gpg_error (GPG_ERR_INV_DATA);
-  else if (keyno < 1 || keyno > 3)
-    err = gpg_error (GPG_ERR_INV_ID);
-  else if (algo != 1)
-    err = gpg_error (GPG_ERR_PUBKEY_ALGO); /* Not RSA.  */
-  else if (nbits < 1024)
-    err = gpg_error (GPG_ERR_TOO_SHORT);
-  else
-    err = change_keyattr (app, keyno-1, nbits, pincb, pincb_arg);
+  sscanf (string, "--force %d %d %n", &key, &algo, &n);
+  if (n < 12)
+    {
+      err = gpg_error (GPG_ERR_INV_DATA);
+      goto leave;
+    }
 
+  keyno = key - 1;
+  if (keyno < 0 || keyno > 2)
+    err = gpg_error (GPG_ERR_INV_ID);
+  else if (algo == PUBKEY_ALGO_RSA)
+    {
+      unsigned int nbits;
+
+      errno = 0;
+      nbits = strtoul (string+n+3, NULL, 10);
+      if (errno)
+        err = gpg_error (GPG_ERR_INV_DATA);
+      else if (nbits < 1024)
+        err = gpg_error (GPG_ERR_TOO_SHORT);
+      else if (nbits > 4096)
+        err = gpg_error (GPG_ERR_TOO_LARGE);
+      else
+        err = change_rsa_keyattr (app, keyno, nbits, pincb, pincb_arg);
+    }
+  else if (algo == PUBKEY_ALGO_ECDH || algo == PUBKEY_ALGO_ECDSA
+           || algo == PUBKEY_ALGO_EDDSA)
+    {
+      const char *oidstr;
+      gcry_mpi_t oid;
+      const unsigned char *oidbuf;
+      size_t oid_len;
+
+      oidstr = openpgp_curve_to_oid (string+n, NULL);
+      if (!oidstr)
+        {
+          err = gpg_error (GPG_ERR_INV_DATA);
+          goto leave;
+        }
+
+      err = openpgp_oid_from_str (oidstr, &oid);
+      if (err)
+        goto leave;
+
+      oidbuf = gcry_mpi_get_opaque (oid, &n);
+      oid_len = (n+7)/8;
+
+      /* We have enough room at STRING.  */
+      string[0] = algo;
+      memcpy (string+1, oidbuf+1, oid_len-1);
+      err = change_keyattr (app, keyno, string, oid_len, pincb, pincb_arg);
+      gcry_mpi_release (oid);
+    }
+  else
+    err = gpg_error (GPG_ERR_PUBKEY_ALGO);
+
+ leave:
   xfree (string);
   return err;
 }
 
 
-/* Handle the WRITEKEY command for OpenPGP.  This function expects a
-   canonical encoded S-expression with the secret key in KEYDATA and
-   its length (for assertions) in KEYDATALEN.  KEYID needs to be the
-   usual keyid which for OpenPGP is the string "OPENPGP.n" with
-   n=1,2,3.  Bit 0 of FLAGS indicates whether an existing key shall
-   get overwritten.  PINCB and PINCB_ARG are the usual arguments for
-   the pinentry callback.  */
 static gpg_error_t
-do_writekey (app_t app, ctrl_t ctrl,
-             const char *keyid, unsigned int flags,
-             gpg_error_t (*pincb)(void*, const char *, char **),
-             void *pincb_arg,
-             const unsigned char *keydata, size_t keydatalen)
+rsa_writekey (app_t app, gpg_error_t (*pincb)(void*, const char *, char **),
+              void *pincb_arg, int keyno,
+              const unsigned char *buf, size_t buflen, int depth)
 {
   gpg_error_t err;
-  int force = (flags & 1);
-  int keyno;
-  const unsigned char *buf, *tok;
-  size_t buflen, toklen;
-  int depth, last_depth1, last_depth2;
+  const unsigned char *tok;
+  size_t toklen;
+  int last_depth1, last_depth2;
   const unsigned char *rsa_n = NULL;
   const unsigned char *rsa_e = NULL;
   const unsigned char *rsa_p = NULL;
@@ -2655,52 +2880,13 @@ do_writekey (app_t app, ctrl_t ctrl,
   unsigned char fprbuf[20];
   u32 created_at = 0;
 
-  (void)ctrl;
-
-  if (!strcmp (keyid, "OPENPGP.1"))
-    keyno = 0;
-  else if (!strcmp (keyid, "OPENPGP.2"))
-    keyno = 1;
-  else if (!strcmp (keyid, "OPENPGP.3"))
-    keyno = 2;
-  else
-    return gpg_error (GPG_ERR_INV_ID);
-
-  err = does_key_exist (app, keyno, 0, force);
-  if (err)
-    return err;
-
-
-  /*
-     Parse the S-expression
-   */
-  buf = keydata;
-  buflen = keydatalen;
-  depth = 0;
-  if ((err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen)))
-    goto leave;
-  if ((err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen)))
-    goto leave;
-  if (!tok || toklen != 11 || memcmp ("private-key", tok, toklen))
+  if (app->app_local->keyattr[keyno].key_type != KEY_TYPE_RSA)
     {
-      if (!tok)
-        ;
-      else if (toklen == 21 && !memcmp ("protected-private-key", tok, toklen))
-        log_info ("protected-private-key passed to writekey\n");
-      else if (toklen == 20 && !memcmp ("shadowed-private-key", tok, toklen))
-        log_info ("shadowed-private-key passed to writekey\n");
-      err = gpg_error (GPG_ERR_BAD_SECKEY);
+      log_error (_("unsupported algorithm: %s"), "RSA");
+      err = gpg_error (GPG_ERR_INV_VALUE);
       goto leave;
     }
-  if ((err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen)))
-    goto leave;
-  if ((err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen)))
-    goto leave;
-  if (!tok || toklen != 3 || memcmp ("rsa", tok, toklen))
-    {
-      err = gpg_error (GPG_ERR_WRONG_PUBKEY_ALGO);
-      goto leave;
-    }
+
   last_depth1 = depth;
   while (!(err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen))
          && depth && depth >= last_depth1)
@@ -2791,7 +2977,7 @@ do_writekey (app_t app, ctrl_t ctrl,
       goto leave;
     }
 
-  maxbits = app->app_local->keyattr[keyno].n_bits;
+  maxbits = app->app_local->keyattr[keyno].rsa.n_bits;
   nbits = rsa_n? count_bits (rsa_n, rsa_n_len) : 0;
   if (opt.verbose)
     log_info ("RSA modulus size is %u bits (%u bytes)\n",
@@ -2800,9 +2986,9 @@ do_writekey (app_t app, ctrl_t ctrl,
       && app->app_local->extcap.algo_attr_change)
     {
       /* Try to switch the key to a new length.  */
-      err = change_keyattr (app, keyno, nbits, pincb, pincb_arg);
+      err = change_rsa_keyattr (app, keyno, nbits, pincb, pincb_arg);
       if (!err)
-        maxbits = app->app_local->keyattr[keyno].n_bits;
+        maxbits = app->app_local->keyattr[keyno].rsa.n_bits;
     }
   if (nbits != maxbits)
     {
@@ -2812,7 +2998,7 @@ do_writekey (app_t app, ctrl_t ctrl,
       goto leave;
     }
 
-  maxbits = app->app_local->keyattr[keyno].e_bits;
+  maxbits = app->app_local->keyattr[keyno].rsa.e_bits;
   if (maxbits > 32 && !app->app_local->extcap.is_v2)
     maxbits = 32; /* Our code for v1 does only support 32 bits.  */
   nbits = rsa_e? count_bits (rsa_e, rsa_e_len) : 0;
@@ -2824,7 +3010,7 @@ do_writekey (app_t app, ctrl_t ctrl,
       goto leave;
     }
 
-  maxbits = app->app_local->keyattr[keyno].n_bits/2;
+  maxbits = app->app_local->keyattr[keyno].rsa.n_bits/2;
   nbits = rsa_p? count_bits (rsa_p, rsa_p_len) : 0;
   if (nbits != maxbits)
     {
@@ -2973,9 +3159,8 @@ do_writekey (app_t app, ctrl_t ctrl,
       goto leave;
     }
 
-  err = store_fpr (app, keyno, created_at,
-                  rsa_n, rsa_n_len, rsa_e, rsa_e_len,
-                  fprbuf, app->card_version);
+  err = store_fpr (app, keyno, created_at, fprbuf, PUBKEY_ALGO_RSA,
+                   rsa_n, rsa_n_len, rsa_e, rsa_e_len);
   if (err)
     goto leave;
 
@@ -2984,6 +3169,341 @@ do_writekey (app_t app, ctrl_t ctrl,
   xfree (template);
   return err;
 }
+
+
+static gpg_error_t
+ecc_writekey (app_t app, gpg_error_t (*pincb)(void*, const char *, char **),
+              void *pincb_arg, int keyno,
+              const unsigned char *buf, size_t buflen, int depth)
+{
+  gpg_error_t err;
+  const unsigned char *tok;
+  size_t toklen;
+  int last_depth1, last_depth2;
+  const unsigned char *ecc_q = NULL;
+  const unsigned char *ecc_d = NULL;
+  size_t ecc_q_len, ecc_d_len;
+  u32 created_at = 0;
+  const char *oidstr = NULL;
+  int flag_djb_tweak = 0;
+  int algo;
+  gcry_mpi_t oid;
+  const unsigned char *oidbuf = NULL;
+  unsigned int n;
+  size_t oid_len;
+  unsigned char fprbuf[20];
+
+  /* (private-key(ecc(curve%s)(q%m)(d%m))(created-at%d)):
+     curve = "NIST P-256" */
+  /* (private-key(ecc(curve%s)(q%m)(d%m))(created-at%d)):
+     curve = "secp256k1" */
+  /* (private-key(ecc(curve%s)(flags eddsa)(q%m)(d%m))(created-at%d)):
+      curve = "Ed25519" */
+  last_depth1 = depth;
+  while (!(err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen))
+         && depth && depth >= last_depth1)
+    {
+      if (tok)
+        {
+          err = gpg_error (GPG_ERR_UNKNOWN_SEXP);
+          goto leave;
+        }
+      if ((err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen)))
+        goto leave;
+
+      if (tok && toklen == 5 && !memcmp (tok, "curve", 5))
+        {
+          unsigned char *curve;
+
+          if ((err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen)))
+            goto leave;
+
+          curve = xtrymalloc (toklen+1);
+          if (!curve)
+            {
+              err = gpg_error_from_syserror ();
+              goto leave;
+            }
+
+          memcpy (curve, tok, toklen);
+          curve[toklen] = 0;
+          oidstr = openpgp_curve_to_oid (curve, NULL);
+          xfree (curve);
+        }
+      else if (tok && toklen == 5 && !memcmp (tok, "flags", 5))
+        {
+          if ((err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen)))
+            goto leave;
+
+          if (tok)
+            {
+              if ((toklen == 5 && !memcmp (tok, "eddsa", 5))
+                  || (toklen == 9 && !memcmp (tok, "djb-tweak", 9)))
+                flag_djb_tweak = 1;
+            }
+        }
+      else if (tok && toklen == 1)
+        {
+          const unsigned char **buf2;
+          size_t *buf2len;
+          int native = flag_djb_tweak;
+
+          switch (*tok)
+            {
+            case 'q': buf2 = &ecc_q; buf2len = &ecc_q_len; break;
+            case 'd': buf2 = &ecc_d; buf2len = &ecc_d_len; native = 0; break;
+            default: buf2 = NULL;  buf2len = NULL; break;
+            }
+          if (buf2 && *buf2)
+            {
+              err = gpg_error (GPG_ERR_DUP_VALUE);
+              goto leave;
+            }
+          if ((err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen)))
+            goto leave;
+          if (tok && buf2)
+            {
+              if (!native)
+                /* Strip off leading zero bytes and save. */
+                for (;toklen && !*tok; toklen--, tok++)
+                  ;
+
+              *buf2 = tok;
+              *buf2len = toklen;
+            }
+        }
+      /* Skip until end of list. */
+      last_depth2 = depth;
+      while (!(err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen))
+             && depth && depth >= last_depth2)
+        ;
+      if (err)
+        goto leave;
+    }
+  /* Parse other attributes. */
+  last_depth1 = depth;
+  while (!(err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen))
+         && depth && depth >= last_depth1)
+    {
+      if (tok)
+        {
+          err = gpg_error (GPG_ERR_UNKNOWN_SEXP);
+          goto leave;
+        }
+      if ((err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen)))
+        goto leave;
+      if (tok && toklen == 10 && !memcmp ("created-at", tok, toklen))
+        {
+          if ((err = parse_sexp (&buf,&buflen,&depth,&tok,&toklen)))
+            goto leave;
+          if (tok)
+            {
+              for (created_at=0; toklen && *tok && *tok >= '0' && *tok <= '9';
+                   tok++, toklen--)
+                created_at = created_at*10 + (*tok - '0');
+            }
+        }
+      /* Skip until end of list. */
+      last_depth2 = depth;
+      while (!(err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen))
+             && depth && depth >= last_depth2)
+        ;
+      if (err)
+        goto leave;
+    }
+
+
+  /* Check that we have all parameters and that they match the card
+     description. */
+  if (!oidstr)
+    {
+      log_error (_("unsupported curve\n"));
+      err = gpg_error (GPG_ERR_INV_VALUE);
+      goto leave;
+    }
+  if (!created_at)
+    {
+      log_error (_("creation timestamp missing\n"));
+      err = gpg_error (GPG_ERR_INV_VALUE);
+      goto leave;
+    }
+  if (flag_djb_tweak && keyno != 1)
+    algo = PUBKEY_ALGO_EDDSA;
+  else if (keyno == 1)
+    algo = PUBKEY_ALGO_ECDH;
+  else
+    algo = PUBKEY_ALGO_ECDSA;
+
+  err = openpgp_oid_from_str (oidstr, &oid);
+  if (err)
+    goto leave;
+  oidbuf = gcry_mpi_get_opaque (oid, &n);
+  oid_len = (n+7)/8;
+  if (!oidbuf)
+    {
+      err = gpg_error_from_syserror ();
+      gcry_mpi_release (oid);
+      goto leave;
+    }
+
+  if (app->app_local->keyattr[keyno].key_type != KEY_TYPE_ECC
+      || app->app_local->keyattr[keyno].ecc.oid != oidstr
+      || app->app_local->keyattr[keyno].ecc.flags != flag_djb_tweak)
+    {
+      if (app->app_local->extcap.algo_attr_change)
+        {
+          unsigned char keyattr[oid_len];
+
+          keyattr[0] = algo;
+          memcpy (keyattr+1, oidbuf+1, oid_len-1);
+          err = change_keyattr (app, keyno, keyattr, oid_len, pincb, pincb_arg);
+          if (err)
+            goto leave;
+        }
+      else
+        {
+          log_error ("key attribute on card doesn't match\n");
+          err = gpg_error (GPG_ERR_INV_VALUE);
+          goto leave;
+        }
+    }
+
+  if (opt.verbose)
+    log_info ("ECC private key size is %u bytes\n", (unsigned int)ecc_d_len);
+
+  /* We need to remove the cached public key.  */
+  xfree (app->app_local->pk[keyno].key);
+  app->app_local->pk[keyno].key = NULL;
+  app->app_local->pk[keyno].keylen = 0;
+  app->app_local->pk[keyno].read_done = 0;
+
+  if (app->app_local->extcap.is_v2)
+    {
+      /* Build the private key template as described in section 4.3.3.7 of
+         the OpenPGP card specs version 2.0.  */
+      unsigned char *template;
+      size_t template_len;
+      int exmode;
+
+      err = build_ecc_privkey_template (app, keyno,
+                                        ecc_d, ecc_d_len,
+                                        &template, &template_len);
+      if (err)
+        goto leave;
+
+      /* Prepare for storing the key.  */
+      err = verify_chv3 (app, pincb, pincb_arg);
+      if (err)
+        {
+          xfree (template);
+          goto leave;
+        }
+
+      /* Store the key. */
+      if (app->app_local->cardcap.ext_lc_le && template_len > 254)
+        exmode = 1;    /* Use extended length w/o a limit.  */
+      else if (app->app_local->cardcap.cmd_chaining && template_len > 254)
+        exmode = -254;
+      else
+        exmode = 0;
+      err = iso7816_put_data_odd (app->slot, exmode, 0x3fff,
+                                  template, template_len);
+      xfree (template);
+    }
+  else
+    err = gpg_error (GPG_ERR_NOT_SUPPORTED);
+
+  if (err)
+    {
+      log_error (_("failed to store the key: %s\n"), gpg_strerror (err));
+      goto leave;
+    }
+
+  err = store_fpr (app, keyno, created_at, fprbuf, algo, oidbuf, oid_len,
+                   ecc_q, ecc_q_len, "\x03\x01\x08\x07", (size_t)4);
+
+ leave:
+  if (oidbuf)
+    gcry_mpi_release (oid);
+  return err;
+}
+
+/* Handle the WRITEKEY command for OpenPGP.  This function expects a
+   canonical encoded S-expression with the secret key in KEYDATA and
+   its length (for assertions) in KEYDATALEN.  KEYID needs to be the
+   usual keyid which for OpenPGP is the string "OPENPGP.n" with
+   n=1,2,3.  Bit 0 of FLAGS indicates whether an existing key shall
+   get overwritten.  PINCB and PINCB_ARG are the usual arguments for
+   the pinentry callback.  */
+static gpg_error_t
+do_writekey (app_t app, ctrl_t ctrl,
+             const char *keyid, unsigned int flags,
+             gpg_error_t (*pincb)(void*, const char *, char **),
+             void *pincb_arg,
+             const unsigned char *keydata, size_t keydatalen)
+{
+  gpg_error_t err;
+  int force = (flags & 1);
+  int keyno;
+  const unsigned char *buf, *tok;
+  size_t buflen, toklen;
+  int depth;
+
+  (void)ctrl;
+
+  if (!strcmp (keyid, "OPENPGP.1"))
+    keyno = 0;
+  else if (!strcmp (keyid, "OPENPGP.2"))
+    keyno = 1;
+  else if (!strcmp (keyid, "OPENPGP.3"))
+    keyno = 2;
+  else
+    return gpg_error (GPG_ERR_INV_ID);
+
+  err = does_key_exist (app, keyno, 0, force);
+  if (err)
+    return err;
+
+
+  /*
+     Parse the S-expression
+   */
+  buf = keydata;
+  buflen = keydatalen;
+  depth = 0;
+  if ((err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen)))
+    goto leave;
+  if ((err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen)))
+    goto leave;
+  if (!tok || toklen != 11 || memcmp ("private-key", tok, toklen))
+    {
+      if (!tok)
+        ;
+      else if (toklen == 21 && !memcmp ("protected-private-key", tok, toklen))
+        log_info ("protected-private-key passed to writekey\n");
+      else if (toklen == 20 && !memcmp ("shadowed-private-key", tok, toklen))
+        log_info ("shadowed-private-key passed to writekey\n");
+      err = gpg_error (GPG_ERR_BAD_SECKEY);
+      goto leave;
+    }
+  if ((err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen)))
+    goto leave;
+  if ((err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen)))
+    goto leave;
+  if (tok && toklen == 3 && memcmp ("rsa", tok, toklen) == 0)
+    err = rsa_writekey (app, pincb, pincb_arg, keyno, buf, buflen, depth);
+  else if (tok && toklen == 3 && memcmp ("ecc", tok, toklen) == 0)
+    err = ecc_writekey (app, pincb, pincb_arg, keyno, buf, buflen, depth);
+  else
+    {
+      err = gpg_error (GPG_ERR_WRONG_PUBKEY_ALGO);
+      goto leave;
+    }
+
+ leave:
+  return err;
+}
+
 
 
 /* Handle the GENKEY command. */
@@ -3000,16 +3520,15 @@ do_genkey (app_t app, ctrl_t ctrl,  const char *keynostr, unsigned int flags,
   unsigned char *buffer = NULL;
   size_t buflen, keydatalen, mlen, elen;
   time_t created_at;
-  int keyno = atoi (keynostr);
+  int keyno = atoi (keynostr) - 1;
   int force = (flags & 1);
   time_t start_at;
   int exmode;
   int le_value;
   unsigned int keybits;
 
-  if (keyno < 1 || keyno > 3)
+  if (keyno < 0 || keyno > 2)
     return gpg_error (GPG_ERR_INV_ID);
-  keyno--;
 
   /* We flush the cache to increase the traffic before a key
      generation.  This _might_ help a card to gather more entropy. */
@@ -3030,7 +3549,7 @@ do_genkey (app_t app, ctrl_t ctrl,  const char *keynostr, unsigned int flags,
      to put a limit on the max. allowed keysize.  2048 bit will
      already lead to a 527 byte long status line and thus a 4096 bit
      key would exceed the Assuan line length limit.  */
-  keybits = app->app_local->keyattr[keyno].n_bits;
+  keybits = app->app_local->keyattr[keyno].rsa.n_bits;
   if (keybits > 4096)
     return gpg_error (GPG_ERR_TOO_LARGE);
 
@@ -3071,8 +3590,13 @@ do_genkey (app_t app, ctrl_t ctrl,  const char *keynostr, unsigned int flags,
       log_error (_("generating key failed\n"));
       goto leave;
     }
-  log_info (_("key generation completed (%d seconds)\n"),
-            (int)(time (NULL) - start_at));
+
+  {
+    int nsecs = (int)(time (NULL) - start_at);
+    log_info (ngettext("key generation completed (%d second)\n",
+                       "key generation completed (%d seconds)\n",
+                       nsecs), nsecs);
+  }
 
   keydata = find_tlv (buffer, buflen, 0x7F49, &keydatalen);
   if (!keydata)
@@ -3107,8 +3631,13 @@ do_genkey (app_t app, ctrl_t ctrl,  const char *keynostr, unsigned int flags,
   send_status_info (ctrl, "KEY-CREATED-AT",
                     numbuf, (size_t)strlen(numbuf), NULL, 0);
 
-  rc = store_fpr (app, keyno, (u32)created_at,
-                  m, mlen, e, elen, fprbuf, app->card_version);
+  for (; mlen && !*m; mlen--, m++) /* strip leading zeroes */
+    ;
+  for (; elen && !*e; elen--, e++) /* strip leading zeroes */
+    ;
+
+  rc = store_fpr (app, keyno, (u32)created_at, fprbuf, PUBKEY_ALGO_RSA,
+                  m, mlen, e, elen);
   if (rc)
     goto leave;
   send_fpr_if_not_null (ctrl, "KEY-FPR", -1, fprbuf);
@@ -3159,7 +3688,7 @@ compare_fingerprint (app_t app, int keyno, unsigned char *sha1fpr)
   size_t buflen, n;
   int rc, i;
 
-  assert (keyno >= 1 && keyno <= 3);
+  assert (keyno >= 0 && keyno <= 2);
 
   rc = get_cached_data (app, 0x006E, &buffer, &buflen, 0, 0);
   if (rc)
@@ -3174,7 +3703,7 @@ compare_fingerprint (app_t app, int keyno, unsigned char *sha1fpr)
       log_error (_("error reading fingerprint DO\n"));
       return gpg_error (GPG_ERR_GENERAL);
     }
-  fpr += (keyno-1)*20;
+  fpr += keyno*20;
   for (i=0; i < 20; i++)
     if (sha1fpr[i] != fpr[i])
       {
@@ -3193,7 +3722,7 @@ compare_fingerprint (app_t app, int keyno, unsigned char *sha1fpr)
    gpg has not been updated.  If there is no fingerprint we assume
    that this is okay. */
 static gpg_error_t
-check_against_given_fingerprint (app_t app, const char *fpr, int keyno)
+check_against_given_fingerprint (app_t app, const char *fpr, int key)
 {
   unsigned char tmp[20];
   const char *s;
@@ -3210,7 +3739,7 @@ check_against_given_fingerprint (app_t app, const char *fpr, int keyno)
 
   for (s=fpr, n=0; n < 20; s += 2, n++)
         tmp[n] = xtoi_2 (s);
-  return compare_fingerprint (app, keyno, tmp);
+  return compare_fingerprint (app, key-1, tmp);
 }
 
 
@@ -3351,14 +3880,23 @@ do_sign (app_t app, const char *keyidstr, int hashalgo,
       memcpy (data + sizeof b ## _prefix, indata, indatalen); \
     }
 
-  X(SHA1,   sha1,   1)
-  else X(RMD160, rmd160, 1)
-  else X(SHA224, sha224, app->app_local->extcap.is_v2)
-  else X(SHA256, sha256, app->app_local->extcap.is_v2)
-  else X(SHA384, sha384, app->app_local->extcap.is_v2)
-  else X(SHA512, sha512, app->app_local->extcap.is_v2)
+  if (use_auth
+      || app->app_local->keyattr[use_auth? 2: 0].key_type == KEY_TYPE_RSA)
+    {
+      X(SHA1,   sha1,   1)
+      else X(RMD160, rmd160, 1)
+      else X(SHA224, sha224, app->app_local->extcap.is_v2)
+      else X(SHA256, sha256, app->app_local->extcap.is_v2)
+      else X(SHA384, sha384, app->app_local->extcap.is_v2)
+      else X(SHA512, sha512, app->app_local->extcap.is_v2)
+      else
+        return gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM);
+    }
   else
-    return gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM);
+    {
+      datalen = indatalen;
+      memcpy (data, indata, indatalen);
+    }
 #undef X
 
   /* Redirect to the AUTH command if asked to. */
@@ -3447,8 +3985,26 @@ do_auth (app_t app, const char *keyidstr,
 
   if (!keyidstr || !*keyidstr)
     return gpg_error (GPG_ERR_INV_VALUE);
-  if (indatalen > 101) /* For a 2048 bit key. */
+  if (app->app_local->keyattr[2].key_type == KEY_TYPE_RSA
+      && indatalen > 101) /* For a 2048 bit key. */
     return gpg_error (GPG_ERR_INV_VALUE);
+
+  if (app->app_local->keyattr[2].key_type == KEY_TYPE_ECC)
+    {
+      if (!app->app_local->keyattr[2].ecc.flags
+          && (indatalen == 51 || indatalen == 67 || indatalen == 83))
+        {
+          const char *p = (const char *)indata + 19;
+          indata = p;
+          indatalen -= 19;
+        }
+      else
+        {
+          const char *p = (const char *)indata + 15;
+          indata = p;
+          indatalen -= 15;
+        }
+    }
 
   /* Check whether an OpenPGP card of any version has been requested. */
   if (!strcmp (keyidstr, "OPENPGP.3"))
@@ -3515,7 +4071,8 @@ do_decipher (app_t app, const char *keyidstr,
              gpg_error_t (*pincb)(void*, const char *, char **),
              void *pincb_arg,
              const void *indata, size_t indatalen,
-             unsigned char **outdata, size_t *outdatalen )
+             unsigned char **outdata, size_t *outdatalen,
+             unsigned int *r_info)
 {
   int rc;
   unsigned char tmp_sn[20]; /* actually 16 but we use it also for the fpr. */
@@ -3523,6 +4080,9 @@ do_decipher (app_t app, const char *keyidstr,
   int n;
   const char *fpr = NULL;
   int exmode, le_value;
+  unsigned char *fixbuf = NULL;
+  int padind = 0;
+  int fixuplen = 0;
 
   if (!keyidstr || !*keyidstr || !indatalen)
     return gpg_error (GPG_ERR_INV_VALUE);
@@ -3564,19 +4124,26 @@ do_decipher (app_t app, const char *keyidstr,
     return rc;
 
   rc = verify_chv2 (app, pincb, pincb_arg);
-  if (!rc)
-    {
-      size_t fixuplen;
-      unsigned char *fixbuf = NULL;
-      int padind = 0;
+  if (rc)
+    return rc;
 
+  if ((indatalen == 16 + 1 || indatalen == 32 + 1)
+      && ((char *)indata)[0] == 0x02)
+    {
+      /* PSO:DECIPHER with symmetric key.  */
+      padind = -1;
+    }
+  else if (app->app_local->keyattr[1].key_type == KEY_TYPE_RSA)
+    {
       /* We might encounter a couple of leading zeroes in the
-         cryptogram.  Due to internal use of MPIs thease leading
-         zeroes are stripped.  However the OpenPGP card expects
-         exactly 128 bytes for the cryptogram (for a 1k key).  Thus we
-         need to fix it up.  We do this for up to 16 leading zero
-         bytes; a cryptogram with more than this is with a very high
-         probability anyway broken.  */
+         cryptogram.  Due to internal use of MPIs these leading zeroes
+         are stripped.  However the OpenPGP card expects exactly 128
+         bytes for the cryptogram (for a 1k key).  Thus we need to fix
+         it up.  We do this for up to 16 leading zero bytes; a
+         cryptogram with more than this is with a very high
+         probability anyway broken.  If a signed conversion was used
+         we may also encounter one leading zero followed by the correct
+         length.  We fix that as well.  */
       if (indatalen >= (128-16) && indatalen < 128)      /* 1024 bit key.  */
         fixuplen = 128 - indatalen;
       else if (indatalen >= (192-16) && indatalen < 192) /* 1536 bit key.  */
@@ -3587,10 +4154,16 @@ do_decipher (app_t app, const char *keyidstr,
         fixuplen = 384 - indatalen;
       else if (indatalen >= (512-16) && indatalen < 512) /* 4096 bit key.  */
         fixuplen = 512 - indatalen;
+      else if (!*(const char *)indata && (indatalen == 129
+                                          || indatalen == 193
+                                          || indatalen == 257
+                                          || indatalen == 385
+                                          || indatalen == 513))
+        fixuplen = -1;
       else
         fixuplen = 0;
 
-      if (fixuplen)
+      if (fixuplen > 0)
         {
           /* While we have to prepend stuff anyway, we can also
              include the padding byte here so that iso1816_decipher
@@ -3607,31 +4180,106 @@ do_decipher (app_t app, const char *keyidstr,
           indatalen = fixuplen + indatalen;
           padind = -1; /* Already padded.  */
         }
-
-      if (app->app_local->cardcap.ext_lc_le && indatalen > 254 )
+      else if (fixuplen < 0)
         {
-          exmode = 1;    /* Extended length w/o a limit.  */
-          le_value = app->app_local->extcap.max_rsp_data;
+          /* We use the extra leading zero as the padding byte.  */
+          padind = -1;
         }
-      else if (app->app_local->cardcap.cmd_chaining && indatalen > 254)
+    }
+  else if (app->app_local->keyattr[1].key_type == KEY_TYPE_ECC)
+    {
+      int old_format_len = 0;
+
+      if (app->app_local->keyattr[1].ecc.flags)
         {
-          exmode = -254; /* Command chaining with max. 254 bytes.  */
-          le_value = 0;
+          if (indatalen > 32 && (indatalen % 2))
+            { /*
+               * Skip the prefix.  It may be 0x40 (in new format), or MPI
+               * head of 0x00 (in old format).
+               */
+              indata = (const char *)indata + 1;
+              indatalen--;
+            }
+          else if (indatalen < 32)
+            { /*
+               * Old format trancated by MPI handling.
+               */
+              old_format_len = indatalen;
+              indatalen = 32;
+            }
+        }
+
+      fixuplen = 7;
+      fixbuf = xtrymalloc (fixuplen + indatalen);
+      if (!fixbuf)
+        return gpg_error_from_syserror ();
+
+      /* Build 'Cipher DO' */
+      fixbuf[0] = '\xa6';
+      fixbuf[1] = (char)(indatalen+5);
+      fixbuf[2] = '\x7f';
+      fixbuf[3] = '\x49';
+      fixbuf[4] = (char)(indatalen+2);
+      fixbuf[5] = '\x86';
+      fixbuf[6] = (char)indatalen;
+      if (old_format_len)
+        {
+          memset (fixbuf+fixuplen, 0, 32 - old_format_len);
+          memcpy (fixbuf+fixuplen + 32 - old_format_len,
+                  indata, old_format_len);
         }
       else
-        exmode = le_value = 0;
+        {
+          memcpy (fixbuf+fixuplen, indata, indatalen);
+        }
+      indata = fixbuf;
+      indatalen = fixuplen + indatalen;
 
-      rc = iso7816_decipher (app->slot, exmode,
-                             indata, indatalen, le_value, padind,
-                             outdata, outdatalen);
-      xfree (fixbuf);
-
-      if (gpg_err_code (rc) == GPG_ERR_CARD /* actual SW is 0x640a */
-          && app->app_local->manufacturer == 5
-          && app->card_version == 0x0200)
-        log_info ("NOTE: Cards with manufacturer id 5 and s/n <= 346 (0x15a)"
-                  " do not work with encryption keys > 2048 bits\n");
+      padind = -1;
     }
+  else
+    return gpg_error (GPG_ERR_INV_VALUE);
+
+  if (app->app_local->cardcap.ext_lc_le && indatalen > 254 )
+    {
+      exmode = 1;    /* Extended length w/o a limit.  */
+      le_value = app->app_local->extcap.max_rsp_data;
+    }
+  else if (app->app_local->cardcap.cmd_chaining && indatalen > 254)
+    {
+      exmode = -254; /* Command chaining with max. 254 bytes.  */
+      le_value = 0;
+    }
+  else
+    exmode = le_value = 0;
+
+  rc = iso7816_decipher (app->slot, exmode,
+                         indata, indatalen, le_value, padind,
+                         outdata, outdatalen);
+  xfree (fixbuf);
+  if (app->app_local->keyattr[1].key_type == KEY_TYPE_ECC
+      && app->app_local->keyattr[1].ecc.flags)
+    { /* Add the prefix 0x40 */
+      fixbuf = xtrymalloc (*outdatalen + 1);
+      if (!fixbuf)
+        {
+          xfree (*outdata);
+          return gpg_error_from_syserror ();
+        }
+      fixbuf[0] = 0x40;
+      memcpy (fixbuf+1, *outdata, *outdatalen);
+      xfree (*outdata);
+      *outdata = fixbuf;
+      *outdatalen = *outdatalen + 1;
+    }
+
+  if (gpg_err_code (rc) == GPG_ERR_CARD /* actual SW is 0x640a */
+      && app->app_local->manufacturer == 5
+      && app->card_version == 0x0200)
+    log_info ("NOTE: Cards with manufacturer id 5 and s/n <= 346 (0x15a)"
+              " do not work with encryption keys > 2048 bits\n");
+
+  *r_info |= APP_DECIPHER_INFO_NOPAD;
 
   return rc;
 }
@@ -3741,13 +4389,16 @@ show_caps (struct app_local_s *s)
   log_info ("Algo-Attr-Change: %s\n", s->extcap.algo_attr_change? "yes":"no");
   log_info ("SM-Support .....: %s", s->extcap.sm_supported? "yes":"no");
   if (s->extcap.sm_supported)
-    log_printf (" (%s)", s->extcap.sm_aes128? "AES-128":"3DES");
+    log_printf (" (%s)", s->extcap.sm_algo==2? "3DES":
+                (s->extcap.sm_algo==2? "AES-128" : "AES-256"));
   log_info ("Max-Cert3-Len ..: %u\n", s->extcap.max_certlen_3);
   log_info ("Max-Cmd-Data ...: %u\n", s->extcap.max_cmd_data);
   log_info ("Max-Rsp-Data ...: %u\n", s->extcap.max_rsp_data);
   log_info ("Cmd-Chaining ...: %s\n", s->cardcap.cmd_chaining?"yes":"no");
   log_info ("Ext-Lc-Le ......: %s\n", s->cardcap.ext_lc_le?"yes":"no");
   log_info ("Status Indicator: %02X\n", s->status_indicator);
+  log_info ("Symmetric crypto: %s\n", s->extcap.has_decrypt? "yes":"no");
+  log_info ("Button..........: %s\n", s->extcap.has_button? "yes":"no");
 
   log_info ("GnuPG-No-Sync ..: %s\n",  s->flags.no_sync? "yes":"no");
   log_info ("GnuPG-Def-PW2 ..: %s\n",  s->flags.def_chv2? "yes":"no");
@@ -3804,6 +4455,44 @@ parse_historical (struct app_local_s *apploc,
 }
 
 
+/*
+ * Check if the OID in an DER encoding is available by GnuPG/libgcrypt,
+ * and return the constant string in dotted decimal form.
+ * Return NULL if not available.
+ * The constant string is not allocated dynamically, never free it.
+ */
+static const char *
+ecc_oid (unsigned char *buf, size_t buflen)
+{
+  gcry_mpi_t oid;
+  char *oidstr;
+  const char *result;
+  unsigned char *oidbuf;
+
+  oidbuf = xtrymalloc (buflen + 1);
+  if (!oidbuf)
+    return NULL;
+
+  memcpy (oidbuf+1, buf, buflen);
+  oidbuf[0] = buflen;
+  oid = gcry_mpi_set_opaque (NULL, oidbuf, (buflen+1) * 8);
+  if (!oid)
+    {
+      xfree (oidbuf);
+      return NULL;
+    }
+
+  oidstr = openpgp_oid_to_str (oid);
+  gcry_mpi_release (oid);
+  if (!oidstr)
+    return NULL;
+
+  result = openpgp_curve_to_oid (oidstr, NULL);
+  xfree (oidstr);
+  return result;
+}
+
+
 /* Parse and optionally show the algorithm attributes for KEYNO.
    KEYNO must be in the range 0..2.  */
 static void
@@ -3812,11 +4501,12 @@ parse_algorithm_attribute (app_t app, int keyno)
   unsigned char *buffer;
   size_t buflen;
   void *relptr;
-  const char const desc[3][5] = {"sign", "encr", "auth"};
+  const char desc[3][5] = {"sign", "encr", "auth"};
 
   assert (keyno >=0 && keyno <= 2);
 
-  app->app_local->keyattr[keyno].n_bits = 0;
+  app->app_local->keyattr[keyno].key_type = KEY_TYPE_RSA;
+  app->app_local->keyattr[keyno].rsa.n_bits = 0;
 
   relptr = get_one_do (app, 0xC1+keyno, &buffer, &buflen, NULL);
   if (!relptr)
@@ -3833,29 +4523,54 @@ parse_algorithm_attribute (app_t app, int keyno)
 
   if (opt.verbose)
     log_info ("Key-Attr-%s ..: ", desc[keyno]);
-  if (*buffer == 1 && (buflen == 5 || buflen == 6))
+  if (*buffer == PUBKEY_ALGO_RSA && (buflen == 5 || buflen == 6))
     {
-      app->app_local->keyattr[keyno].n_bits = (buffer[1]<<8 | buffer[2]);
-      app->app_local->keyattr[keyno].e_bits = (buffer[3]<<8 | buffer[4]);
-      app->app_local->keyattr[keyno].format = 0;
+      app->app_local->keyattr[keyno].rsa.n_bits = (buffer[1]<<8 | buffer[2]);
+      app->app_local->keyattr[keyno].rsa.e_bits = (buffer[3]<<8 | buffer[4]);
+      app->app_local->keyattr[keyno].rsa.format = 0;
       if (buflen < 6)
-        app->app_local->keyattr[keyno].format = RSA_STD;
+        app->app_local->keyattr[keyno].rsa.format = RSA_STD;
       else
-        app->app_local->keyattr[keyno].format = (buffer[5] == 0? RSA_STD   :
-                                                 buffer[5] == 1? RSA_STD_N :
-                                                 buffer[5] == 2? RSA_CRT   :
-                                                 buffer[5] == 3? RSA_CRT_N :
-                                                 RSA_UNKNOWN_FMT);
+        app->app_local->keyattr[keyno].rsa.format = (buffer[5] == 0? RSA_STD   :
+                                                     buffer[5] == 1? RSA_STD_N :
+                                                     buffer[5] == 2? RSA_CRT   :
+                                                     buffer[5] == 3? RSA_CRT_N :
+                                                     RSA_UNKNOWN_FMT);
 
       if (opt.verbose)
         log_printf
           ("RSA, n=%u, e=%u, fmt=%s\n",
-           app->app_local->keyattr[keyno].n_bits,
-           app->app_local->keyattr[keyno].e_bits,
-           app->app_local->keyattr[keyno].format == RSA_STD?  "std"  :
-           app->app_local->keyattr[keyno].format == RSA_STD_N?"std+n":
-           app->app_local->keyattr[keyno].format == RSA_CRT?  "crt"  :
-           app->app_local->keyattr[keyno].format == RSA_CRT_N?"crt+n":"?");
+           app->app_local->keyattr[keyno].rsa.n_bits,
+           app->app_local->keyattr[keyno].rsa.e_bits,
+           app->app_local->keyattr[keyno].rsa.format == RSA_STD?  "std"  :
+           app->app_local->keyattr[keyno].rsa.format == RSA_STD_N?"std+n":
+           app->app_local->keyattr[keyno].rsa.format == RSA_CRT?  "crt"  :
+           app->app_local->keyattr[keyno].rsa.format == RSA_CRT_N?"crt+n":"?");
+    }
+  else if (*buffer == PUBKEY_ALGO_ECDH || *buffer == PUBKEY_ALGO_ECDSA
+           || *buffer == PUBKEY_ALGO_EDDSA)
+    {
+      const char *oid = ecc_oid (buffer + 1, buflen - 1);
+
+      if (!oid)
+        log_printhex ("Curve with OID not supported: ", buffer+1, buflen-1);
+      else
+        {
+          app->app_local->keyattr[keyno].key_type = KEY_TYPE_ECC;
+          app->app_local->keyattr[keyno].ecc.oid = oid;
+          if (*buffer == PUBKEY_ALGO_EDDSA
+              || (*buffer == PUBKEY_ALGO_ECDH
+                  && !strcmp (app->app_local->keyattr[keyno].ecc.oid,
+                              "1.3.6.1.4.1.3029.1.5.1")))
+            app->app_local->keyattr[keyno].ecc.flags = ECC_FLAG_DJB_TWEAK;
+          else
+            app->app_local->keyattr[keyno].ecc.flags = 0;
+          if (opt.verbose)
+            log_printf
+              ("ECC, curve=%s%s\n", app->app_local->keyattr[keyno].ecc.oid,
+               !app->app_local->keyattr[keyno].ecc.flags ? "":
+               keyno==1? " (djb-tweak)": " (eddsa)");
+        }
     }
   else if (opt.verbose)
     log_printhex ("", buffer, buflen);
@@ -3964,11 +4679,12 @@ app_select_openpgp (app_t app)
           app->app_local->extcap.change_force_chv = !!(*buffer & 0x10);
           app->app_local->extcap.private_dos      = !!(*buffer & 0x08);
           app->app_local->extcap.algo_attr_change = !!(*buffer & 0x04);
+          app->app_local->extcap.has_decrypt      = !!(*buffer & 0x02);
         }
       if (buflen >= 10)
         {
           /* Available with v2 cards.  */
-          app->app_local->extcap.sm_aes128     = (buffer[1] == 1);
+          app->app_local->extcap.sm_algo = buffer[1];
           app->app_local->extcap.max_get_challenge
                                                = (buffer[2] << 8 | buffer[3]);
           app->app_local->extcap.max_certlen_3 = (buffer[4] << 8 | buffer[5]);
@@ -3977,10 +4693,16 @@ app_select_openpgp (app_t app)
         }
       xfree (relptr);
 
-      /* Some of the first cards accidently don't set the
+      /* Some of the first cards accidentally don't set the
          CHANGE_FORCE_CHV bit but allow it anyway. */
       if (app->card_version <= 0x0100 && manufacturer == 1)
         app->app_local->extcap.change_force_chv = 1;
+
+      /* Check optional DO of "General Feature Management" for button.  */
+      relptr = get_one_do (app, 0x7f74, &buffer, &buflen, NULL);
+      if (relptr)
+        /* It must be: 03 81 01 20 */
+        app->app_local->extcap.has_button = 1;
 
       parse_login_data (app);
 
@@ -4015,6 +4737,3 @@ leave:
     do_deinit (app);
   return rc;
 }
-
-
-

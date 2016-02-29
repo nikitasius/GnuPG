@@ -37,8 +37,21 @@
 #include "status.h"
 #include "photoid.h"
 #include "i18n.h"
+#include "tofu.h"
 
 #define CONTROL_D ('D' - 'A' + 1)
+
+static void
+send_status_inv_recp (int reason, const char *name)
+{
+  char buf[40];
+
+  snprintf (buf, sizeof buf, "%d ", reason);
+  write_status_text_and_buffer (STATUS_INV_RECP, buf,
+                                name, strlen (name),
+                                -1);
+}
+
 
 /****************
  * Show the revocation reason as it is stored with the given signature
@@ -69,12 +82,11 @@ do_show_revocation_reason( PKT_signature *sig )
 	else
 	    text = NULL;
 
-	log_info( _("reason for revocation: ") );
-	if( text )
-	    fputs( text, log_get_stream() );
+	log_info ( _("reason for revocation: "));
+	if (text)
+          log_printf ("%s\n", text);
 	else
-	    fprintf( log_get_stream(), "code=%02x", *p );
-	log_printf ("\n");
+          log_printf ("code=%02x\n", *p );
 	n--; p++;
 	pp = NULL;
 	do {
@@ -87,7 +99,7 @@ do_show_revocation_reason( PKT_signature *sig )
 		pp = memchr( p, '\n', n );
 		nn = pp? pp - p : n;
 		log_info ( _("revocation comment: ") );
-		print_string ( log_get_stream(), p, nn, 0 );
+		es_write_sanitized (log_get_stream(), p, nn, NULL, NULL);
 		log_printf ("\n");
 		p += nn; n -= nn;
 	    }
@@ -101,7 +113,7 @@ do_show_revocation_reason( PKT_signature *sig )
 void
 show_revocation_reason( PKT_public_key *pk, int mode )
 {
-    /* Hmmm, this is not so easy becuase we have to duplicate the code
+    /* Hmmm, this is not so easy because we have to duplicate the code
      * used in the trustbd to calculate the keyflags.  We need to find
      * a clean way to check revocation certificates on keys and
      * signatures.  And there should be no duplicate code.  Because we
@@ -116,7 +128,7 @@ show_revocation_reason( PKT_public_key *pk, int mode )
 
     /* get the keyblock */
     fingerprint_from_pk( pk, fingerprint, &fingerlen );
-    rc = get_keyblock_byfprint( &keyblock, fingerprint, fingerlen );
+    rc = get_pubkey_byfprint(NULL, &keyblock, fingerprint, fingerlen);
     if( rc ) { /* that should never happen */
 	log_debug( "failed to get the keyblock\n");
 	return;
@@ -165,6 +177,7 @@ show_revocation_reason( PKT_public_key *pk, int mode )
  *       0 = nothing changed
  *       1 = new ownertrust now in new_trust
  */
+#ifndef NO_TRUST_MODELS
 static int
 do_edit_ownertrust (PKT_public_key *pk, int mode,
                     unsigned *new_trust, int defer_help )
@@ -176,7 +189,8 @@ do_edit_ownertrust (PKT_public_key *pk, int mode,
   int show=0;
   int min_num;
   int did_help=defer_help;
-  unsigned int minimum=get_min_ownertrust(pk);
+  unsigned int minimum = tdb_get_min_ownertrust (pk);
+  char pkstrbuf[PUBKEY_STRING_SIZE];
 
   switch(minimum)
     {
@@ -210,8 +224,8 @@ do_edit_ownertrust (PKT_public_key *pk, int mode,
             KBNODE keyblock, un;
 
             tty_printf(_("No trust value assigned to:\n"));
-	    tty_printf("%4u%c/%s %s\n",nbits_from_pk( pk ),
-		       pubkey_letter( pk->pubkey_algo ),
+	    tty_printf("%s/%s %s\n",
+                       pubkey_string (pk, pkstrbuf, sizeof pkstrbuf),
                        keystr(keyid), datestr_from_pk( pk ) );
 	    p=get_user_id_native(keyid);
 	    tty_printf(_("      \"%s\"\n"),p);
@@ -235,9 +249,9 @@ do_edit_ownertrust (PKT_public_key *pk, int mode,
 
 		if((opt.verify_options&VERIFY_SHOW_PHOTOS)
 		   && un->pkt->pkt.user_id->attrib_data)
-		  show_photos(un->pkt->pkt.user_id->attribs,
-			      un->pkt->pkt.user_id->numattribs,pk,NULL,
-			      un->pkt->pkt.user_id);
+		  show_photos (un->pkt->pkt.user_id->attribs,
+                               un->pkt->pkt.user_id->numattribs, pk,
+                               un->pkt->pkt.user_id);
 
 		p=utf8_to_native(un->pkt->pkt.user_id->name,
 				 un->pkt->pkt.user_id->len,0);
@@ -245,7 +259,7 @@ do_edit_ownertrust (PKT_public_key *pk, int mode,
 		tty_printf(_("  aka \"%s\"\n"),p);
 	      }
 
-            print_fingerprint (pk, NULL, 2);
+            print_fingerprint (NULL, pk, 2);
             tty_printf("\n");
 	    release_kbnode (keyblock);
           }
@@ -353,12 +367,15 @@ do_edit_ownertrust (PKT_public_key *pk, int mode,
   xfree(p);
   return show? -2: quit? -1 : changed;
 }
+#endif /*!NO_TRUST_MODELS*/
+
 
 /*
  * Display a menu to change the ownertrust of the key PK (which should
  * be a primary key).
  * For mode values see do_edit_ownertrust ()
  */
+#ifndef NO_TRUST_MODELS
 int
 edit_ownertrust (PKT_public_key *pk, int mode )
 {
@@ -384,6 +401,7 @@ edit_ownertrust (PKT_public_key *pk, int mode )
         }
     }
 }
+#endif /*!NO_TRUST_MODELS*/
 
 
 /****************
@@ -403,7 +421,7 @@ do_we_trust( PKT_public_key *pk, unsigned int trustlevel )
   if( opt.trust_model==TM_ALWAYS )
     {
       if( opt.verbose )
-	log_info("No trust check due to `--trust-model always' option\n");
+	log_info("No trust check due to '--trust-model always' option\n");
       return 1;
     }
 
@@ -453,7 +471,7 @@ do_we_trust_pre( PKT_public_key *pk, unsigned int trustlevel )
   if( !opt.batch && !rc )
     {
       print_pubkey_info(NULL,pk);
-      print_fingerprint (pk, NULL, 2);
+      print_fingerprint (NULL, pk, 2);
       tty_printf("\n");
 
       tty_printf(
@@ -490,20 +508,20 @@ do_we_trust_pre( PKT_public_key *pk, unsigned int trustlevel )
 
 /****************
  * Check whether we can trust this signature.
- * Returns: Error if we shall not trust this signatures.
+ * Returns an error code if we should not trust this signature.
  */
 int
 check_signatures_trust( PKT_signature *sig )
 {
   PKT_public_key *pk = xmalloc_clear( sizeof *pk );
-  unsigned int trustlevel;
+  unsigned int trustlevel = TRUST_UNKNOWN;
   int rc=0;
 
   rc = get_pubkey( pk, sig->keyid );
   if (rc)
     { /* this should not happen */
       log_error("Ooops; the key vanished  - can't check the trust\n");
-      rc = G10ERR_NO_PUBKEY;
+      rc = GPG_ERR_NO_PUBKEY;
       goto leave;
     }
 
@@ -512,20 +530,20 @@ check_signatures_trust( PKT_signature *sig )
       if( !opt.quiet )
         log_info(_("WARNING: Using untrusted key!\n"));
       if (opt.with_fingerprint)
-        print_fingerprint (pk, NULL, 1);
+        print_fingerprint (NULL, pk, 1);
       goto leave;
     }
 
-  if(pk->maybe_revoked && !pk->is_revoked)
+  if(pk->flags.maybe_revoked && !pk->flags.revoked)
     log_info(_("WARNING: this key might be revoked (revocation key"
 	       " not present)\n"));
 
-  trustlevel = get_validity (pk, NULL);
+  trustlevel = get_validity (pk, NULL, sig, 1);
 
   if ( (trustlevel & TRUST_FLAG_REVOKED) )
     {
       write_status( STATUS_KEYREVOKED );
-      if(pk->is_revoked==2)
+      if(pk->flags.revoked == 2)
 	log_info(_("WARNING: This key has been revoked by its"
 		   " designated revoker!\n"));
       else
@@ -561,14 +579,14 @@ check_signatures_trust( PKT_signature *sig )
         {
           okay = 1;
           write_status_text (STATUS_PKA_TRUST_GOOD, sig->pka_info->email);
-          log_info (_("Note: Verified signer's address is `%s'\n"),
+          log_info (_("Note: Verified signer's address is '%s'\n"),
                     sig->pka_info->email);
         }
       else
         {
           okay = 0;
           write_status_text (STATUS_PKA_TRUST_BAD, sig->pka_info->email);
-          log_info (_("Note: Signer's address `%s' "
+          log_info (_("Note: Signer's address '%s' "
                       "does not match DNS entry\n"), sig->pka_info->email);
         }
 
@@ -600,7 +618,7 @@ check_signatures_trust( PKT_signature *sig )
     {
     case TRUST_EXPIRED:
       log_info(_("Note: This key has expired!\n"));
-      print_fingerprint (pk, NULL, 1);
+      print_fingerprint (NULL, pk, 1);
       break;
 
     default:
@@ -614,7 +632,7 @@ check_signatures_trust( PKT_signature *sig )
                  " a trusted signature!\n"));
       log_info(_("         There is no indication that the "
                  "signature belongs to the owner.\n" ));
-      print_fingerprint (pk, NULL, 1);
+      print_fingerprint (NULL, pk, 1);
       break;
 
     case TRUST_NEVER:
@@ -623,7 +641,7 @@ check_signatures_trust( PKT_signature *sig )
       log_info(_("WARNING: We do NOT trust this key!\n"));
       log_info(_("         The signature is probably a FORGERY.\n"));
       if (opt.with_fingerprint)
-        print_fingerprint (pk, NULL, 1);
+        print_fingerprint (NULL, pk, 1);
       rc = gpg_error (GPG_ERR_BAD_SIGNATURE);
       break;
 
@@ -633,19 +651,19 @@ check_signatures_trust( PKT_signature *sig )
                  " sufficiently trusted signatures!\n"));
       log_info(_("         It is not certain that the"
                  " signature belongs to the owner.\n" ));
-      print_fingerprint (pk, NULL, 1);
+      print_fingerprint (NULL, pk, 1);
       break;
 
     case TRUST_FULLY:
       write_status( STATUS_TRUST_FULLY );
       if (opt.with_fingerprint)
-        print_fingerprint (pk, NULL, 1);
+        print_fingerprint (NULL, pk, 1);
       break;
 
     case TRUST_ULTIMATE:
       write_status( STATUS_TRUST_ULTIMATE );
       if (opt.with_fingerprint)
-        print_fingerprint (pk, NULL, 1);
+        print_fingerprint (NULL, pk, 1);
       break;
     }
 
@@ -656,14 +674,15 @@ check_signatures_trust( PKT_signature *sig )
 
 
 void
-release_pk_list( PK_LIST pk_list )
+release_pk_list (pk_list_t pk_list)
 {
-    PK_LIST pk_rover;
+  PK_LIST pk_rover;
 
-    for( ; pk_list; pk_list = pk_rover ) {
-	pk_rover = pk_list->next;
-	free_public_key( pk_list->pk );
-	xfree( pk_list );
+  for ( ; pk_list; pk_list = pk_rover)
+    {
+      pk_rover = pk_list->next;
+      free_public_key ( pk_list->pk );
+      xfree ( pk_list );
     }
 }
 
@@ -680,12 +699,12 @@ key_present_in_pk_list(PK_LIST pk_list, PKT_public_key *pk)
 
 
 /****************
- * Return a malloced string with a default reciepient if there is any
+ * Return a malloced string with a default recipient if there is any
  */
 static char *
-default_recipient(void)
+default_recipient(ctrl_t ctrl)
 {
-    PKT_secret_key *sk;
+    PKT_public_key *pk;
     byte fpr[MAX_FINGERPRINT_LEN+1];
     size_t n;
     char *p;
@@ -695,15 +714,15 @@ default_recipient(void)
 	return xstrdup( opt.def_recipient );
     if( !opt.def_recipient_self )
 	return NULL;
-    sk = xmalloc_clear( sizeof *sk );
-    i = get_seckey_byname( sk, NULL, 0 );
+    pk = xmalloc_clear( sizeof *pk );
+    i = get_seckey_default (ctrl, pk);
     if( i ) {
-	free_secret_key( sk );
+	free_public_key( pk );
 	return NULL;
     }
     n = MAX_FINGERPRINT_LEN;
-    fingerprint_from_sk( sk, fpr, &n );
-    free_secret_key( sk );
+    fingerprint_from_pk( pk, fpr, &n );
+    free_public_key( pk );
     p = xmalloc( 2*n+3 );
     *p++ = '0';
     *p++ = 'x';
@@ -760,6 +779,106 @@ expand_group(strlist_t input)
 }
 
 
+/* Helper for build_pk_list to find and check one key.  This helper is
+   also used directly in server mode by the RECIPIENTS command.  On
+   success the new key is added to PK_LIST_ADDR.  NAME is the user id
+   of the key. USE the requested usage and a set MARK_HIDDEN will mark
+   the key in the updated list as a hidden recipient. */
+gpg_error_t
+find_and_check_key (ctrl_t ctrl, const char *name, unsigned int use,
+                    int mark_hidden, pk_list_t *pk_list_addr)
+{
+  int rc;
+  PKT_public_key *pk;
+  int trustlevel;
+
+  if (!name || !*name)
+    return gpg_error (GPG_ERR_INV_USER_ID);
+
+  pk = xtrycalloc (1, sizeof *pk);
+  if (!pk)
+    return gpg_error_from_syserror ();
+  pk->req_usage = use;
+
+  rc = get_pubkey_byname (ctrl, NULL, pk, name, NULL, NULL, 0, 0);
+  if (rc)
+    {
+      int code;
+
+      /* Key not found or other error. */
+      log_error (_("%s: skipped: %s\n"), name, gpg_strerror (rc) );
+      switch (gpg_err_code (rc))
+        {
+        case GPG_ERR_NO_SECKEY:
+        case GPG_ERR_NO_PUBKEY:   code =  1; break;
+        case GPG_ERR_INV_USER_ID: code = 14; break;
+        default: code = 0; break;
+        }
+      send_status_inv_recp (code, name);
+      free_public_key (pk);
+      return rc;
+    }
+
+  rc = openpgp_pk_test_algo2 (pk->pubkey_algo, use);
+  if (rc)
+    {
+      /* Key found but not usable for us (e.g. sign-only key). */
+      send_status_inv_recp (3, name); /* Wrong key usage */
+      log_error (_("%s: skipped: %s\n"), name, gpg_strerror (rc) );
+      free_public_key (pk);
+      return rc;
+    }
+
+  /* Key found and usable.  Check validity. */
+  trustlevel = get_validity (pk, pk->user_id, NULL, 1);
+  if ( (trustlevel & TRUST_FLAG_DISABLED) )
+    {
+      /* Key has been disabled. */
+      send_status_inv_recp (13, name);
+      log_info (_("%s: skipped: public key is disabled\n"), name);
+      free_public_key (pk);
+      return GPG_ERR_UNUSABLE_PUBKEY;
+    }
+
+  if ( !do_we_trust_pre (pk, trustlevel) )
+    {
+      /* We don't trust this key.  */
+      send_status_inv_recp (10, name);
+      free_public_key (pk);
+      return GPG_ERR_UNUSABLE_PUBKEY;
+    }
+  /* Note: do_we_trust may have changed the trustlevel. */
+
+  /* Skip the actual key if the key is already present in the
+     list.  */
+  if (!key_present_in_pk_list (*pk_list_addr, pk))
+    {
+      if (!opt.quiet)
+        log_info (_("%s: skipped: public key already present\n"), name);
+      free_public_key (pk);
+    }
+  else
+    {
+      pk_list_t r;
+
+      r = xtrymalloc (sizeof *r);
+      if (!r)
+        {
+          rc = gpg_error_from_syserror ();
+          free_public_key (pk);
+          return rc;
+        }
+      r->pk = pk;
+      r->next = *pk_list_addr;
+      r->flags = mark_hidden? 1:0;
+      *pk_list_addr = r;
+    }
+
+  return 0;
+}
+
+
+
 /* This is the central function to collect the keys for recipients.
    It is thus used to prepare a public key encryption. encrypt-to
    keys, default keys and the keys for the actual recipients are all
@@ -771,17 +890,15 @@ expand_group(strlist_t input)
    value but not very useful.  Group expansion is done on these names;
    they may be in any of the user Id formats we can handle.  The flags
    bits for each string in the string list are used for:
-     Bit 0: This is an encrypt-to recipient.
-     Bit 1: This is a hidden recipient.
-
-   USE is the desired use for the key - usually PUBKEY_USAGE_ENC.
+     Bit 0 (PK_LIST_ENCRYPT_TO): This is an encrypt-to recipient.
+     Bit 1 (PK_LIST_HIDDEN)    : This is a hidden recipient.
 
    On success a list of keys is stored at the address RET_PK_LIST; the
    caller must free this list.  On error the value at this address is
    not changed.
  */
 int
-build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
+build_pk_list (ctrl_t ctrl, strlist_t rcpts, PK_LIST *ret_pk_list)
 {
   PK_LIST pk_list = NULL;
   PKT_public_key *pk=NULL;
@@ -789,6 +906,7 @@ build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
   int any_recipients=0;
   strlist_t rov,remusr;
   char *def_rec = NULL;
+  char pkstrbuf[PUBKEY_STRING_SIZE];
 
   /* Try to expand groups if any have been defined. */
   if (opt.grouplist)
@@ -796,11 +914,65 @@ build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
   else
     remusr = rcpts;
 
+  /* XXX: Change this function to use get_pubkeys instead of
+     get_pubkey_byname to detect ambiguous key specifications and warn
+     about duplicate keyblocks.  For ambiguous key specifications on
+     the command line or provided interactively, prompt the user to
+     select the best key.  If a key specification is ambiguous and we
+     are in batch mode, die.  */
+
+  if (opt.encrypt_to_default_key)
+    {
+      static int warned;
+
+      const char *default_key = parse_def_secret_key (ctrl);
+      if (default_key)
+        {
+          PK_LIST r = xmalloc_clear (sizeof *r);
+
+          r->pk = xmalloc_clear (sizeof *r->pk);
+          r->pk->req_usage = PUBKEY_USAGE_ENC;
+
+          rc = get_pubkey_byname (ctrl, NULL, r->pk, default_key,
+                                   NULL, NULL, 0, 1);
+          if (rc)
+            {
+              xfree (r->pk);
+              xfree (r);
+
+              log_error (_("can't encrypt to '%s'\n"), default_key);
+              if (!opt.quiet)
+                log_info (_("(check argument of option '%s')\n"),
+                          "--default-key");
+            }
+          else
+            {
+              r->next = pk_list;
+              r->flags = 0;
+              pk_list = r;
+            }
+        }
+      else if (opt.def_secret_key)
+        {
+          if (! warned)
+            log_info (_("option '%s' given, but no valid default keys given\n"),
+                      "--encrypt-to-default-key");
+          warned = 1;
+        }
+      else
+        {
+          if (! warned)
+            log_info (_("option '%s' given, but option '%s' not given\n"),
+                      "--encrypt-to-default-key", "--default-key");
+          warned = 1;
+        }
+    }
+
   /* Check whether there are any recipients in the list and build the
    * list of the encrypt-to ones (we always trust them). */
   for ( rov = remusr; rov; rov = rov->next )
     {
-      if ( !(rov->flags & 1) )
+      if ( !(rov->flags & PK_LIST_ENCRYPT_TO) )
         {
           /* This is a regular recipient; i.e. not an encrypt-to
              one. */
@@ -808,7 +980,7 @@ build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
 
           /* Hidden recipients are not allowed while in PGP mode,
              issue a warning and switch into GnuPG mode. */
-          if ((rov->flags&2) && (PGP2 || PGP6 || PGP7 || PGP8))
+          if ((rov->flags & PK_LIST_HIDDEN) && (PGP6 || PGP7 || PGP8))
             {
               log_info(_("you may not use %s while in %s mode\n"),
                        "--hidden-recipient",
@@ -817,29 +989,26 @@ build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
               compliance_failure();
             }
         }
-      else if ( (use & PUBKEY_USAGE_ENC) && !opt.no_encrypt_to )
+      else if (!opt.no_encrypt_to)
         {
-          /* Encryption has been requested and --encrypt-to has not
-             been disabled.  Check this encrypt-to key. */
+          /* --encrypt-to has not been disabled.  Check this
+             encrypt-to key. */
           pk = xmalloc_clear( sizeof *pk );
-          pk->req_usage = use;
+          pk->req_usage = PUBKEY_USAGE_ENC;
 
           /* We explicitly allow encrypt-to to an disabled key; thus
-             we pass 1for the second last argument and 1 as the last
+             we pass 1 for the second last argument and 1 as the last
              argument to disable AKL. */
-          if ( (rc = get_pubkey_byname (NULL, pk, rov->d, NULL, NULL, 1, 1)) )
+          if ( (rc = get_pubkey_byname (ctrl,
+                                        NULL, pk, rov->d, NULL, NULL, 1, 1)) )
             {
               free_public_key ( pk ); pk = NULL;
-              log_error (_("%s: skipped: %s\n"), rov->d, g10_errstr(rc) );
-              write_status_text_and_buffer (STATUS_INV_RECP,
-                                            (rc == GPG_ERR_NO_PUBKEY
-                                             || rc == GPG_ERR_NO_SECKEY)? "1 ":
-                                            (rc == GPG_ERR_INV_USER_ID)? "14 ":
-                                            "0 ",
-                                            rov->d, strlen (rov->d), -1);
+              log_error (_("%s: skipped: %s\n"), rov->d, gpg_strerror (rc) );
+              send_status_inv_recp (0, rov->d);
               goto fail;
             }
-          else if ( !(rc=openpgp_pk_test_algo2 (pk->pubkey_algo, use)) )
+          else if ( !(rc=openpgp_pk_test_algo2 (pk->pubkey_algo,
+                                                PUBKEY_USAGE_ENC)) )
             {
               /* Skip the actual key if the key is already present
                * in the list.  Add it to our list if not. */
@@ -856,13 +1025,13 @@ build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
                   r = xmalloc( sizeof *r );
                   r->pk = pk; pk = NULL;
                   r->next = pk_list;
-                  r->flags = (rov->flags&2)?1:0;
+                  r->flags = (rov->flags&PK_LIST_HIDDEN)?1:0;
                   pk_list = r;
 
                   /* Hidden encrypt-to recipients are not allowed while
                      in PGP mode, issue a warning and switch into
                      GnuPG mode. */
-                  if ((r->flags&1) && (PGP2 || PGP6 || PGP7 || PGP8))
+                  if ((r->flags&PK_LIST_ENCRYPT_TO) && (PGP6 || PGP7 || PGP8))
                     {
                       log_info(_("you may not use %s while in %s mode\n"),
                                "--hidden-encrypt-to",
@@ -874,12 +1043,10 @@ build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
             }
           else
             {
-              /* The public key is not usable for encryption or not
-                 available. */
+              /* The public key is not usable for encryption. */
               free_public_key( pk ); pk = NULL;
-              log_error(_("%s: skipped: %s\n"), rov->d, g10_errstr(rc) );
-              write_status_text_and_buffer (STATUS_INV_RECP, "3 ",
-                                            rov->d, strlen (rov->d), -1);
+              log_error(_("%s: skipped: %s\n"), rov->d, gpg_strerror (rc) );
+              send_status_inv_recp (3, rov->d); /* Wrong key usage */
               goto fail;
             }
         }
@@ -895,7 +1062,7 @@ build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
 
       if (pk_list)
         any_recipients = 1;
-      def_rec = default_recipient();
+      def_rec = default_recipient(ctrl);
       have_def_rec = !!def_rec;
       if ( !have_def_rec )
         tty_printf(_("You did not specify a user ID. (you may use \"-r\")\n"));
@@ -928,11 +1095,11 @@ build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
                   u32 keyid[2];
 
                   keyid_from_pk(iter->pk,keyid);
-                  tty_printf("%4u%c/%s %s \"",
-                             nbits_from_pk(iter->pk),
-                             pubkey_letter(iter->pk->pubkey_algo),
-                             keystr(keyid),
-                             datestr_from_pk(iter->pk));
+                  tty_printf ("%s/%s %s \"",
+                              pubkey_string (iter->pk,
+                                             pkstrbuf, sizeof pkstrbuf),
+                              keystr(keyid),
+                              datestr_from_pk (iter->pk));
 
                   if (iter->pk->user_id)
                     tty_print_utf8_string(iter->pk->user_id->name,
@@ -961,27 +1128,28 @@ build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
             }
 
           /* Do group expand here too.  The trick here is to continue
-             the loop if any expansion occured.  The code above will
+             the loop if any expansion occurred.  The code above will
              then list all expanded keys. */
           if (expand_id(answer,&backlog,0))
             continue;
 
           /* Get and check key for the current name. */
-          if (pk)
-            free_public_key (pk);
+          free_public_key (pk);
           pk = xmalloc_clear( sizeof *pk );
-          pk->req_usage = use;
-          rc = get_pubkey_byname (NULL, pk, answer, NULL, NULL, 0, 0 );
+          pk->req_usage = PUBKEY_USAGE_ENC;
+          rc = get_pubkey_byname (ctrl, NULL, pk, answer, NULL, NULL, 0, 0 );
           if (rc)
             tty_printf(_("No such user ID.\n"));
-          else if ( !(rc=openpgp_pk_test_algo2 (pk->pubkey_algo, use)) )
+          else if ( !(rc=openpgp_pk_test_algo2 (pk->pubkey_algo,
+                                                PUBKEY_USAGE_ENC)) )
             {
               if ( have_def_rec )
                 {
                   /* No validation for a default recipient. */
                   if (!key_present_in_pk_list(pk_list, pk))
                     {
-                      free_public_key (pk); pk = NULL;
+                      free_public_key (pk);
+                      pk = NULL;
                       log_info (_("skipped: public key "
                                   "already set as default recipient\n") );
                     }
@@ -1000,7 +1168,7 @@ build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
                 { /* Check validity of this key. */
                   int trustlevel;
 
-                  trustlevel = get_validity (pk, pk->user_id);
+                  trustlevel = get_validity (pk, pk->user_id, NULL, 1);
                   if ( (trustlevel & TRUST_FLAG_DISABLED) )
                     {
                       tty_printf (_("Public key is disabled.\n") );
@@ -1011,7 +1179,8 @@ build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
                        * present in the list */
                       if (!key_present_in_pk_list(pk_list, pk))
                         {
-                          free_public_key(pk); pk = NULL;
+                          free_public_key (pk);
+                          pk = NULL;
                           log_info(_("skipped: public key already set\n") );
                         }
                       else
@@ -1037,18 +1206,19 @@ build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
           pk = NULL;
         }
     }
-  else if ( !any_recipients && (def_rec = default_recipient()) )
+  else if ( !any_recipients && (def_rec = default_recipient(ctrl)) )
     {
       /* We are in batch mode and have only a default recipient. */
       pk = xmalloc_clear( sizeof *pk );
-      pk->req_usage = use;
+      pk->req_usage = PUBKEY_USAGE_ENC;
 
       /* The default recipient is allowed to be disabled; thus pass 1
          as second last argument.  We also don't want an AKL. */
-      rc = get_pubkey_byname (NULL, pk, def_rec, NULL, NULL, 1, 1);
+      rc = get_pubkey_byname (ctrl, NULL, pk, def_rec, NULL, NULL, 1, 1);
       if (rc)
         log_error(_("unknown default recipient \"%s\"\n"), def_rec );
-      else if ( !(rc=openpgp_pk_test_algo2(pk->pubkey_algo, use)) )
+      else if ( !(rc=openpgp_pk_test_algo2(pk->pubkey_algo,
+                                           PUBKEY_USAGE_ENC)) )
         {
           /* Mark any_recipients here since the default recipient
              would have been used if it wasn't already there.  It
@@ -1080,93 +1250,15 @@ build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
       any_recipients = 0;
       for (; remusr; remusr = remusr->next )
         {
-          if ( (remusr->flags & 1) )
+          if ( (remusr->flags & PK_LIST_ENCRYPT_TO) )
             continue; /* encrypt-to keys are already handled. */
 
-          pk = xmalloc_clear( sizeof *pk );
-          pk->req_usage = use;
-          if ((rc = get_pubkey_byname (NULL, pk, remusr->d, NULL, NULL, 0, 0)))
-            {
-              /* Key not found or other error. */
-              free_public_key( pk ); pk = NULL;
-              log_error(_("%s: skipped: %s\n"), remusr->d, g10_errstr(rc) );
-              write_status_text_and_buffer (STATUS_INV_RECP,
-                                            (rc == G10ERR_NO_PUBKEY
-                                             || rc == G10ERR_NO_SECKEY)? "1 ":
-                                            (rc == G10ERR_INV_USER_ID)? "14 ":
-                                            "0 ",
-                                            remusr->d, strlen (remusr->d),
-                                            -1);
-              goto fail;
-            }
-          else if ( !(rc=openpgp_pk_test_algo2(pk->pubkey_algo, use )) )
-            {
-              /* Key found and usable.  Check validity. */
-              int trustlevel;
-
-              trustlevel = get_validity (pk, pk->user_id);
-              if ( (trustlevel & TRUST_FLAG_DISABLED) )
-                {
-                  /*Key has been disabled. */
-                  free_public_key(pk); pk = NULL;
-                  log_info(_("%s: skipped: public key is disabled\n"),
-                           remusr->d);
-                  write_status_text_and_buffer (STATUS_INV_RECP, "13 ",
-                                                remusr->d,
-                                                strlen (remusr->d),
-                                                -1);
-                  rc=G10ERR_UNU_PUBKEY;
-                  goto fail;
-                }
-              else if ( do_we_trust_pre( pk, trustlevel ) )
-                {
-                  /* Note: do_we_trust may have changed the trustlevel */
-
-                  /* We have at least one valid recipient. It doesn't
-                   * matters if this recipient is already present. */
-                  any_recipients = 1;
-
-                  /* Skip the actual key if the key is already present
-                   * in the list */
-                  if (!key_present_in_pk_list(pk_list, pk))
-                    {
-                      free_public_key(pk); pk = NULL;
-                      if (!opt.quiet)
-                        log_info(_("%s: skipped: public key already present\n"),
-                                 remusr->d);
-                    }
-                  else
-                    {
-                      PK_LIST r;
-                      r = xmalloc( sizeof *r );
-                      r->pk = pk; pk = NULL;
-                      r->next = pk_list;
-                      r->flags = (remusr->flags&2)?1:0;
-                      pk_list = r;
-                    }
-                }
-              else
-                { /* We don't trust this key. */
-                  free_public_key( pk ); pk = NULL;
-                  write_status_text_and_buffer (STATUS_INV_RECP, "10 ",
-                                                remusr->d,
-                                                strlen (remusr->d),
-                                                -1);
-                  rc=G10ERR_UNU_PUBKEY;
-                  goto fail;
-                }
-            }
-          else
-            {
-              /* Key found but not usable for us (e.g. sign-only key). */
-              free_public_key( pk ); pk = NULL;
-              write_status_text_and_buffer (STATUS_INV_RECP, "3 ",
-                                            remusr->d,
-                                            strlen (remusr->d),
-                                            -1);
-              log_error(_("%s: skipped: %s\n"), remusr->d, g10_errstr(rc) );
-              goto fail;
-            }
+          rc = find_and_check_key (ctrl, remusr->d, PUBKEY_USAGE_ENC,
+                                   !!(remusr->flags&PK_LIST_HIDDEN),
+                                   &pk_list);
+          if (rc)
+            goto fail;
+          any_recipients = 1;
         }
     }
 
@@ -1174,7 +1266,7 @@ build_pk_list( strlist_t rcpts, PK_LIST *ret_pk_list, unsigned int use )
     {
       log_error(_("no valid addressees\n"));
       write_status_text (STATUS_NO_RECP, "0");
-      rc = G10ERR_NO_USER_ID;
+      rc = GPG_ERR_NO_USER_ID;
     }
 
  fail:
@@ -1308,10 +1400,7 @@ select_algo_from_prefs(PK_LIST pk_list, int preftype,
 	     dropped from 4880 but is still relevant to GPG's 1991
 	     support.  All this doesn't mean IDEA is actually
 	     available, of course. */
-	  if(PGP2 && pkr->pk->version<4 && pkr->pk->selfsigversion<4)
-	    implicit=CIPHER_ALGO_IDEA;
-	  else
-	    implicit=CIPHER_ALGO_3DES;
+          implicit=CIPHER_ALGO_3DES;
 
 	  break;
 
@@ -1323,12 +1412,7 @@ select_algo_from_prefs(PK_LIST pk_list, int preftype,
 	     mode, and that's the only time PREFTYPE_HASH is used
 	     anyway. -dms */
 
-	  /* MD5 is there for v3 keys with v3 selfsigs when --pgp2 is
-	     on. */
-	  if(PGP2 && pkr->pk->version<4 && pkr->pk->selfsigversion<4)
-	    implicit=DIGEST_ALGO_MD5;
-	  else
-	    implicit=DIGEST_ALGO_SHA1;
+          implicit=DIGEST_ALGO_SHA1;
 
 	  break;
 
@@ -1487,7 +1571,7 @@ select_mdc_from_pklist (PK_LIST pk_list)
       if (pkr->pk->user_id) /* selected by user ID */
         mdc = pkr->pk->user_id->flags.mdc;
       else
-        mdc = pkr->pk->mdc_feature;
+        mdc = pkr->pk->flags.mdc;
       if (!mdc)
         return 0;  /* At least one recipient does not support it. */
     }
@@ -1508,7 +1592,7 @@ warn_missing_mdc_from_pklist (PK_LIST pk_list)
       if (pkr->pk->user_id) /* selected by user ID */
         mdc = pkr->pk->user_id->flags.mdc;
       else
-        mdc = pkr->pk->mdc_feature;
+        mdc = pkr->pk->flags.mdc;
       if (!mdc)
         log_info (_("Note: key %s has no %s feature\n"),
                   keystr_from_pk (pkr->pk), "MDC");

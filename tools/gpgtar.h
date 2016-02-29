@@ -21,16 +21,23 @@
 #define GPGTAR_H
 
 #include "../common/util.h"
-#include "../common/estream.h"
+#include "../common/strlist.h"
 
 /* We keep all global options in the structure OPT.  */
 struct
 {
   int verbose;
+  unsigned int debug_level;
   int quiet;
+  int dry_run;
+  const char *gpg_program;
+  strlist_t gpg_arguments;
   const char *outfile;
+  strlist_t recipients;
+  const char *user;
   int symmetric;
   const char *filename;
+  const char *directory;
 } opt;
 
 
@@ -111,21 +118,15 @@ struct tar_header_s
 gpg_error_t read_record (estream_t stream, void *record);
 gpg_error_t write_record (estream_t stream, const void *record);
 
-int gnupg_mkdir (const char *name, const char *modestr);
-#ifdef HAVE_W32_SYSTEM
-char *wchar_to_utf8 (const wchar_t *string);
-wchar_t *utf8_to_wchar (const char *string);
-#endif
-
 /*-- gpgtar-create.c --*/
-void gpgtar_create (char **inpattern);
+gpg_error_t gpgtar_create (char **inpattern, int encrypt, int sign);
 
 /*-- gpgtar-extract.c --*/
-void gpgtar_extract (const char *filename);
+gpg_error_t gpgtar_extract (const char *filename, int decrypt);
 
 /*-- gpgtar-list.c --*/
-void gpgtar_list (const char *filename);
-tar_header_t gpgtar_read_header (estream_t stream);
+gpg_error_t gpgtar_list (const char *filename, int decrypt);
+gpg_error_t gpgtar_read_header (estream_t stream, tar_header_t *r_header);
 void gpgtar_print_header (tar_header_t header, estream_t out);
 
 

@@ -1,14 +1,64 @@
-2011-12-02  Werner Koch  <wk@g10code.com>
+2011-12-01  Werner Koch  <wk@g10code.com>
 
 	NB: ChangeLog files are no longer manually maintained.  Starting
 	on December 1st, 2011 we put change information only in the GIT
 	commit log, and generate a top-level ChangeLog file from logs at
 	"make dist".  See doc/HACKING for details.
 
-2011-08-04  Werner Koch  <wk@g10code.com>
+2011-11-28  Werner Koch  <wk@g10code.com>
 
-	* command.c (cmd_keyinfo, do_one_keyinfo): Support options --data
-	and --ssh-fpr.
+	* command-ssh.c (card_key_available): Change wording of no key
+	diagnostic.
+	(ssh_handler_request_identities): Do not call card_key_available
+	if the scdaemon is disabled.
+
+2011-09-12  Ben Kibbey <bjk@luxsci.net>
+
+	* genkey.c (agent_ask_new_passphrase): Allow for an empty passphrase
+	(no protection) in PINENTRY_MODE_LOOPBACK.
+
+2011-09-10  Ben Kibbey <bjk@luxsci.net>
+
+	* agent.h (pinentry_loopback): New prototype.
+	* command.c (pinentry_loopback): New function to inquire a passphrase
+	from the client. For use with pinentry-mode=loopback.
+	* call-pinentry.c (agent_askpin): Handle PINENTRY_MODE_LOOPBACK.
+	* call-pinentry.c (agent_get_passphrase): Ditto.
+	* genkey.c (agent_ask_new_passphrase): Ditto.
+
+2011-08-10  Werner Koch  <wk@g10code.com>
+
+	* genkey.c (check_passphrase_pattern): Use gpg_strerror instead of
+	strerror.
+	* command-ssh.c (ssh_receive_mpint_list): Remove unused var
+	ELEMS_PUBLIC_N.
+	* gpg-agent.c (main): Remove unused var MAY_COREDUMP.
+
+2011-08-09  Ben Kibbey <bjk@luxsci.net>
+
+	* command.c (option_handler): Have option s2k-count match the
+	documentation.
+
+2011-07-27  Werner Koch  <wk@g10code.com>
+
+	* call-scd.c (struct inq_needpin_s): Add field ANY_INQ_SEEN.
+	(inq_needpin): Set it.
+	(agent_card_scd): Send the cancel only if an inquire was actually
+	used.
+
+2011-07-09  Ben Kibbey <bjk@luxsci.net>
+
+	* call-scd.c (agent_card_scd): Send the CANCEL command back to SCD
+	when the SCD command is cancelled from the client.
+
+2011-07-22  Werner Koch  <wk@g10code.com>
+
+	* command-ssh.c (ssh_receive_key): Do not init comment to an empty
+	static string; in the error case it would be freed.
+
+2011-07-20  Werner Koch  <wk@g10code.com>
+
+	* command.c (do_one_keyinfo, cmd_keyinfo): Support option --ssh-fpr.
 
 	* command-ssh.c (ssh_identity_register): Display the ssh
 	fingerprint in the prompt.
@@ -19,28 +69,165 @@
 	(search_control_file): Add new arg R_CONFIRM and enhance parser.
 	* findkey.c (agent_raw_key_from_file): New.
 	(modify_description): Add format letter %F.
-
 	* findkey.c (agent_key_from_file): Simplify comment extraction by
 	using gcry_sexp_nth_string.
 
-2011-08-04  Werner Koch  <wk@g10code.com>
+2011-06-28  Ben Kibbey <bjk@luxsci.net>
 
-	* genkey.c (check_passphrase_pattern): Use gpg_strerror.
+	* command.c (option_handler): Add option s2k-count.
+	* agent.h (server_control_s): Add member s2k_count.
+	* genkey.c (store_key): Add parameter s2k_count.
+	* protect.c (agent_protect): Add parameter s2k_count.
+	* protect.c (do_encryption): Add parameter s2k_count.
 
-	* command-ssh.c (ssh_receive_mpint_list): Remove set but unused
-	var ELEMS_PUBLIC_N.
+2011-06-01  Marcus Brinkmann  <mb@g10code.com>
 
-	* gpg-agent.c (main): Remove set but unused var MAY_COREDUMP.
+	* cvt-openpgp.c (convert_to_openpgp): Change type of N to unsigned
+	int.
 
-2011-07-22  Werner Koch  <wk@g10code.com>
+2011-04-26  Werner Koch  <wk@g10code.com>
 
-	* command-ssh.c (ssh_receive_key): Do not init comment to an empty
-	static string; in the error case it would be freed.
+	* cvt-openpgp.c (convert_to_openpgp): Use rfc4880 encoded S2K count.
+	* protect.c (get_standard_s2k_count_rfc4880): New.
+	(S2K_DECODE_COUNT): New.
+	(s2k_hash_passphrase): Use the new macro.
 
-2011-04-29  Werner Koch  <wk@g10code.com>
+2011-04-21  Werner Koch  <wk@g10code.com>
 
-	* gpg-agent.c: Include estream.h
-	(main): s/pth_kill/es_pth_kill/.
+	* agent.h (server_control_s): Add field cache_ttl_opt_preset.
+	* gpg-agent.c (agent_init_default_ctrl): Init this field.
+	* genkey.c (agent_genkey): Use this new variable.
+	* command.c (cmd_passwd): Ditto.
+	(option_handler): Add new option cache-ttl-opt-preset.
+
+2011-04-20  Marcus Brinkmann  <mb@g10code.com>
+
+	* command.c (cmd_import_key): Release key from failed import
+        before converting openpgp private key in the openpgp-private-key
+        case.
+
+2011-04-17  Ben Kibbey <bjk@luxsci.net>
+
+	* command.c (cmd_passwd): Check for an error before presetting.
+
+2011-04-12  Ben Kibbey <bjk@luxsci.net>
+
+	* command.c (cmd_passwd): Fixed --preset when not previously cached.
+
+2011-04-12  Werner Koch  <wk@g10code.com>
+
+	* agent.h (CACHE_TTL_NONCE, CACHE_TTL_OPT_PRESET): New.
+	* command.c (cmd_passwd, cmd_import_key): Use new macros.
+	* genkey.c (agent_genkey): Ditto.
+
+2011-04-10  Ben Kibbey <bjk@luxsci.net>
+
+	* command.c (cmd_passwd): Add option --preset.
+	* command.c (cmd_genkey): Add option --preset.
+	* genkey.c (agent_genkey): Add parameter preset.
+
+2011-04-06  Ben Kibbey <bjk@luxsci.net>
+
+	* command.c (do_one_keyinfo): Add protection type field.
+
+2011-03-10  Werner Koch  <wk@g10code.com>
+
+	* protect.c (hash_passphrase): Use the new gcry_kdf_derive.
+
+2011-03-08  Werner Koch  <wk@g10code.com>
+
+	* cvt-openpgp.c (GCRY_PK_ECDH) [!HAVE_GCRY_PK_ECDH]: Remove.
+
+2011-03-03  Ben Kibbey  <bjk@luxsci.net>
+
+	* command.c (cmd_preset_passphrase): Add option --inquire.
+
+2011-03-03  Werner Koch  <wk@g10code.com>
+
+	* gpg-agent.c: Add option --allow-loopback-pinentry.
+	* command.c (option_handler): Add option pinentry-mode.
+	* agent.h (pinentry_mode_t): New enum.
+	(struct server_local_s): Add PINENTRY_MODE.
+	(struct opt): Add ALLOW_LOOPBACK_PINENTRY.
+	* call-pinentry.c (agent_askpin): Implement ask, cancel and error
+	pinentry modes.
+	(agent_get_passphrase, agent_get_confirmation): Ditto.
+	(agent_show_message): Return cancel if pinentry mode is not "ask".
+	(agent_popup_message_start): Ditto.
+
+2011-03-02  Werner Koch  <wk@g10code.com>
+
+	* call-scd.c (hash_algo_option): New.
+	(agent_card_pksign): Use it with PKSIGN.
+
+2011-03-02  Ben Kibbey  <bjk@luxsci.net>  (wk)
+
+	* command.c (cmd_clear_passphrase): Add option --mode=normal.
+	(cmd_keyinfo): Add option --data.
+        (do_one_keyinfo): Return CACHED status.  Add arg DATA.
+
+2011-02-07  Werner Koch  <wk@g10code.com>
+
+	* pksign.c (do_encode_dsa): Enforce multipe of 8 bits only for DSA.
+
+2011-02-03  Werner Koch  <wk@g10code.com>
+
+	* protect.c (protect_info): Support ECC algos.
+
+	* pksign.c (do_encode_dsa): Map public key algo number.  Extend
+	DSA size check for ECDSA.
+
+	* gpg-agent.c: Include cipher.h.
+	(map_pk_openpgp_to_gcry): New.
+
+	* findkey.c (key_parms_from_sexp): Support ECDH.
+
+	* cvt-openpgp.c (get_keygrip): Support ECC algorithms.
+	(convert_secret_key): Ditto.
+	(do_unprotect): Ditto.
+
+2011-02-02  Werner Koch  <wk@g10code.com>
+
+	* cvt-openpgp.c (convert_secret_key): Remove algo mapping.
+
+2011-01-31  Werner Koch  <wk@g10code.com>
+
+	* cvt-openpgp.c (convert_to_openpgp): Adjust to reverted Libgcrypt
+	ABI.
+
+	* protect.c (protect_info): Adjust ECDSA and ECDH parameter names.
+	Add "ecc".
+	* findkey.c (key_parms_from_sexp): Ditto.
+
+2011-01-19  Werner Koch  <wk@g10code.com>
+
+	* trustlist.c (read_one_trustfile): Also chop an CR.
+
+2011-01-21  Werner Koch  <wk@g10code.com>
+
+	* pksign.c (do_encode_dsa): Compare MDLEN to bytes.
+
+	* cvt-openpgp.c (GCRY_PK_ECDH) [!HAVE_GCRY_PK_ECDH]: New.
+
+2010-12-02  Werner Koch  <wk@g10code.com>
+
+	* gpg-agent.c (CHECK_OWN_SOCKET_INTERVAL) [W32CE]: Set to 60
+	seconds.
+
+2010-11-29  Werner Koch  <wk@g10code.com>
+
+	* cache.c (initialize_module_cache): Factor code out to ...
+	(init_encryption): new.
+	(new_data, agent_get_cache): Init encryption on on the fly.
+
+2010-11-26  Werner Koch  <wk@g10code.com>
+
+	* gpg-agent.c (CHECK_OWN_SOCKET_INTERVAL): New.
+	(handle_tick) [W32CE]: Don't check own socket.
+
+2010-11-23  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (gpg_agent_LDFLAGS): Add extra_bin_ldflags.
 
 2010-11-11  Werner Koch  <wk@g10code.com>
 
@@ -48,10 +235,97 @@
 	* gpg-agent.c (handle_connections): Set that flag.
 	* call-scd.c (start_scd): Enable events depending on this flag.
 
+2010-10-27  Werner Koch  <wk@g10code.com>
+
+	* gpg-agent.c (create_socket_name): Use TMPDIR.  Change callers.
+
+2010-10-26  Werner Koch  <wk@g10code.com>
+
+	* cache.c (agent_put_cache): Allow deletion even if TTL is passwd
+	as 0.
+
+	* genkey.c (agent_protect_and_store): Add arg PASSPHRASE_ADDR.
+	* command.c (cmd_passwd): Add option --passwd-nonce.
+	(struct server_local_s): Add LAST_CACHE_NONCE and LAST_PASSWD_NONCE.
+	(clear_nonce_cache): New.
+	(reset_notify): Clear the nonce cache.
+	(start_command_handler): Ditto.
+
+2010-10-25  Werner Koch  <wk@g10code.com>
+
+	* command.c (cmd_export_key): Free CACHE_NONCE.
+	(cmd_passwd): Add option --cache-nonce.
+
+2010-10-18  Werner Koch  <wk@g10code.com>
+
+	* call-pinentry.c (start_pinentry): Print name of pinentry on
+	connect error.
+
+	* call-scd.c (agent_card_pksign): Make sure to return an unsigned
+	number.
+
+2010-10-14  Werner Koch  <wk@g10code.com>
+
+	* command.c (cmd_genkey): Add option --no-protection.
+	* genkey.c (agent_genkey): Add arg NO_PROTECTION.
+
+2010-10-13  Werner Koch  <wk@g10code.com>
+
+	* call-pinentry.c (agent_get_passphrase): Support the close_button.
+
+	* gpg-agent.c (create_server_socket): Switch back to stderr
+	logging if we are not starting a agent.
+
+	* command.c (cmd_passwd, cmd_export_key): Move mapping of
+	GPG_ERR_FULLY_CANCELED to ..
+	(leave_cmd): .. here.
+	(option_handler): Add option agent-awareness.
+	* protect-tool.c (get_passphrase): Take care of
+	GPG_ERR_FULLY_CANCELED.
+	* findkey.c (try_unprotect_cb): Ditto.
+	(unprotect): Remove the fully_canceled hack.
+	* call-pinentry.c (start_pinentry): Ditto.
+	(agent_askpin): Ditto.
+	* pkdecrypt.c (agent_pkdecrypt): Ditto
+	* pksign.c (agent_pksign_do): Ditto.
+	* genkey.c (agent_ask_new_passphrase): Remove arg CANCEL_ALL.
+
+2010-10-06  Werner Koch  <wk@g10code.com>
+
+	* cvt-openpgp.c (convert_secret_key): Add missing break.
+
+2010-10-05  Werner Koch  <wk@g10code.com>
+
+	* gpg-agent.c (main): Don't set SSH_AGENT_PID so that ssh-agent -k
+	won't kill out gpg-agent.
+
 2010-09-30  Werner Koch  <wk@g10code.com>
+
+	* gpg-agent.c (agent_exit): Run cleanup.
+	(cleanup): Run only once.
+
+	* call-pinentry.c (close_button_status_cb): New.
+	(agent_askpin): Add arg R_CANCEL_ALL.  Change all callers.
+	* genkey.c (agent_ask_new_passphrase): Ditto.
+	* findkey.c (unprotect): Return GPG_ERR_FULLY_CANCELED if needed.
+
+	* command.c (cmd_export_key): Add support for OpenPGP keys.
+	* findkey.c (unprotect): Add optional arg R_PASSPHRASE.
+	(agent_key_from_file): Ditto.  Change all callers.
 
 	* findkey.c (unprotect): Do not put the passphrase into the cache
 	if it has been changed.
+
+	* cvt-openpgp.c (convert_to_openpgp, apply_protection)
+	(key_from_sexp): New.
+
+2010-09-29  Werner Koch  <wk@g10code.com>
+
+	* cvt-openpgp.c (convert_openpgp): Rename to convert_from_openpgp.
+
+	* command.c (has_option): Stop at "--".
+	(has_option_name, option_value): Ditto.
+	(skip_options): Skip initial spaces.
 
 2010-09-24  Werner Koch  <wk@g10code.com>
 
@@ -59,21 +333,141 @@
 	the default configuration file has been created in the meantime.
 	Fixes bug#1285.
 
+2010-09-17  Werner Koch  <wk@g10code.com>
+
+	* command.c (cmd_havekey): Allow testing of several keygrips.
+
+2010-09-15  Werner Koch  <wk@g10code.com>
+
+	* protect.c (calculate_mic): Take care of shared secret format.
+
+	* agent.h (PROTECTED_SHARED_SECRET): New.
+
+2010-09-02  Werner Koch  <wk@g10code.com>
+
+	* cache.c (new_data): Change arg and callers to use a string and
+	explicity return an error code.  We never used raw binary data and
+	thus it is easier to use a string.  Adjust callers.
+	(initialize_module_cache, deinitialize_module_cache): New.
+	(new_data): Encrypt the cached data.
+	(struct cache_item_s): Remove field LOCKCOUNT.  Change all users
+	accordingly.
+	(agent_unlock_cache_entry): Remove.
+	(agent_get_cache): Return an allocated string and remove CACHE_ID.
+	* genkey.c (agent_genkey): Remove cache marker stuff.
+	* findkey.c (unprotect): Ditto.
+	* cvt-openpgp.c (convert_openpgp): Ditto.
+	* command.c (cmd_get_passphrase): Ditto.
+	* gpg-agent.c (main, cleanup): Initialize and deinitialize the
+	cache module.
+
+2010-09-01  Werner Koch  <wk@g10code.com>
+
+	* call-pinentry.c (start_pinentry): Disable pinentry logging.
+
+	* command.c (cmd_import_key, cmd_genkey, cmd_pksign): Add CACHE
+	handling.
+	* cvt-openpgp.c (convert_openpgp): Add arg CACHE_NONCE and try the
+	cached nonce first.
+	* genkey.c (agent_genkey): Add arg CACHE_NONCE.
+	* cache.c (agent_get_cache): Require user and nonce cache modes
+	to match the requested mode.
+	(agent_put_cache): Ditto.
+	* agent.h (CACHE_MODE_NONCE): New.
+	* pksign.c (agent_pksign_do, agent_pksign): Add arg CACHE_NONCE.
+	* findkey.c (agent_key_from_file): Ditto.
+	(unprotect): Implement it.
+
+2010-08-31  Werner Koch  <wk@g10code.com>
+
+	* pksign.c (do_encode_dsa): Fix sign problem.
+	* findkey.c (agent_is_dsa_key): Adjust to actual usage.
+
+2010-08-30  Werner Koch  <wk@g10code.com>
+
+	* protect.c (s2k_hash_passphrase): New public function.
+
+2010-08-27  Werner Koch  <wk@g10code.com>
+
+	* command.c (cmd_import_key): Support OpenPGP keys.
+	* cvt-openpgp.h, cvt-openpgp.c: New.  Some of the code is based on
+	code taken from g10/seckey-cert.c.
+
+2010-08-26  Werner Koch  <wk@g10code.com>
+
+	* command-ssh.c (open_control_file): Use estream to create the file.
+
+	* findkey.c (agent_write_private_key): Explicitly create file with
+	mode 600.
+	* gpg-agent.c (main): Ditto.
+	* trustlist.c (agent_marktrusted): Explicitly create file with
+	mode 640.
+
+2010-08-16  Werner Koch  <wk@g10code.com>
+
+	* gpg-agent.c: Replace remaining printf by es_printf.
+
 2010-08-11  Werner Koch  <wk@g10code.com>
 
-	* call-pinentry.c (agent_askpin, agent_get_passphrase): Fix
+	* call-pinentry.c (agent_get_passphrase, agent_askpin): Fix
 	setting of confidential flag.
 
 	* call-scd.c (agent_card_scd): Pass assuan comment lines to the
 	caller.
 	(ASSUAN_CONVEY_COMMENTS): Provide replacement if needed.
 
+2010-08-09  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (t_common_ldadd): Add NETLIBS for sake of the TCP
+	logging.
+
+2010-06-24  Werner Koch  <wk@g10code.com>
+
+	* genkey.c (check_passphrase_pattern): Use HANG option for
+	gnupg_wait_progress.  Fixes regression from 2010-06-09.
+
+2010-06-21  Werner Koch  <wk@g10code.com>
+
+	* protect-tool.c (export_p12_file, import_p12_cert_cb)
+	(import_p12_file, sexp_to_kparms, store_private_key): Remove
+	unused code.
+
+2010-06-18  Werner Koch  <wk@g10code.com>
+
+	* protect-tool.c (store_private_key, rsa_key_check): Remove.
+
+	* command.c (cmd_export_key): New.
+
+2010-06-15  Werner Koch  <wk@g10code.com>
+
+	* command.c (cmd_keywrap_key, cmd_import_key): New.
+
+	* genkey.c (agent_genkey, agent_protect_and_store): Factor common
+	code out to...
+	(agent_ask_new_passphrase): .. new.
+
+	* findkey.c (agent_write_private_key): Return GPG_ERR_EEXIST
+	instead of GPG_ERR_GENERAL.
+
+2010-06-14  Werner Koch  <wk@g10code.com>
+
+	* protect-tool.c: Remove commands --p12-import and --p12-export.
+	* minip12.c, minip12.h: Move to ../sm.
+	* Makefile.am (gpg_protect_tool_SOURCES): Remove them.
+	* preset-passphrase.c: Remove unneeded minip12.h.
+
+	* command.c (cmd_keywrap_key): New.
+
+	* command.c (leave_cmd): New.
+	(cmd_istrusted, cmd_listtrusted, cmd_marktrusted, cmd_pksign)
+	(cmd_pkdecrypt, cmd_genkey, cmd_readkey, cmd_keyinfo)
+	(cmd_get_passphrase, cmd_get_confirmation, cmd_learn)
+	(cmd_passwd, cmd_preset_passphrase, cmd_getval, cmd_putval): Use it.
+
 2010-05-12  Werner Koch  <wk@g10code.com>
 
 	* preset-passphrase.c (forget_passphrase): Actually implement
 	this.  Fixes bug#1198.
-
-	* gpg-agent.c (handle_tick): Do not print die message with option -q.
 
 2010-05-11  Werner Koch  <wk@g10code.com>
 
@@ -84,53 +478,184 @@
 	for non-W32 platforms.
 	(cmd_getinfo): New subcommands std_session_env and std_startup_env.
 
-2010-05-04  Werner Koch  <wk@g10code.com>
-
-	* gpg-agent.c (main): Add command --use-standard-socket-p.
-
 2010-05-03  Werner Koch  <wk@g10code.com>
 
 	* gpg-agent.c (check_own_socket_thread): Do not release SOCKNAME
 	too early.
 
-2010-03-17  Werner Koch  <wk@g10code.com>
+2010-04-30  Werner Koch  <wk@g10code.com>
 
-	* call-scd.c (unlock_scd): Send a BYE under certain conditions.
+	* gpg-agent.c (main): Add command --use-standard-socket-p.
 
-2010-02-19  Werner Koch  <wk@g10code.com>
+2010-04-26  Werner Koch  <wk@g10code.com>
 
-	* call-pinentry.c (start_pinentry): Remove a translation prefix.
+	* gpg-agent.c (create_server_socket) [W32]: Also check for EEXIST.
 
-2010-02-18  Werner Koch  <wk@g10code.com>
+2010-04-19  Werner Koch  <wk@g10code.com>
 
-	* protect.c (agent_unprotect): Initialize CLEARTEXT.
+	* pksign.c (get_dsa_qbits, do_encode_dsa): New.
+	(agent_pksign_do): Detect DSA keys and use do_encode_dsa.
+	* findkey.c (agent_public_key_from_file): Factor some code out to ..
+	(key_parms_from_sexp): New.
+	(agent_is_dsa_key): New.
 
-	* command.c (register_commands): Unconditionally use
-	assuan_register_post_cmd_notify.
-	(start_command_handler): Undocumented use assuan_set_io_monitor.
+	* command.c (cmd_sethash): Clear digeest.RAW_VALUE.
+
+2010-04-14  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (libexec_PROGRAMS) [W32CE]: Do not build
+	gpg-preset-passphrase for now.
+	(pwquery_libs) [W32CE]: Set to empty.
+
+	* trustlist.c (read_one_trustfile): Use estream.
+
+2010-04-13  Werner Koch  <wk@g10code.com>
+
+	* findkey.c (read_key_file): Use estream.
+	(agent_write_private_key): Ditto.
+
+2010-04-07  Werner Koch  <wk@g10code.com>
+
+	* gpg-agent.c (handle_connections) [W32]: Assume that PTh support
+	the handle event.  Use a dummy event for W32CE.
+	(get_agent_scd_notify_event) [W32CE]: Do not build.
+
+	* call-pinentry.c: Remove setenv.h.  Include sysutils.h.
+	(atfork_cb): s/setenv/gnupg_setenv/.
+
+	* gpg-agent.c: Do not include setenv.h.
+	(main): s/unsetenv/gnupg_unsetenv/.
+
+	* protect.c (calibrate_get_time) [W32CE]: Use GetThreadTimes.
+
+2010-04-06  Werner Koch  <wk@g10code.com>
+
+	* call-scd.c [!HAVE_SIGNAL_H]: Do not include signal.h.
+
+	* findkey.c (agent_write_private_key): s/remove/gnupg_remove/.
+
+	* command-ssh.c (search_control_file): Replace rewind by fseek and
+	clearerr.
+	* genkey.c (check_passphrase_pattern): Ditto.
+
+	* gpg-agent.c [!HAVE_SIGNAL_H]: Do not include signal.h.
+	(remove_socket): s/remove/gnupg_remove/.
+	(create_private_keys_directory): Use gnupg_mkdir.
+
+2010-03-11  Werner Koch  <wk@g10code.com>
+
+	* gpg-agent.c: Include "asshelp.h".
+	(main): Remove assuan_set_assuan_log_prefix.  Add
+	assuan_set_log_cb.
+	(handle_signal): Disable pth ctrl dumping.
+	(parse_rereadable_options, main): Remove assuan_set_assuan_log_stream.
+	* call-scd.c (start_scd): Remove assuan_set_log_stream.
+
+2010-03-10  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (common_libs): Remove libjnlib.a.
+
+	* trustlist.c, protect-tool.c, command-ssh.c: Remove estream.h.
 
 2010-02-17  Werner Koch  <wk@g10code.com>
 
 	* call-pinentry.c (start_pinentry): Always free OPTSTR.  Send
 	default-xxx strings.
 
-2010-02-11  Marcus Brinkmann  <marcus@g10code.de>
+2010-01-26  Werner Koch  <wk@g10code.com>
 
-	From trunk 2009-09-23, 2009-11-02, 2009-11-04, 2009-11-05, 2009-11-25,
-	2009-12-08:
+	* protect.c (do_encryption): Encode the s2kcount and no not use a
+	static value of 96.
 
-	* Makefile.am (gpg_agent_CFLAGS, gpg_agent_LDADD): Use libassuan
-	instead of libassuan-pth.
+2009-12-21  Werner Koch  <wk@g10code.com>
+
+	* command.c (cmd_getinfo): Add sub-command s2k_count.
+
+2009-12-14  Werner Koch  <wk@g10code.com>
+
+	* protect.c (agent_unprotect): Decode the S2K count here and take
+	care of the new unencoded values.  Add a lower limit sanity check.
+	(hash_passphrase): Do not decode here.
+	(get_standard_s2k_count, calibrate_s2k_count): New.
+	(calibrate_get_time, calibrate_elapsed_time): New.
+	(do_encryption): Use get_standard_s2k_count.
+
+2009-12-08  Werner Koch  <wk@g10code.com>
+
+	* protect.c (agent_unprotect): Avoid compiler warning.
+
+2009-12-08  Marcus Brinkmann  <marcus@g10code.de>
+
+	* call-pinentry.c (start_pinentry): Convert posix fd to assuan fd.
+	* call-scd.c (start_scd): Likewise.
+
+2009-12-03  Werner Koch  <wk@g10code.com>
+
+	* gpg-agent.c (set_debug): Allow for numerical debug leveles.  Print
+	active debug flags.
+
+2009-12-02  Werner Koch  <wk@g10code.com>
+
+	* trustlist.c (read_trustfiles): Store the pointer returned from
+	shrinking the memory and not the orginal one.  Fixes bug#1163.
+	Reported by TAKAHASHI Tamotsu.  Also return correct error after
+	memory failure.
+
+2009-11-27  Marcus Brinkmann  <marcus@g10code.de>
+
+	* command.c (start_command_handler): Do not call
+	assuan_set_log_stream anymore.
+	* gpg-agent.c (main): But call assuan_set_assuan_log_stream here.
+
+2009-11-25  Marcus Brinkmann  <marcus@g10code.de>
+
+	* command.c (start_command_handler): Use assuan_fd_t and
+	assuan_fdopen on fds.
+
+2009-11-05  Marcus Brinkmann  <marcus@g10code.de>
+
+	* call-pinentry.c (start_pinentry): Call assuan_pipe_connect, not
+	assuan_pipe_connect_ext.
+	* command.c (start_command_handler): Change
+	assuan_init_socket_server_ext into assuan_init_socket_server.
+	* call-scd.c (start_scd): Update use of assuan_socket_connect and
+	assuan_pipe_connect.
+	* gpg-agent.c (check_own_socket_thread, check_for_running_agent):
+	Update use of assuan_socket_connect.
+
+2009-11-04  Werner Koch  <wk@g10code.com>
+
+	* command.c (register_commands): Add help arg to
+	assuan_register_command.  Convert all command comments to help
+	strings.
+
+2009-11-02  Marcus Brinkmann  <marcus@g10code.de>
+
+	* command.c (reset_notify): Take LINE arg and return error.
+	(register_commands): Use assuan_handler_t type.
+
+2009-10-16  Marcus Brinkmann  <marcus@g10code.com>
+
+	* gpg_agent_CFLAGS, gpg_agent_LDADD: Use libassuan instead of
+	libassuan-pth.
 	* gpg-agent.c: Invoke ASSUAN_SYSTEM_PTH_IMPL.
-	(main): Update to new API.  Call assuan_set_system_hooks and
-	assuan_sock_init.  Fix invocation of assuan_socket_connect.
-	Call assuan_set_assuan_log_stream here.
-	(parse_rereadable_options): Don't set global assuan log
-	file (there ain't one anymore).
+	(main): Call assuan_set_system_hooks and assuan_sock_init.
+	Fix invocation of assuan_socket_connect.
+
+2009-09-23  Werner Koch  <wk@g10code.com>
+
+	* command.c (register_commands) [HAVE_ASSUAN_SET_IO_MONITOR]:
+	Remove cpp condition.
+	(start_command_handler) [HAVE_ASSUAN_SET_IO_MONITOR]: Ditto.
+
+2009-09-23  Marcus Brinkmann  <marcus@g10code.de>
+
+	* gpg-agent.c (parse_rereadable_options): Don't set global assuan
+	log file (there ain't one anymore).
+	(main): Update to new API.
 	(check_own_socket_pid_cb): Return gpg_error_t instead of int.
 	(check_own_socket_thread, check_for_running_agent): Create assuan
-	context before connecting to server.  Update use of
-	assuan_socket_connect.
+	context before connecting to server.
 	* command.c: Include "scdaemon.h" before <assuan.h> because of
 	GPG_ERR_SOURCE_DEFAULT check.
 	(write_and_clear_outbuf): Use gpg_error_t instead of
@@ -146,58 +671,19 @@
 	(post_cmd_notify): Change type of ERR to gpg_error_t from int.
 	(io_monitor): Add hook argument.  Use symbols for constants.
 	(register_commands): Change return type of HANDLER to gpg_error_t.
-	Use assuan_handler_t type.  Add NULL arg to assuan_register_command.
-	Add help arg to	assuan_register_command.  Convert all command
-	comments to help strings.
 	(start_command_handler): Allocate assuan context before starting
-	server.  Change	assuan_init_socket_server_ext into
-	assuan_init_socket_server. Use assuan_fd_t and assuan_fdopen on fds.
-	Do not call assuan_set_log_stream anymore.
-	(reset_notify): Take LINE arg and return error.
+	server.
 	* call-pinentry.c: Include "scdaemon.h" before <assuan.h> because
 	of GPG_ERR_SOURCE_DEFAULT check.
 	(unlock_pinentry): Call assuan_release instead of
 	assuan_disconnect.
 	(getinfo_pid_cb, getpin_cb): Return gpg_error_t instead of int.
 	(start_pinentry): Allocate assuan context before connecting to
-	server.  Call assuan_pipe_connect, notassuan_pipe_connect_ext.
-	Convert posix fd to assuan fd.
+	server.
 	* call-scd.c (membuf_data_cb, learn_status_cb, get_serialno_cb)
 	(membuf_data_cb, inq_needpin, card_getattr_cb, pass_status_thru)
 	(pass_data_thru): Change return type to gpg_error_t.
 	(start_scd): Allocate assuan context before connecting to server.
-	Update use of assuan_socket_connect and	assuan_pipe_connect.
-	Convert posix fd to assuan fd.
-
-2010-01-26  Werner Koch  <wk@g10code.com>
-
-	* protect.c (do_encryption): Encode the s2kcount and do not use a
-	static value of 96.
-
-2009-12-21  Werner Koch  <wk@g10code.com>
-
-	* command.c (cmd_getinfo): Add sub-command "s2k_count".
-
-2009-12-14  Werner Koch  <wk@g10code.com>
-
-	* protect.c (agent_unprotect): Decode the S2K count here and take
-	care of the new unencoded values.  Add a lower limit sanity check.
-	(hash_passphrase): Do not decode here.
-	(get_standard_s2k_count, calibrate_s2k_count): New.
-	(calibrate_get_time, calibrate_elapsed_time): New.
-	(do_encryption): Use get_standard_s2k_count.
-
-2009-12-03  Werner Koch  <wk@g10code.com>
-
-	* gpg-agent.c (set_debug): Allow for numerical debug leveles.  Print
-	active debug flags.
-
-2009-12-02  Werner Koch  <wk@g10code.com>
-
-	* trustlist.c (read_trustfiles): Store the pointer returned from
-	shrinking the memory and not the orginal one.  Fixes bug#1163.
-	Reported by TAKAHASHI Tamotsu.  Also return correct error after
-	memory failure.
 
 2009-09-04  Marcus Brinkmann  <marcus@g10code.com>
 
@@ -2168,7 +2654,7 @@
 	to the control struct so that they are per connection.
 	* gpg-agent.c (agent_init_default_ctrl): New.
 	(main): Assign those command line options to new default_* variables.
-	Reset DISPLAY in server mode so that tehre is no implicit default.
+	Reset DISPLAY in server mode so that there is no implicit default.
 	* command.c (start_command_handler): Initialize and deinitialize
 	the control values.
 	(option_handler): Work on the ctrl values and not on the opt.
@@ -2606,7 +3092,7 @@ Fri Aug 18 14:27:14 CEST 2000  Werner Koch  <wk@openit.de>
 
 
  Copyright 2001, 2002, 2003, 2004, 2005,
-	   2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+	   2007, 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
 
  This file is free software; as a special exception the author gives
  unlimited permission to copy and/or distribute it, with or without
@@ -2615,3 +3101,7 @@ Fri Aug 18 14:27:14 CEST 2000  Werner Koch  <wk@openit.de>
  This file is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+Local Variables:
+buffer-read-only: t
+End:

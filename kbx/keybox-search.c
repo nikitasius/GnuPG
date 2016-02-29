@@ -1,5 +1,6 @@
 /* keybox-search.c - Search operations
- * Copyright (C) 2001, 2002, 2003, 2004 Free Software Foundation, Inc.
+ * Copyright (C) 2001, 2002, 2003, 2004, 2012,
+ *               2013 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -24,12 +25,10 @@
 #include <assert.h>
 #include <errno.h>
 
-#include "../jnlib/stringhelp.h" /* ascii_xxxx() */
-#include "../include/host2net.h"
-
 #include "keybox-defs.h"
 #include <gcrypt.h>
-
+#include "host2net.h"
+#include "mbox-util.h"
 
 #define xtoi_1(p)   (*(p) <= '9'? (*(p)- '0'): \
                      *(p) <= 'F'? (*(p)-'A'+10):(*(p)-'a'+10))
@@ -42,33 +41,9 @@ struct sn_array_s {
 };
 
 
+#define get32(a) buf32_to_ulong ((a))
+#define get16(a) buf16_to_ulong ((a))
 
-static inline ulong
-get32 (const byte *buffer)
-{
-  return buf32_to_ulong (buffer);
-}
-
-static inline ulong
-get16 (const byte *buffer)
-{
-  return buf16_to_ulong (buffer);
-}
-
-
-
-static inline int
-blob_get_type (KEYBOXBLOB blob)
-{
-  const unsigned char *buffer;
-  size_t length;
-
-  buffer = _keybox_get_blob_image (blob, &length);
-  if (length < 32)
-    return -1; /* blob too short */
-
-  return buffer[4];
-}
 
 static inline unsigned int
 blob_get_blob_flags (KEYBOXBLOB blob)
@@ -84,6 +59,30 @@ blob_get_blob_flags (KEYBOXBLOB blob)
 }
 
 
+/* Return the first keyid from the blob.  Returns true if
+   available.  */
+static int
+blob_get_first_keyid (KEYBOXBLOB blob, u32 *kid)
+{
+  const unsigned char *buffer;
+  size_t length, nkeys, keyinfolen;
+
+  buffer = _keybox_get_blob_image (blob, &length);
+  if (length < 48)
+    return 0; /* blob too short */
+
+  nkeys = get16 (buffer + 16);
+  keyinfolen = get16 (buffer + 18);
+  if (!nkeys || keyinfolen < 28)
+    return 0; /* invalid blob */
+
+  kid[0] = get32 (buffer + 32);
+  kid[1] = get32 (buffer + 36);
+
+  return 1;
+}
+
+
 /* Return information on the flag WHAT within the blob BUFFER,LENGTH.
    Return the offset and the length (in bytes) of the flag in
    FLAGOFF,FLAG_SIZE. */
@@ -95,7 +94,7 @@ _keybox_get_flag_location (const unsigned char *buffer, size_t length,
   size_t nkeys, keyinfolen;
   size_t nuids, uidinfolen;
   size_t nserial;
-  size_t nsigs, siginfolen;
+  size_t nsigs, siginfolen, siginfooff;
 
   switch (what)
     {
@@ -109,6 +108,7 @@ _keybox_get_flag_location (const unsigned char *buffer, size_t length,
     case KEYBOX_FLAG_OWNERTRUST:
     case KEYBOX_FLAG_VALIDITY:
     case KEYBOX_FLAG_CREATED_AT:
+    case KEYBOX_FLAG_SIG_INFO:
       if (length < 20)
         return GPG_ERR_INV_OBJ;
       /* Key info. */
@@ -133,6 +133,7 @@ _keybox_get_flag_location (const unsigned char *buffer, size_t length,
       if (pos+4 > length)
         return GPG_ERR_INV_OBJ ; /* Out of bounds. */
       /* Signature info. */
+      siginfooff = pos;
       nsigs = get16 (buffer + pos); pos += 2;
       siginfolen = get16 (buffer + pos); pos += 2;
       if (siginfolen < 4 )
@@ -151,6 +152,10 @@ _keybox_get_flag_location (const unsigned char *buffer, size_t length,
           *flag_size = 4;
           *flag_off += 1+2+4+4+4;
           break;
+        case KEYBOX_FLAG_SIG_INFO:
+          *flag_size = siginfolen * nsigs;
+          *flag_off = siginfooff;
+          break;
         default:
           break;
         }
@@ -164,7 +169,7 @@ _keybox_get_flag_location (const unsigned char *buffer, size_t length,
 
 
 
-/* Return one of the flags WHAT in VALUE from teh blob BUFFER of
+/* Return one of the flags WHAT in VALUE from the blob BUFFER of
    LENGTH bytes.  Return 0 on success or an raw error code. */
 static gpg_err_code_t
 get_flag_from_image (const unsigned char *buffer, size_t length,
@@ -220,6 +225,9 @@ blob_cmp_sn (KEYBOXBLOB blob, const unsigned char *sn, int snlen)
 }
 
 
+/* Returns 0 if not found or the number of the key which was found.
+   For X.509 this is always 1, for OpenPGP this is 1 for the primary
+   key and 2 and more for the subkeys.  */
 static int
 blob_cmp_fpr (KEYBOXBLOB blob, const unsigned char *fpr)
 {
@@ -246,7 +254,7 @@ blob_cmp_fpr (KEYBOXBLOB blob, const unsigned char *fpr)
     {
       off = pos + idx*keyinfolen;
       if (!memcmp (buffer + off, fpr, 20))
-        return 1; /* found */
+        return idx+1; /* found */
     }
   return 0; /* not found */
 }
@@ -278,7 +286,7 @@ blob_cmp_fpr_part (KEYBOXBLOB blob, const unsigned char *fpr,
     {
       off = pos + idx*keyinfolen;
       if (!memcmp (buffer + off + fproff, fpr, fprlen))
-        return 1; /* found */
+        return idx+1; /* found */
     }
   return 0; /* not found */
 }
@@ -286,7 +294,7 @@ blob_cmp_fpr_part (KEYBOXBLOB blob, const unsigned char *fpr,
 
 static int
 blob_cmp_name (KEYBOXBLOB blob, int idx,
-               const char *name, size_t namelen, int substr)
+               const char *name, size_t namelen, int substr, int x509)
 {
   const unsigned char *buffer;
   size_t length;
@@ -323,10 +331,9 @@ blob_cmp_name (KEYBOXBLOB blob, int idx,
     return 0; /* out of bounds */
 
   if (idx < 0)
-    { /* compare all names starting with that (negated) index */
-      idx = -idx;
-
-      for ( ;idx < nuids; idx++)
+    { /* Compare all names.  Note that for X.509 we start with index 1
+         so to skip the issuer at index 0.  */
+      for (idx = !!x509; idx < nuids; idx++)
         {
           size_t mypos = pos;
 
@@ -340,15 +347,14 @@ blob_cmp_name (KEYBOXBLOB blob, int idx,
           if (substr)
             {
               if (ascii_memcasemem (buffer+off, len, name, namelen))
-                return 1; /* found */
+                return idx+1; /* found */
             }
           else
             {
               if (len == namelen && !memcmp (buffer+off, name, len))
-                return 1; /* found */
+                return idx+1; /* found */
             }
         }
-      return 0; /* not found */
     }
   else
     {
@@ -364,20 +370,25 @@ blob_cmp_name (KEYBOXBLOB blob, int idx,
 
       if (substr)
         {
-          return !!ascii_memcasemem (buffer+off, len, name, namelen);
+          if (ascii_memcasemem (buffer+off, len, name, namelen))
+            return idx+1; /* found */
         }
       else
         {
-          return len == namelen && !memcmp (buffer+off, name, len);
+          if (len == namelen && !memcmp (buffer+off, name, len))
+            return idx+1; /* found */
         }
     }
+  return 0; /* not found */
 }
 
 
-/* compare all email addresses of the subject.  With SUBSTR given as
-   True a substring search is done in the mail address */
+/* Compare all email addresses of the subject.  With SUBSTR given as
+   True a substring search is done in the mail address.  The X509 flag
+   indicated whether the search is done on an X.509 blob.  */
 static int
-blob_cmp_mail (KEYBOXBLOB blob, const char *name, size_t namelen, int substr)
+blob_cmp_mail (KEYBOXBLOB blob, const char *name, size_t namelen, int substr,
+               int x509)
 {
   const unsigned char *buffer;
   size_t length;
@@ -418,30 +429,68 @@ blob_cmp_mail (KEYBOXBLOB blob, const char *name, size_t namelen, int substr)
   if (namelen < 1)
     return 0;
 
-  for (idx=1 ;idx < nuids; idx++)
+  /* Note that for X.509 we start at index 1 because index 0 is used
+     for the issuer name.  */
+  for (idx=!!x509 ;idx < nuids; idx++)
     {
       size_t mypos = pos;
+      size_t mylen;
 
       mypos += idx*uidinfolen;
       off = get32 (buffer+mypos);
       len = get32 (buffer+mypos+4);
       if (off+len > length)
-        return 0; /* error: better stop here out of bounds */
-      if (len < 2 || buffer[off] != '<')
-        continue; /* empty name or trailing 0 not stored */
-      len--; /* one back */
-      if ( len < 3 || buffer[off+len] != '>')
-        continue; /* not a proper email address */
-      len--;
+        return 0; /* error: better stop here - out of bounds */
+      if (x509)
+        {
+          if (len < 2 || buffer[off] != '<')
+            continue; /* empty name or trailing 0 not stored */
+          len--; /* one back */
+          if ( len < 3 || buffer[off+len] != '>')
+            continue; /* not a proper email address */
+          off++;
+          len--;
+        }
+      else /* OpenPGP.  */
+        {
+          /* We need to forward to the mailbox part.  */
+          mypos = off;
+          mylen = len;
+          for ( ; len && buffer[off] != '<'; len--, off++)
+            ;
+          if (len < 2 || buffer[off] != '<')
+            {
+              /* Mailbox not explicitly given or too short.  Restore
+                 OFF and LEN and check whether the entire string
+                 resembles a mailbox without the angle brackets.  */
+              off = mypos;
+              len = mylen;
+              if (!is_valid_mailbox_mem (buffer+off, len))
+                continue; /* Not a mail address. */
+            }
+          else /* Seems to be standard user id with mail address.  */
+            {
+              off++; /* Point to first char of the mail address.  */
+              len--;
+              /* Search closing '>'.  */
+              for (mypos=off; len && buffer[mypos] != '>'; len--, mypos++)
+                ;
+              if (!len || buffer[mypos] != '>' || off == mypos)
+                continue; /* Not a proper mail address.  */
+              len = mypos - off;
+            }
+
+        }
+
       if (substr)
         {
-          if (ascii_memcasemem (buffer+off+1, len, name, namelen))
-            return 1; /* found */
+          if (ascii_memcasemem (buffer+off, len, name, namelen))
+            return idx+1; /* found */
         }
       else
         {
-          if (len == namelen && !ascii_memcasecmp (buffer+off+1, name, len))
-            return 1; /* found */
+          if (len == namelen && !ascii_memcasecmp (buffer+off, name, len))
+            return idx+1; /* found */
         }
     }
   return 0; /* not found */
@@ -523,15 +572,29 @@ blob_x509_has_grip (KEYBOXBLOB blob, const unsigned char *grip)
   The has_foo functions are used as helpers for search
 */
 static inline int
-has_short_kid (KEYBOXBLOB blob, const unsigned char *kid)
+has_short_kid (KEYBOXBLOB blob, u32 lkid)
 {
-  return blob_cmp_fpr_part (blob, kid+4, 16, 4);
+  unsigned char buf[4];
+  buf[0] = lkid >> 24;
+  buf[1] = lkid >> 16;
+  buf[2] = lkid >> 8;
+  buf[3] = lkid;
+  return blob_cmp_fpr_part (blob, buf, 16, 4);
 }
 
 static inline int
-has_long_kid (KEYBOXBLOB blob, const unsigned char *kid)
+has_long_kid (KEYBOXBLOB blob, u32 mkid, u32 lkid)
 {
-  return blob_cmp_fpr_part (blob, kid, 12, 8);
+  unsigned char buf[8];
+  buf[0] = mkid >> 24;
+  buf[1] = mkid >> 16;
+  buf[2] = mkid >> 8;
+  buf[3] = mkid;
+  buf[4] = lkid >> 24;
+  buf[5] = lkid >> 16;
+  buf[6] = lkid >> 8;
+  buf[7] = lkid;
+  return blob_cmp_fpr_part (blob, buf, 12, 8);
 }
 
 static inline int
@@ -544,8 +607,11 @@ static inline int
 has_keygrip (KEYBOXBLOB blob, const unsigned char *grip)
 {
 #ifdef KEYBOX_WITH_X509
-  if (blob_get_type (blob) == BLOBTYPE_X509)
+  if (blob_get_type (blob) == KEYBOX_BLOBTYPE_X509)
     return blob_x509_has_grip (blob, grip);
+#else
+  (void)blob;
+  (void)grip;
 #endif
   return 0;
 }
@@ -558,11 +624,11 @@ has_issuer (KEYBOXBLOB blob, const char *name)
 
   return_val_if_fail (name, 0);
 
-  if (blob_get_type (blob) != BLOBTYPE_X509)
+  if (blob_get_type (blob) != KEYBOX_BLOBTYPE_X509)
     return 0;
 
   namelen = strlen (name);
-  return blob_cmp_name (blob, 0 /* issuer */, name, namelen, 0);
+  return blob_cmp_name (blob, 0 /* issuer */, name, namelen, 0, 1);
 }
 
 static inline int
@@ -574,13 +640,13 @@ has_issuer_sn (KEYBOXBLOB blob, const char *name,
   return_val_if_fail (name, 0);
   return_val_if_fail (sn, 0);
 
-  if (blob_get_type (blob) != BLOBTYPE_X509)
+  if (blob_get_type (blob) != KEYBOX_BLOBTYPE_X509)
     return 0;
 
   namelen = strlen (name);
 
   return (blob_cmp_sn (blob, sn, snlen)
-          && blob_cmp_name (blob, 0 /* issuer */, name, namelen, 0));
+          && blob_cmp_name (blob, 0 /* issuer */, name, namelen, 0, 1));
 }
 
 static inline int
@@ -588,7 +654,7 @@ has_sn (KEYBOXBLOB blob, const unsigned char *sn, int snlen)
 {
   return_val_if_fail (sn, 0);
 
-  if (blob_get_type (blob) != BLOBTYPE_X509)
+  if (blob_get_type (blob) != KEYBOX_BLOBTYPE_X509)
     return 0;
   return blob_cmp_sn (blob, sn, snlen);
 }
@@ -600,26 +666,29 @@ has_subject (KEYBOXBLOB blob, const char *name)
 
   return_val_if_fail (name, 0);
 
-  if (blob_get_type (blob) != BLOBTYPE_X509)
+  if (blob_get_type (blob) != KEYBOX_BLOBTYPE_X509)
     return 0;
 
   namelen = strlen (name);
-  return blob_cmp_name (blob, 1 /* subject */, name, namelen, 0);
+  return blob_cmp_name (blob, 1 /* subject */, name, namelen, 0, 1);
 }
 
+
 static inline int
-has_subject_or_alt (KEYBOXBLOB blob, const char *name, int substr)
+has_username (KEYBOXBLOB blob, const char *name, int substr)
 {
   size_t namelen;
+  int btype;
 
   return_val_if_fail (name, 0);
 
-  if (blob_get_type (blob) != BLOBTYPE_X509)
+  btype = blob_get_type (blob);
+  if (btype != KEYBOX_BLOBTYPE_PGP && btype != KEYBOX_BLOBTYPE_X509)
     return 0;
 
   namelen = strlen (name);
-  return blob_cmp_name (blob, -1 /* all subject names*/, name,
-                        namelen, substr);
+  return blob_cmp_name (blob, -1 /* all subject/user names */, name,
+                        namelen, substr, (btype == KEYBOX_BLOBTYPE_X509));
 }
 
 
@@ -627,16 +696,22 @@ static inline int
 has_mail (KEYBOXBLOB blob, const char *name, int substr)
 {
   size_t namelen;
+  int btype;
 
   return_val_if_fail (name, 0);
 
-  if (blob_get_type (blob) != BLOBTYPE_X509)
+  btype = blob_get_type (blob);
+  if (btype != KEYBOX_BLOBTYPE_PGP && btype != KEYBOX_BLOBTYPE_X509)
     return 0;
+
+  if (btype == KEYBOX_BLOBTYPE_PGP && *name == '<')
+    name++; /* Hack to remove the leading '<' for gpg.  */
 
   namelen = strlen (name);
   if (namelen && name[namelen-1] == '>')
     namelen--;
-  return blob_cmp_mail (blob, name, namelen, substr);
+  return blob_cmp_mail (blob, name, namelen, substr,
+                        (btype == KEYBOX_BLOBTYPE_X509));
 }
 
 
@@ -657,7 +732,7 @@ release_sn_array (struct sn_array_s *array, size_t size)
 
 */
 
-int
+gpg_error_t
 keybox_search_reset (KEYBOX_HANDLE hd)
 {
   if (!hd)
@@ -681,15 +756,21 @@ keybox_search_reset (KEYBOX_HANDLE hd)
 
 
 /* Note: When in ephemeral mode the search function does visit all
-   blobs but in standard mode, blobs flagged as ephemeral are ignored.  */
-int
-keybox_search (KEYBOX_HANDLE hd, KEYBOX_SEARCH_DESC *desc, size_t ndesc)
+   blobs but in standard mode, blobs flagged as ephemeral are ignored.
+   If WANT_BLOBTYPE is not 0 only blobs of this type are considered.
+   The value at R_SKIPPED is updated by the number of skipped long
+   records (counts PGP and X.509). */
+gpg_error_t
+keybox_search (KEYBOX_HANDLE hd, KEYBOX_SEARCH_DESC *desc, size_t ndesc,
+               keybox_blobtype_t want_blobtype,
+               size_t *r_descindex, unsigned long *r_skipped)
 {
-  int rc;
+  gpg_error_t rc;
   size_t n;
   int need_words, any_skip;
   KEYBOXBLOB blob = NULL;
   struct sn_array_s *sn_array = NULL;
+  int pk_no, uid_no;
 
   if (!hd)
     return gpg_error (GPG_ERR_INV_VALUE);
@@ -806,18 +887,29 @@ keybox_search (KEYBOX_HANDLE hd, KEYBOX_SEARCH_DESC *desc, size_t ndesc)
     }
 
 
+  pk_no = uid_no = 0;
   for (;;)
     {
       unsigned int blobflags;
+      int blobtype;
 
       _keybox_release_blob (blob); blob = NULL;
       rc = _keybox_read_blob (&blob, hd->fp);
+      if (gpg_err_code (rc) == GPG_ERR_TOO_LARGE
+          && gpg_err_source (rc) == GPG_ERR_SOURCE_KEYBOX)
+        {
+          ++*r_skipped;
+          continue; /* Skip too large records.  */
+        }
+
       if (rc)
         break;
 
-      if (blob_get_type (blob) == BLOBTYPE_HEADER)
+      blobtype = blob_get_type (blob);
+      if (blobtype == KEYBOX_BLOBTYPE_HEADER)
         continue;
-
+      if (want_blobtype && blobtype != want_blobtype)
+        continue;
 
       blobflags = blob_get_blob_flags (blob);
       if (!hd->ephemeral && (blobflags & 2))
@@ -831,24 +923,28 @@ keybox_search (KEYBOX_HANDLE hd, KEYBOX_SEARCH_DESC *desc, size_t ndesc)
               never_reached ();
               break;
             case KEYDB_SEARCH_MODE_EXACT:
-              if (has_subject_or_alt (blob, desc[n].u.name, 0))
+              uid_no = has_username (blob, desc[n].u.name, 0);
+              if (uid_no)
                 goto found;
               break;
             case KEYDB_SEARCH_MODE_MAIL:
-              if (has_mail (blob, desc[n].u.name, 0))
+              uid_no = has_mail (blob, desc[n].u.name, 0);
+              if (uid_no)
                 goto found;
               break;
             case KEYDB_SEARCH_MODE_MAILSUB:
-              if (has_mail (blob, desc[n].u.name, 1))
+              uid_no = has_mail (blob, desc[n].u.name, 1);
+              if (uid_no)
                 goto found;
               break;
             case KEYDB_SEARCH_MODE_SUBSTR:
-              if (has_subject_or_alt (blob, desc[n].u.name, 1))
+              uid_no =  has_username (blob, desc[n].u.name, 1);
+              if (uid_no)
                 goto found;
               break;
             case KEYDB_SEARCH_MODE_MAILEND:
             case KEYDB_SEARCH_MODE_WORDS:
-              never_reached (); /* not yet implemented */
+              /* not yet implemented */
               break;
             case KEYDB_SEARCH_MODE_ISSUER:
               if (has_issuer (blob, desc[n].u.name))
@@ -870,16 +966,19 @@ keybox_search (KEYBOX_HANDLE hd, KEYBOX_SEARCH_DESC *desc, size_t ndesc)
                 goto found;
               break;
             case KEYDB_SEARCH_MODE_SHORT_KID:
-              if (has_short_kid (blob, desc[n].u.kid))
+              pk_no = has_short_kid (blob, desc[n].u.kid[1]);
+              if (pk_no)
                 goto found;
               break;
             case KEYDB_SEARCH_MODE_LONG_KID:
-              if (has_long_kid (blob, desc[n].u.kid))
+              pk_no = has_long_kid (blob, desc[n].u.kid[0], desc[n].u.kid[1]);
+              if (pk_no)
                 goto found;
               break;
             case KEYDB_SEARCH_MODE_FPR:
             case KEYDB_SEARCH_MODE_FPR20:
-              if (has_fingerprint (blob, desc[n].u.fpr))
+              pk_no = has_fingerprint (blob, desc[n].u.fpr);
+              if (pk_no)
                 goto found;
               break;
             case KEYDB_SEARCH_MODE_KEYGRIP:
@@ -899,11 +998,18 @@ keybox_search (KEYBOX_HANDLE hd, KEYBOX_SEARCH_DESC *desc, size_t ndesc)
 	}
       continue;
     found:
+      /* Record which DESC we matched on.  Note this value is only
+	 meaningful if this function returns with no errors. */
+      if(r_descindex)
+	*r_descindex = n;
       for (n=any_skip?0:ndesc; n < ndesc; n++)
         {
-/*            if (desc[n].skipfnc */
-/*                && desc[n].skipfnc (desc[n].skipfncvalue, aki)) */
-/*              break; */
+          u32 kid[2];
+
+          if (desc[n].skipfnc
+              && blob_get_first_keyid (blob, kid)
+	      && desc[n].skipfnc (desc[n].skipfncvalue, kid, uid_no))
+		break;
         }
       if (n == ndesc)
         break; /* got it */
@@ -912,8 +1018,10 @@ keybox_search (KEYBOX_HANDLE hd, KEYBOX_SEARCH_DESC *desc, size_t ndesc)
   if (!rc)
     {
       hd->found.blob = blob;
+      hd->found.pk_no = pk_no;
+      hd->found.uid_no = uid_no;
     }
-  else if (rc == -1)
+  else if (rc == -1 || gpg_err_code (rc) == GPG_ERR_EOF)
     {
       _keybox_release_blob (blob);
       hd->eof = 1;
@@ -937,6 +1045,65 @@ keybox_search (KEYBOX_HANDLE hd, KEYBOX_SEARCH_DESC *desc, size_t ndesc)
    Functions to return a certificate or a keyblock.  To be used after
    a successful search operation.
 */
+
+
+/* Return the last found keyblock.  Returns 0 on success and stores a
+   new iobuf at R_IOBUF and a signature status vector at R_SIGSTATUS
+   in that case.  R_UID_NO and R_PK_NO are used to retun the number of
+   the key or user id which was matched the search criteria; if not
+   known they are set to 0. */
+gpg_error_t
+keybox_get_keyblock (KEYBOX_HANDLE hd, iobuf_t *r_iobuf,
+                     int *r_pk_no, int *r_uid_no, u32 **r_sigstatus)
+{
+  gpg_error_t err;
+  const unsigned char *buffer, *p;
+  size_t length;
+  size_t image_off, image_len;
+  size_t siginfo_off, siginfo_len;
+  u32 *sigstatus, n, n_sigs, sigilen;
+
+  *r_iobuf = NULL;
+  *r_sigstatus = NULL;
+
+  if (!hd)
+    return gpg_error (GPG_ERR_INV_VALUE);
+  if (!hd->found.blob)
+    return gpg_error (GPG_ERR_NOTHING_FOUND);
+
+  if (blob_get_type (hd->found.blob) != KEYBOX_BLOBTYPE_PGP)
+    return gpg_error (GPG_ERR_WRONG_BLOB_TYPE);
+
+  buffer = _keybox_get_blob_image (hd->found.blob, &length);
+  if (length < 40)
+    return gpg_error (GPG_ERR_TOO_SHORT);
+  image_off = get32 (buffer+8);
+  image_len = get32 (buffer+12);
+  if (image_off+image_len > length)
+    return gpg_error (GPG_ERR_TOO_SHORT);
+
+  err = _keybox_get_flag_location (buffer, length, KEYBOX_FLAG_SIG_INFO,
+                                   &siginfo_off, &siginfo_len);
+  if (err)
+    return err;
+  n_sigs  = get16 (buffer + siginfo_off);
+  sigilen = get16 (buffer + siginfo_off + 2);
+  p = buffer + siginfo_off + 4;
+  sigstatus = xtrymalloc ((1+n_sigs) * sizeof *sigstatus);
+  if (!sigstatus)
+    return gpg_error_from_syserror ();
+  sigstatus[0] = n_sigs;
+  for (n=1; n <= n_sigs; n++, p += sigilen)
+    sigstatus[n] = get32 (p);
+
+  *r_pk_no  = hd->found.pk_no;
+  *r_uid_no = hd->found.uid_no;
+  *r_sigstatus = sigstatus;
+  *r_iobuf = iobuf_temp_with_content (buffer+image_off, image_len);
+  return 0;
+}
+
+
 #ifdef KEYBOX_WITH_X509
 /*
   Return the last found cert.  Caller must free it.
@@ -956,7 +1123,7 @@ keybox_get_cert (KEYBOX_HANDLE hd, ksba_cert_t *r_cert)
   if (!hd->found.blob)
     return gpg_error (GPG_ERR_NOTHING_FOUND);
 
-  if (blob_get_type (hd->found.blob) != BLOBTYPE_X509)
+  if (blob_get_type (hd->found.blob) != KEYBOX_BLOBTYPE_X509)
     return gpg_error (GPG_ERR_WRONG_BLOB_TYPE);
 
   buffer = _keybox_get_blob_image (hd->found.blob, &length);
@@ -1022,3 +1189,39 @@ keybox_get_flags (KEYBOX_HANDLE hd, int what, int idx, unsigned int *value)
   return ec? gpg_error (ec):0;
 }
 
+off_t
+keybox_offset (KEYBOX_HANDLE hd)
+{
+  if (!hd->fp)
+    return 0;
+  return ftello (hd->fp);
+}
+
+gpg_error_t
+keybox_seek (KEYBOX_HANDLE hd, off_t offset)
+{
+  int err;
+
+  if (hd->error)
+    return hd->error; /* still in error state */
+
+  if (! hd->fp)
+    {
+      if (offset == 0)
+        /* No need to open the file.  An unopened file is effectively at
+           offset 0.  */
+        return 0;
+
+      hd->fp = fopen (hd->kb->fname, "rb");
+      if (!hd->fp)
+        {
+          hd->error = gpg_error_from_syserror ();
+          return hd->error;
+        }
+    }
+
+  err = fseeko (hd->fp, offset, SEEK_SET);
+  hd->error = gpg_error_from_errno (err);
+
+  return hd->error;
+}

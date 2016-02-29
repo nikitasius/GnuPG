@@ -1,5 +1,5 @@
 /* keybox-update.c - keybox update operations
- *	Copyright (C) 2001, 2003, 2004 Free Software Foundation, Inc.
+ * Copyright (C) 2001, 2003, 2004, 2012 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -24,11 +24,17 @@
 #include <errno.h>
 #include <time.h>
 #include <unistd.h>
+#include <assert.h>
 
 #include "keybox-defs.h"
-#include "../include/host2net.h"
+#include "../common/sysutils.h"
+#include "../common/host2net.h"
 
 #define EXTSEP_S "."
+
+#define FILECOPY_INSERT 1
+#define FILECOPY_DELETE 2
+#define FILECOPY_UPDATE 3
 
 
 #if !defined(HAVE_FSEEKO) && !defined(fseeko)
@@ -62,88 +68,27 @@ fseeko (FILE * stream, off_t newpos, int whence)
 #endif /* !defined(HAVE_FSEEKO) && !defined(fseeko) */
 
 
-
 static int
 create_tmp_file (const char *template,
                  char **r_bakfname, char **r_tmpfname, FILE **r_fp)
 {
-  char *bakfname, *tmpfname;
+  gpg_error_t err;
 
-  *r_bakfname = NULL;
-  *r_tmpfname = NULL;
-
-# ifdef USE_ONLY_8DOT3
-  /* Here is another Windoze bug?:
-   * you cant rename("pubring.kbx.tmp", "pubring.kbx");
-   * but	rename("pubring.kbx.tmp", "pubring.aaa");
-   * works.  So we replace ".kbx" by ".kb_" or ".k__".  Note that we
-   * can't use ".bak" and ".tmp", because these suffixes are used by
-   * gpg and would lead to a sharing violation or data corruption.
-   */
-  if (strlen (template) > 4
-      && !strcmp (template+strlen(template)-4, EXTSEP_S "kbx") )
+  err = keybox_tmp_names (template, 0, r_bakfname, r_tmpfname);
+  if (!err)
     {
-      bakfname = xtrymalloc (strlen (template) + 1);
-      if (!bakfname)
-        return gpg_error_from_syserror ();
-      strcpy (bakfname, template);
-      strcpy (bakfname+strlen(template)-4, EXTSEP_S "kb_");
-
-      tmpfname = xtrymalloc (strlen (template) + 1);
-      if (!tmpfname)
+      *r_fp = fopen (*r_tmpfname, "wb");
+      if (!*r_fp)
         {
-          gpg_error_t tmperr = gpg_error_from_syserror ();
-          xfree (bakfname);
-          return tmperr;
+          err = gpg_error_from_syserror ();
+          xfree (*r_tmpfname);
+          *r_tmpfname = NULL;
+          xfree (*r_bakfname);
+          *r_bakfname = NULL;
         }
-      strcpy (tmpfname,template);
-      strcpy (tmpfname + strlen (template)-4, EXTSEP_S "k__");
-    }
-  else
-    { /* File does not end with kbx, thus we hope we are working on a
-         modern file system and appending a suffix works. */
-      bakfname = xtrymalloc ( strlen (template) + 5);
-      if (!bakfname)
-        return gpg_error_from_syserror ();
-      strcpy (stpcpy (bakfname, template), EXTSEP_S "kb_");
-
-      tmpfname = xtrymalloc ( strlen (template) + 5);
-      if (!tmpfname)
-        {
-          gpg_error_t tmperr = gpg_error_from_syserror ();
-          xfree (bakfname);
-          return tmperr;
-        }
-      strcpy (stpcpy (tmpfname, template), EXTSEP_S "k__");
-    }
-# else /* Posix file names */
-  bakfname = xtrymalloc (strlen (template) + 2);
-  if (!bakfname)
-    return gpg_error_from_syserror ();
-  strcpy (stpcpy (bakfname,template),"~");
-
-  tmpfname = xtrymalloc ( strlen (template) + 5);
-  if (!tmpfname)
-    {
-      gpg_error_t tmperr = gpg_error_from_syserror ();
-      xfree (bakfname);
-      return tmperr;
-    }
-  strcpy (stpcpy (tmpfname,template), EXTSEP_S "tmp");
-# endif /* Posix filename */
-
-  *r_fp = fopen (tmpfname, "wb");
-  if (!*r_fp)
-    {
-      gpg_error_t tmperr = gpg_error_from_syserror ();
-      xfree (tmpfname);
-      xfree (bakfname);
-      return tmperr;
     }
 
-  *r_bakfname = bakfname;
-  *r_tmpfname = tmpfname;
-  return 0;
+  return err;
 }
 
 
@@ -159,7 +104,7 @@ rename_tmp_file (const char *bakfname, const char *tmpfname,
 /*      { */
 /*        if (chmod (tmpfname, S_IRUSR | S_IWUSR) )  */
 /*          { */
-/*            log_debug ("chmod of `%s' failed: %s\n", */
+/*            log_debug ("chmod of '%s' failed: %s\n", */
 /*                       tmpfname, strerror(errno) ); */
 /*            return KEYBOX_Write_File; */
 /*  	} */
@@ -167,29 +112,22 @@ rename_tmp_file (const char *bakfname, const char *tmpfname,
 #endif
 
   /* fixme: invalidate close caches (not used with stdio)*/
-/*    iobuf_ioctl (NULL, 2, 0, (char*)tmpfname ); */
-/*    iobuf_ioctl (NULL, 2, 0, (char*)bakfname ); */
-/*    iobuf_ioctl (NULL, 2, 0, (char*)fname ); */
+/*    iobuf_ioctl (NULL, IOBUF_IOCTL_INVALIDATE_CACHE, 0, (char*)tmpfname ); */
+/*    iobuf_ioctl (NULL, IOBUF_IOCTL_INVALIDATE_CACHE, 0, (char*)bakfname ); */
+/*    iobuf_ioctl (NULL, IOBUF_IOCTL_INVALIDATE_CACHE, 0, (char*)fname ); */
 
   /* First make a backup file except for secret keyboxes. */
   if (!secret)
     {
-#if defined(HAVE_DOSISH_SYSTEM) || defined(__riscos__)
-      remove (bakfname);
-#endif
-      if (rename (fname, bakfname) )
-        {
-          return gpg_error_from_syserror ();
-	}
+      rc = keybox_file_rename (fname, bakfname);
+      if (rc)
+        return rc;
     }
 
   /* Then rename the file. */
-#if defined(HAVE_DOSISH_SYSTEM) || defined(__riscos__)
-  remove (fname);
-#endif
-  if (rename (tmpfname, fname) )
+  rc = keybox_file_rename (tmpfname, fname);
+  if (rc)
     {
-      rc = gpg_error_from_syserror ();
       if (secret)
         {
 /*            log_info ("WARNING: 2 files with confidential" */
@@ -206,20 +144,18 @@ rename_tmp_file (const char *bakfname, const char *tmpfname,
 
 
 
-/* Perform insert/delete/update operation.
-    mode 1 = insert
- 	 2 = delete
- 	 3 = update
-*/
+/* Perform insert/delete/update operation.  MODE is one of
+   FILECOPY_INSERT, FILECOPY_DELETE, FILECOPY_UPDATE.  FOR_OPENPGP
+   indicates that this is called due to an OpenPGP keyblock change.  */
 static int
 blob_filecopy (int mode, const char *fname, KEYBOXBLOB blob,
-               int secret, off_t start_offset)
+               int secret, int for_openpgp, off_t start_offset)
 {
   FILE *fp, *newfp;
   int rc=0;
   char *bakfname = NULL;
   char *tmpfname = NULL;
-  char buffer[4096];
+  char buffer[4096];  /* (Must be at least 32 bytes) */
   int nread, nbytes;
 
   /* Open the source file. Because we do a rename, we have to check the
@@ -228,7 +164,7 @@ blob_filecopy (int mode, const char *fname, KEYBOXBLOB blob,
     return gpg_error_from_syserror ();
 
   fp = fopen (fname, "rb");
-  if (mode == 1 && !fp && errno == ENOENT)
+  if (mode == FILECOPY_INSERT && !fp && errno == ENOENT)
     {
       /* Insert mode but file does not exist:
          Create a new keybox file. */
@@ -236,7 +172,7 @@ blob_filecopy (int mode, const char *fname, KEYBOXBLOB blob,
       if (!newfp )
         return gpg_error_from_syserror ();
 
-      rc = _keybox_write_header_blob (newfp);
+      rc = _keybox_write_header_blob (newfp, for_openpgp);
       if (rc)
         {
           fclose (newfp);
@@ -267,21 +203,31 @@ blob_filecopy (int mode, const char *fname, KEYBOXBLOB blob,
       goto leave;
     }
 
-  /* Create the new file. */
+  /* Create the new file.  On success NEWFP is initialized.  */
   rc = create_tmp_file (fname, &bakfname, &tmpfname, &newfp);
   if (rc)
     {
       fclose (fp);
-      fclose (newfp);
       goto leave;
     }
 
   /* prepare for insert */
-  if (mode == 1)
+  if (mode == FILECOPY_INSERT)
     {
-      /* Copy everything to the new file. */
+      int first_record = 1;
+
+      /* Copy everything to the new file.  If this is for OpenPGP, we
+         make sure that the openpgp flag is set in the header.  (We
+         failsafe the blob type.) */
       while ( (nread = fread (buffer, 1, DIM(buffer), fp)) > 0 )
         {
+          if (first_record && for_openpgp
+              && buffer[4] == KEYBOX_BLOBTYPE_HEADER)
+            {
+              first_record = 0;
+              buffer[7] |= 0x02; /* OpenPGP data may be available.  */
+            }
+
           if (fwrite (buffer, nread, 1, newfp) != 1)
             {
               rc = gpg_error_from_syserror ();
@@ -300,7 +246,7 @@ blob_filecopy (int mode, const char *fname, KEYBOXBLOB blob,
     }
 
   /* Prepare for delete or update. */
-  if ( mode == 2 || mode == 3 )
+  if ( mode == FILECOPY_DELETE || mode == FILECOPY_UPDATE )
     {
       off_t current = 0;
 
@@ -342,7 +288,7 @@ blob_filecopy (int mode, const char *fname, KEYBOXBLOB blob,
     }
 
   /* Do an insert or update. */
-  if ( mode == 1 || mode == 3 )
+  if ( mode == FILECOPY_INSERT || mode == FILECOPY_UPDATE )
     {
       rc = _keybox_write_blob (blob, newfp);
       if (rc)
@@ -354,7 +300,7 @@ blob_filecopy (int mode, const char *fname, KEYBOXBLOB blob,
     }
 
   /* Copy the rest of the packet for an delete or update. */
-  if (mode == 2 || mode == 3)
+  if (mode == FILECOPY_DELETE || mode == FILECOPY_UPDATE)
     {
       while ( (nread = fread (buffer, 1, DIM(buffer), fp)) > 0 )
         {
@@ -397,6 +343,102 @@ blob_filecopy (int mode, const char *fname, KEYBOXBLOB blob,
 }
 
 
+/* Insert the OpenPGP keyblock {IMAGE,IMAGELEN} into HD.  SIGSTATUS is
+   a vector describing the status of the signatures; its first element
+   gives the number of following elements.  */
+gpg_error_t
+keybox_insert_keyblock (KEYBOX_HANDLE hd, const void *image, size_t imagelen,
+                        u32 *sigstatus)
+{
+  gpg_error_t err;
+  const char *fname;
+  KEYBOXBLOB blob;
+  size_t nparsed;
+  struct _keybox_openpgp_info info;
+
+  if (!hd)
+    return gpg_error (GPG_ERR_INV_HANDLE);
+  if (!hd->kb)
+    return gpg_error (GPG_ERR_INV_HANDLE);
+  fname = hd->kb->fname;
+  if (!fname)
+    return gpg_error (GPG_ERR_INV_HANDLE);
+
+
+  /* Close this one otherwise we will mess up the position for a next
+     search.  Fixme: it would be better to adjust the position after
+     the write operation.  */
+  _keybox_close_file (hd);
+
+  err = _keybox_parse_openpgp (image, imagelen, &nparsed, &info);
+  if (err)
+    return err;
+  assert (nparsed <= imagelen);
+  err = _keybox_create_openpgp_blob (&blob, &info, image, imagelen,
+                                     sigstatus, hd->ephemeral);
+  _keybox_destroy_openpgp_info (&info);
+  if (!err)
+    {
+      err = blob_filecopy (FILECOPY_INSERT, fname, blob, hd->secret, 1, 0);
+      _keybox_release_blob (blob);
+      /*    if (!rc && !hd->secret && kb_offtbl) */
+      /*      { */
+      /*        update_offset_hash_table_from_kb (kb_offtbl, kb, 0); */
+      /*      } */
+    }
+  return err;
+}
+
+
+/* Update the current key at HD with the given OpenPGP keyblock in
+   {IMAGE,IMAGELEN}.  */
+gpg_error_t
+keybox_update_keyblock (KEYBOX_HANDLE hd, const void *image, size_t imagelen)
+{
+  gpg_error_t err;
+  const char *fname;
+  off_t off;
+  KEYBOXBLOB blob;
+  size_t nparsed;
+  struct _keybox_openpgp_info info;
+
+  if (!hd || !image || !imagelen)
+    return gpg_error (GPG_ERR_INV_VALUE);
+  if (!hd->found.blob)
+    return gpg_error (GPG_ERR_NOTHING_FOUND);
+  if (blob_get_type (hd->found.blob) != KEYBOX_BLOBTYPE_PGP)
+    return gpg_error (GPG_ERR_WRONG_BLOB_TYPE);
+  fname = hd->kb->fname;
+  if (!fname)
+    return gpg_error (GPG_ERR_INV_HANDLE);
+
+  off = _keybox_get_blob_fileoffset (hd->found.blob);
+  if (off == (off_t)-1)
+    return gpg_error (GPG_ERR_GENERAL);
+
+  /* Close this the file so that we do no mess up the position for a
+     next search.  */
+  _keybox_close_file (hd);
+
+  /* Build a new blob.  */
+  err = _keybox_parse_openpgp (image, imagelen, &nparsed, &info);
+  if (err)
+    return err;
+  assert (nparsed <= imagelen);
+  err = _keybox_create_openpgp_blob (&blob, &info, image, imagelen,
+                                     NULL, hd->ephemeral);
+  _keybox_destroy_openpgp_info (&info);
+
+  /* Update the keyblock.  */
+  if (!err)
+    {
+      err = blob_filecopy (FILECOPY_UPDATE, fname, blob, hd->secret, 1, off);
+      _keybox_release_blob (blob);
+    }
+  return err;
+}
+
+
 
 #ifdef KEYBOX_WITH_X509
 int
@@ -423,7 +465,7 @@ keybox_insert_cert (KEYBOX_HANDLE hd, ksba_cert_t cert,
   rc = _keybox_create_x509_blob (&blob, cert, sha1_digest, hd->ephemeral);
   if (!rc)
     {
-      rc = blob_filecopy (1, fname, blob, hd->secret, 0);
+      rc = blob_filecopy (FILECOPY_INSERT, fname, blob, hd->secret, 0, 0);
       _keybox_release_blob (blob);
       /*    if (!rc && !hd->secret && kb_offtbl) */
       /*      { */
@@ -492,7 +534,7 @@ keybox_set_flags (KEYBOX_HANDLE hd, int what, int idx, unsigned int value)
 
   ec = 0;
   if (fseeko (fp, off, SEEK_SET))
-    ec = gpg_error_from_syserror ();
+    ec = gpg_err_code_from_syserror ();
   else
     {
       unsigned char tmp[4];
@@ -622,7 +664,7 @@ keybox_compress (KEYBOX_HANDLE hd)
       size_t length;
 
       buffer = _keybox_get_blob_image (blob, &length);
-      if (length > 4 && buffer[4] == BLOBTYPE_HEADER)
+      if (length > 4 && buffer[4] == KEYBOX_BLOBTYPE_HEADER)
         {
           u32 last_maint = buf32_to_u32 (buffer+20);
 
@@ -634,7 +676,8 @@ keybox_compress (KEYBOX_HANDLE hd)
             }
         }
       _keybox_release_blob (blob);
-      rewind (fp);
+      fseek (fp, 0, SEEK_SET);
+      clearerr (fp);
     }
 
   /* Create the new file. */
@@ -667,10 +710,12 @@ keybox_compress (KEYBOX_HANDLE hd)
       if (first_blob)
         {
           first_blob = 0;
-          if (length > 4 && buffer[4] == BLOBTYPE_HEADER)
+          if (length > 4 && buffer[4] == KEYBOX_BLOBTYPE_HEADER)
             {
-              /* Write out the blob with an updated maintenance time stamp. */
-              _keybox_update_header_blob (blob);
+              /* Write out the blob with an updated maintenance time
+                 stamp and if needed (ie. used by gpg) set the openpgp
+                 flag.  */
+              _keybox_update_header_blob (blob, hd->for_openpgp);
               rc = _keybox_write_blob (blob, newfp);
               if (rc)
                 break;
@@ -678,12 +723,12 @@ keybox_compress (KEYBOX_HANDLE hd)
             }
 
           /* The header blob is missing.  Insert it.  */
-          rc = _keybox_write_header_blob (newfp);
+          rc = _keybox_write_header_blob (newfp, hd->for_openpgp);
           if (rc)
             break;
           any_changes = 1;
         }
-      else if (length > 4 && buffer[4] == BLOBTYPE_HEADER)
+      else if (length > 4 && buffer[4] == KEYBOX_BLOBTYPE_HEADER)
         {
           /* Oops: There is another header record - remove it. */
           any_changes = 1;
@@ -735,7 +780,7 @@ keybox_compress (KEYBOX_HANDLE hd)
 
   /* Rename or remove the temporary file. */
   if (rc || !any_changes)
-    remove (tmpfname);
+    gnupg_remove (tmpfname);
   else
     rc = rename_tmp_file (bakfname, tmpfname, fname, hd->secret);
 
@@ -743,4 +788,3 @@ keybox_compress (KEYBOX_HANDLE hd)
   xfree(tmpfname);
   return rc;
 }
-

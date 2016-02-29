@@ -1,6 +1,6 @@
 /* compress.c - compress filter
  * Copyright (C) 1998, 1999, 2000, 2001, 2002,
- *               2003, 2006 Free Software Foundation, Inc.
+ *               2003, 2006, 2010 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -31,10 +31,12 @@
 #include <unistd.h>
 #include <assert.h>
 #include <errno.h>
-#include <zlib.h>
-#if defined(__riscos__) && defined(USE_ZLIBRISCOS)
-# include "zlib-riscos.h"
-#endif 
+#ifdef HAVE_ZIP
+# include <zlib.h>
+# if defined(__riscos__) && defined(USE_ZLIBRISCOS)
+#  include "zlib-riscos.h"
+# endif
+#endif
 
 #include "gpg.h"
 #include "util.h"
@@ -46,7 +48,7 @@
 
 #ifdef __riscos__
 #define BYTEF_CAST(a) ((Bytef *)(a))
-#else 
+#else
 #define BYTEF_CAST(a) (a)
 #endif
 
@@ -55,6 +57,7 @@
 int compress_filter_bz2( void *opaque, int control,
 			 IOBUF a, byte *buf, size_t *ret_len);
 
+#ifdef HAVE_ZIP
 static void
 init_compress( compress_filter_context_t *zfx, z_stream *zs )
 {
@@ -137,7 +140,7 @@ init_uncompress( compress_filter_context_t *zfx, z_stream *zs )
      * PGP uses a windowsize of 13 bits. Using a negative value for
      * it forces zlib not to expect a zlib header.  This is a
      * undocumented feature Peter Gutmann told me about.
-     *    
+     *
      * We must use 15 bits for the inflator because CryptoEx uses 15
      * bits thus the output would get scrambled w/o error indication
      * if we would use 13 bits.  For the uncompressing this does not
@@ -248,6 +251,9 @@ compress_filter( void *opaque, int control,
 	    memset( &cd, 0, sizeof cd );
 	    cd.len = 0;
 	    cd.algorithm = zfx->algo;
+            /* Fixme: We should force a new CTB here:
+               cd.new_ctb = zfx->new_ctb;
+            */
 	    init_packet( &pkt );
 	    pkt.pkttype = PKT_COMPRESSED;
 	    pkt.pkt.compressed = &cd;
@@ -282,10 +288,10 @@ compress_filter( void *opaque, int control,
           zfx->release (zfx);
     }
     else if( control == IOBUFCTRL_DESC )
-	*(char**)buf = "compress_filter";
+        mem2str (buf, "compress_filter", *ret_len);
     return rc;
 }
-
+#endif /*HAVE_ZIP*/
 
 static void
 release_context (compress_filter_context_t *ctx)
@@ -297,14 +303,14 @@ release_context (compress_filter_context_t *ctx)
  * Handle a compressed packet
  */
 int
-handle_compressed( void *procctx, PKT_compressed *cd,
+handle_compressed (ctrl_t ctrl, void *procctx, PKT_compressed *cd,
 		   int (*callback)(IOBUF, void *), void *passthru )
 {
     compress_filter_context_t *cfx;
     int rc;
 
     if(check_compress_algo(cd->algorithm))
-      return G10ERR_COMPR_ALGO;
+      return GPG_ERR_COMPR_ALGO;
     cfx = xmalloc_clear (sizeof *cfx);
     cfx->release = release_context;
     cfx->algo = cd->algorithm;
@@ -312,7 +318,7 @@ handle_compressed( void *procctx, PKT_compressed *cd,
     if( callback )
 	rc = callback(cd->buf, passthru );
     else
-	rc = proc_packets(procctx, cd->buf);
+      rc = proc_packets (ctrl,procctx, cd->buf);
     cd->buf = NULL;
     return rc;
 }
@@ -337,10 +343,12 @@ push_compress_filter2(IOBUF out,compress_filter_context_t *zfx,
     case COMPRESS_ALGO_NONE:
       break;
 
+#ifdef HAVE_ZIP
     case COMPRESS_ALGO_ZIP:
     case COMPRESS_ALGO_ZLIB:
       iobuf_push_filter2(out,compress_filter,zfx,rel);
       break;
+#endif
 
 #ifdef HAVE_BZIP2
     case COMPRESS_ALGO_BZIP2:

@@ -1,4 +1,4 @@
-2011-12-02  Werner Koch  <wk@g10code.com>
+2011-12-01  Werner Koch  <wk@g10code.com>
 
 	NB: ChangeLog files are no longer manually maintained.  Starting
 	on December 1st, 2011 we put change information only in the GIT
@@ -10,10 +10,22 @@
 	* libcurl.m4: Fix lost hash sign introduced by previous change.
 	Reported by John Marshall.
 
-2011-08-04  Werner Koch  <wk@g10code.com>
+2011-08-10  Werner Koch  <wk@g10code.com>
 
 	* readline.m4, libcurl.m4: Fix use of AC_LANG_PROGRAM.
 	* libcurl.m4: s/ifelse/m4_if/.
+
+2011-02-25  Werner Koch  <wk@g10code.com>
+
+	* ksba.m4: Update from git master.
+
+2011-02-23  Werner Koch  <wk@g10code.com>
+
+	* libgcrypt.m4, gpg-error.m4: Update from their GIT masters.
+
+2010-06-08  Werner Koch  <wk@g10code.com>
+
+	* ldap.m4 (gnupg_have_ldap): Set variable.
 
 2009-09-03  Werner Koch  <wk@g10code.com>
 
@@ -157,3 +169,7 @@
 	* uintmax_t.m4: New file, from gettext-0.11.5.
 	* ulonglong.m4: New file, from gettext-0.11.5.
 	* Makefile.am: New file.
+
+Local Variables:
+buffer-read-only: t
+End:

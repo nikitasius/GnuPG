@@ -1,5 +1,5 @@
 /* yat2m.c - Yet Another Texi 2 Man converter
- *	Copyright (C) 2005, 2013 g10 Code GmbH
+ *	Copyright (C) 2005, 2013, 2015 g10 Code GmbH
  *      Copyright (C) 2006, 2008, 2011 Free Software Foundation, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -87,6 +87,10 @@
     detects the number of white spaces in front of an @item and remove
     this number of spaces from all following lines until a new @item
     is found or there are less spaces than for the last @item.
+
+    Note that @* does only work correctly if used at the end of an
+    input line.
+
 */
 
 #include <stdio.h>
@@ -116,6 +120,7 @@ static int quiet;
 static int debug;
 static const char *opt_source;
 static const char *opt_release;
+static const char *opt_date;
 static const char *opt_select;
 static const char *opt_include;
 static int opt_store;
@@ -135,6 +140,9 @@ typedef struct macro_s *macro_t;
 
 /* List of all defined macros. */
 static macro_t macrolist;
+
+/* List of variables set by @set. */
+static macro_t variablelist;
 
 /* List of global macro names.  The value part is not used.  */
 static macro_t predefinedmacrolist;
@@ -316,8 +324,12 @@ isodatestring (void)
 {
   static char buffer[11+5];
   struct tm *tp;
-  time_t atime = time (NULL);
+  time_t atime;
 
+  if (opt_date && *opt_date)
+    atime = strtoul (opt_date, NULL, 10);
+  else
+    atime = time (NULL);
   if (atime < 0)
     strcpy (buffer, "????" "-??" "-??");
   else
@@ -375,8 +387,44 @@ set_macro (const char *macroname, char *macrovalue)
 }
 
 
-/* Return true if the macro NAME is set, i.e. not the empty string and
-   not evaluating to 0.  */
+/* Create or update a variable with name and value given in NAMEANDVALUE.  */
+static void
+set_variable (char *nameandvalue)
+{
+  macro_t m;
+  const char *value;
+  char *p;
+
+  for (p = nameandvalue; *p && *p != ' ' && *p != '\t'; p++)
+    ;
+  if (!*p)
+    value = "";
+  else
+    {
+      *p++ = 0;
+      while (*p == ' ' || *p == '\t')
+        p++;
+      value = p;
+    }
+
+  for (m=variablelist; m; m = m->next)
+    if (!strcmp (m->name, nameandvalue))
+      break;
+  if (m)
+    free (m->value);
+  else
+    {
+      m = xcalloc (1, sizeof *m + strlen (nameandvalue));
+      strcpy (m->name, nameandvalue);
+      m->next = variablelist;
+      variablelist = m;
+    }
+  m->value = xstrdup (value);
+}
+
+
+/* Return true if the macro or variable NAME is set, i.e. not the
+   empty string and not evaluating to 0.  */
 static int
 macro_set_p (const char *name)
 {
@@ -385,6 +433,10 @@ macro_set_p (const char *name)
   for (m = macrolist; m ; m = m->next)
     if (!strcmp (m->name, name))
       break;
+  if (!m)
+    for (m = variablelist; m ; m = m->next)
+      if (!strcmp (m->name, name))
+        break;
   if (!m || !m->value || !*m->value)
     return 0;
   if ((*m->value & 0x80) || !isdigit (*m->value))
@@ -632,6 +684,7 @@ proc_texi_cmd (FILE *fp, const char *command, const char *rest, size_t len,
   } cmdtbl[] = {
     { "command", 0, "\\fB", "\\fR" },
     { "code",    0, "\\fB", "\\fR" },
+    { "url",     0, "\\fB", "\\fR" },
     { "sc",      0, "\\fB", "\\fR" },
     { "var",     0, "\\fI", "\\fR" },
     { "samp",    0, "\\(aq", "\\(aq"  },
@@ -665,8 +718,11 @@ proc_texi_cmd (FILE *fp, const char *command, const char *rest, size_t len,
     { "table",   3 },
     { "itemize",   3 },
     { "bullet",  0, "* " },
+    { "*",       0, "\n.br"},
+    { "/",       0 },
     { "end",     4 },
     { "quotation",1, ".RS\n\\fB" },
+    { "value", 8 },
     { NULL }
   };
   size_t n;
@@ -742,11 +798,46 @@ proc_texi_cmd (FILE *fp, const char *command, const char *rest, size_t len,
         case 7:
           ignore_args = 1;
           break;
+        case 8:
+          ignore_args = 1;
+          if (*rest != '{')
+            {
+              err ("opening brace for command '%s' missing", command);
+              return len;
+            }
+          else
+            {
+              /* Find closing brace.  */
+              for (s=rest+1, n=1; *s && n < len; s++, n++)
+                if (*s == '}')
+                  break;
+              if (*s != '}')
+                {
+                  err ("closing brace for command '%s' not found", command);
+                  return len;
+                }
+              else
+                {
+                  size_t len = s - (rest + 1);
+                  macro_t m;
+
+                  for (m = variablelist; m; m = m->next)
+                    if (strlen (m->name) == len
+                        &&!strncmp (m->name, rest+1, len))
+                      break;
+                  if (m)
+                    fputs (m->value, fp);
+                  else
+                    inf ("texinfo variable '%.*s' is not set",
+                         (int)len, rest+1);
+                }
+            }
+          break;
         default:
           break;
         }
     }
-  else
+  else /* macro */
     {
       macro_t m;
 
@@ -1216,6 +1307,10 @@ parse_file (const char *fname, FILE *fp, char **section_name, int in_pause)
               macrovalue = xmalloc ((macrovaluesize = 1024));
               macrovalueused = 0;
             }
+          else if (n == 4 && !memcmp (line, "@set", 4))
+            {
+              set_variable (p);
+            }
           else if (n == 8 && !memcmp (line, "@manpage", 8))
             {
               free (*section_name);
@@ -1278,7 +1373,7 @@ parse_file (const char *fname, FILE *fp, char **section_name, int in_pause)
                 }
 
               if (!incfp)
-                err ("can't open include file '%s':%s",
+                err ("can't open include file '%s': %s",
                      incname, strerror (errno));
               else
                 {
@@ -1326,6 +1421,13 @@ top_parse_file (const char *fname, FILE *fp)
       free (macrolist);
       macrolist = next;
     }
+  while (variablelist)
+    {
+      macro_t next = variablelist->next;
+      free (variablelist->value);
+      free (variablelist);
+      variablelist = next;
+    }
   for (m=predefinedmacrolist; m; m = m->next)
     set_macro (m->name, xstrdup ("1"));
   cond_is_active = 1;
@@ -1370,13 +1472,14 @@ main (int argc, char **argv)
                 "Extract man pages from a Texinfo source.\n\n"
                 "  --source NAME    use NAME as source field\n"
                 "  --release STRING use STRING as the release field\n"
+                "  --date EPOCH     use EPOCH as publication date\n"
                 "  --store          write output using @manpage name\n"
                 "  --select NAME    only output pages with @manpage NAME\n"
                 "  --verbose        enable extra informational output\n"
                 "  --debug          enable additional debug output\n"
                 "  --help           display this help and exit\n"
                 "  -I DIR           also search in include DIR\n"
-                "  -D gpgone        the only useable define\n\n"
+                "  -D gpgone        the only usable define\n\n"
                 "With no FILE, or when FILE is -, read standard input.\n\n"
                 "Report bugs to <bugs@g10code.com>.");
           exit (0);
@@ -1420,6 +1523,15 @@ main (int argc, char **argv)
           if (argc)
             {
               opt_release = *argv;
+              argc--; argv++;
+            }
+        }
+      else if (!strcmp (*argv, "--date"))
+        {
+          argc--; argv++;
+          if (argc)
+            {
+              opt_date = *argv;
               argc--; argv++;
             }
         }

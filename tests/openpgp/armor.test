@@ -755,10 +755,9 @@ $GPG --import x || true
 i=nopad_armored_msg
 info "checking: $i"
 eval "(IFS=; echo \"\$$i\")" >x
-if echo "abc" | $GPG  --passphrase-fd 0 -o - x > /dev/null ; then
+if $GPG -o - x > /dev/null ; then
    :
 else
    error "bug#1179 is back in town"
 fi
-
 

@@ -4,12 +4,22 @@
  *
  * This file is part of GNUPG.
  *
- * GNUPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GNUPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -28,18 +38,19 @@ int tty_batchmode (int onoff);
 #if __GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 5 )
 void tty_printf (const char *fmt, ... )
                  __attribute__ ((format (printf,1,2)));
-void tty_fprintf (FILE *fp, const char *fmt, ... )
+void tty_fprintf (estream_t fp, const char *fmt, ... )
                  __attribute__ ((format (printf,2,3)));
 char *tty_getf (const char *promptfmt, ... )
                  __attribute__ ((format (printf,1,2)));
 #else
 void tty_printf (const char *fmt, ... );
-void tty_fprintf (FILE *fp, const char *fmt, ... );
+void tty_fprintf (estream_t fp, const char *fmt, ... );
 char *tty_getf (const char *promptfmt, ... );
 #endif
-void tty_print_string (const unsigned char *p, size_t n);
+void tty_print_string (estream_t fp, const unsigned char *p, size_t n);
 void tty_print_utf8_string (const unsigned char *p, size_t n);
-void tty_print_utf8_string2 (const unsigned char *p, size_t n, size_t max_n);
+void tty_print_utf8_string2 (estream_t fp,
+                             const unsigned char *p, size_t n, size_t max_n);
 char *tty_get (const char *prompt);
 char *tty_get_hidden (const char *prompt);
 void tty_kill_prompt (void);

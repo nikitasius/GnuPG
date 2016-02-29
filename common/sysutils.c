@@ -1,16 +1,26 @@
 /* sysutils.c -  system helpers
- * Copyright (C) 1998, 1999, 2000, 2001, 2003, 2004,
- *               2007, 2008  Free Software Foundation, Inc.
- * Copyright (C) 2013 Werner Koch
+ * Copyright (C) 1991-2001, 2003-2004,
+ *               2006-2008  Free Software Foundation, Inc.
+ * Copyright (C) 2013-2014 Werner Koch
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -21,13 +31,14 @@
 
 #include <config.h>
 
-#ifdef WITHOUT_GNU_PTH /* Give the Makefile a chance to build without Pth.  */
-# undef HAVE_PTH
-# undef USE_GNU_PTH
+#ifdef WITHOUT_NPTH /* Give the Makefile a chance to build without Pth.  */
+# undef HAVE_NPTH
+# undef USE_NPTH
 #endif
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
@@ -44,18 +55,20 @@
 # include <sys/resource.h>
 #endif
 #ifdef HAVE_W32_SYSTEM
-# ifndef WINVER
-#  define WINVER 0x0500  /* Required for AllowSetForegroundWindow.  */
+# if WINVER < 0x0500
+#   define WINVER 0x0500  /* Required for AllowSetForegroundWindow.  */
 # endif
 # ifdef HAVE_WINSOCK2_H
 #  include <winsock2.h>
 # endif
 # include <windows.h>
 #endif
-#ifdef HAVE_PTH
-# include <pth.h>
+#ifdef HAVE_NPTH
+# include <npth.h>
 #endif
 #include <fcntl.h>
+
+#include <assuan.h>
 
 #include "util.h"
 #include "i18n.h"
@@ -136,32 +149,32 @@ enable_core_dumps (void)
 
 
 
-/* Return a string which is used as a kind of process ID */
+/* Return a string which is used as a kind of process ID.  */
 const byte *
-get_session_marker( size_t *rlen )
+get_session_marker (size_t *rlen)
 {
-    static byte marker[SIZEOF_UNSIGNED_LONG*2];
-    static int initialized;
+  static byte marker[SIZEOF_UNSIGNED_LONG*2];
+  static int initialized;
 
-    if ( !initialized ) {
-        volatile ulong aa, bb; /* we really want the uninitialized value */
-        ulong a, b;
-
-        initialized = 1;
-        /* Although this marker is guessable it is not easy to use
-         * for a faked control packet because an attacker does not
-         * have enough control about the time the verification does
-         * take place.  Of course, we can add just more random but
-         * than we need the random generator even for verification
-         * tasks - which does not make sense. */
-        a = aa ^ (ulong)getpid();
-        b = bb ^ (ulong)time(NULL);
-        memcpy( marker, &a, SIZEOF_UNSIGNED_LONG );
-        memcpy( marker+SIZEOF_UNSIGNED_LONG, &b, SIZEOF_UNSIGNED_LONG );
+  if (!initialized)
+    {
+      gcry_create_nonce (marker, sizeof marker);
+      initialized = 1;
     }
-    *rlen = sizeof(marker);
-    return marker;
+  *rlen = sizeof (marker);
+  return marker;
 }
+
+/* Return a random number in an unsigned int. */
+unsigned int
+get_uint_nonce (void)
+{
+  unsigned int value;
+
+  gcry_create_nonce (&value, sizeof value);
+  return value;
+}
+
 
 
 #if 0 /* not yet needed - Note that this will require inclusion of
@@ -254,25 +267,15 @@ check_permissions(const char *path,int extension,int checkonly)
 #endif
 
 
-/* Wrapper around the usual sleep fucntion.  This one won't wake up
+/* Wrapper around the usual sleep function.  This one won't wake up
    before the sleep time has really elapsed.  When build with Pth it
    merely calls pth_sleep and thus suspends only the current
    thread. */
 void
 gnupg_sleep (unsigned int seconds)
 {
-#ifdef HAVE_PTH
-  /* With Pth we force a regular sleep for seconds == 0 so that also
-     the process will give up its timeslot.  */
-  if (!seconds)
-    {
-# ifdef HAVE_W32_SYSTEM
-      Sleep (0);
-# else
-      sleep (0);
-# endif
-    }
-  pth_sleep (seconds);
+#ifdef USE_NPTH
+  npth_sleep (seconds);
 #else
   /* Fixme:  make sure that a sleep won't wake up to early.  */
 # ifdef HAVE_W32_SYSTEM
@@ -292,7 +295,10 @@ gnupg_sleep (unsigned int seconds)
 int
 translate_sys2libc_fd (gnupg_fd_t fd, int for_write)
 {
-#ifdef HAVE_W32_SYSTEM
+#if defined(HAVE_W32CE_SYSTEM)
+  (void)for_write;
+  return (int) fd;
+#elif defined(HAVE_W32_SYSTEM)
   int x;
 
   if (fd == GNUPG_INVALID_FD)
@@ -311,11 +317,16 @@ translate_sys2libc_fd (gnupg_fd_t fd, int for_write)
 }
 
 /* This is the same as translate_sys2libc_fd but takes an integer
-   which is assumed to be such an system handle.  */
+   which is assumed to be such an system handle.  On WindowsCE the
+   passed FD is a rendezvous ID and the function finishes the pipe
+   creation. */
 int
 translate_sys2libc_fd_int (int fd, int for_write)
 {
-#ifdef HAVE_W32_SYSTEM
+#if HAVE_W32CE_SYSTEM
+  fd = (int) _assuan_w32ce_finish_pipe (fd, for_write);
+  return translate_sys2libc_fd ((void*)fd, for_write);
+#elif HAVE_W32_SYSTEM
   if (fd <= 2)
     return fd;	/* Do not do this for error, stdin, stdout, stderr. */
 
@@ -337,8 +348,15 @@ gnupg_tmpfile (void)
 {
 #ifdef HAVE_W32_SYSTEM
   int attempts, n;
+#ifdef HAVE_W32CE_SYSTEM
+  wchar_t buffer[MAX_PATH+7+12+1];
+# define mystrlen(a) wcslen (a)
+  wchar_t *name, *p;
+#else
   char buffer[MAX_PATH+7+12+1];
+# define mystrlen(a) strlen (a)
   char *name, *p;
+#endif
   HANDLE file;
   int pid = GetCurrentProcessId ();
   unsigned int value;
@@ -350,13 +368,18 @@ gnupg_tmpfile (void)
   sec_attr.bInheritHandle = TRUE;
 
   n = GetTempPath (MAX_PATH+1, buffer);
-  if (!n || n > MAX_PATH || strlen (buffer) > MAX_PATH)
+  if (!n || n > MAX_PATH || mystrlen (buffer) > MAX_PATH)
     {
-      errno = ENOENT;
+      gpg_err_set_errno (ENOENT);
       return NULL;
     }
-  p = buffer + strlen (buffer);
+  p = buffer + mystrlen (buffer);
+#ifdef HAVE_W32CE_SYSTEM
+  wcscpy (p, L"_gnupg");
+  p += 7;
+#else
   p = stpcpy (p, "_gnupg");
+#endif
   /* We try to create the directory but don't care about an error as
      it may already exist and the CreateFile would throw an error
      anyway.  */
@@ -372,7 +395,11 @@ gnupg_tmpfile (void)
           *p++ = tohex (((value >> 28) & 0x0f));
           value <<= 4;
         }
+#ifdef HAVE_W32CE_SYSTEM
+      wcscpy (p, L".tmp");
+#else
       strcpy (p, ".tmp");
+#endif
       file = CreateFile (buffer,
                          GENERIC_READ | GENERIC_WRITE,
                          0,
@@ -383,6 +410,10 @@ gnupg_tmpfile (void)
       if (file != INVALID_HANDLE_VALUE)
         {
           FILE *fp;
+#ifdef HAVE_W32CE_SYSTEM
+          int fd = (int)file;
+          fp = _wfdopen (fd, L"w+b");
+#else
           int fd = _open_osfhandle ((long)file, 0);
           if (fd == -1)
             {
@@ -390,19 +421,21 @@ gnupg_tmpfile (void)
               return NULL;
             }
           fp = fdopen (fd, "w+b");
+#endif
           if (!fp)
             {
               int save = errno;
               close (fd);
-              errno = save;
+              gpg_err_set_errno (save);
               return NULL;
             }
           return fp;
         }
       Sleep (1); /* One ms as this is the granularity of GetTickCount.  */
     }
-  errno = ENOENT;
+  gpg_err_set_errno (ENOENT);
   return NULL;
+#undef mystrlen
 #else /*!HAVE_W32_SYSTEM*/
   return tmpfile ();
 #endif /*!HAVE_W32_SYSTEM*/
@@ -413,7 +446,7 @@ gnupg_tmpfile (void)
    some folks close them before an exec and the next file we open will
    get one of them assigned and thus any output (i.e. diagnostics) end
    up in that file (e.g. the trustdb).  Not actually a gpg problem as
-   this will hapen with almost all utilities when called in a wrong
+   this will happen with almost all utilities when called in a wrong
    way.  However we try to minimize the damage here and raise
    awareness of the problem.
 
@@ -490,12 +523,329 @@ gnupg_allow_set_foregound_window (pid_t pid)
   if (!pid)
     log_info ("%s called with invalid pid %lu\n",
               "gnupg_allow_set_foregound_window", (unsigned long)pid);
-#ifdef HAVE_W32_SYSTEM
+#if defined(HAVE_W32_SYSTEM) && !defined(HAVE_W32CE_SYSTEM)
   else if (!AllowSetForegroundWindow ((pid_t)pid == (pid_t)(-1)?ASFW_ANY:pid))
     log_info ("AllowSetForegroundWindow(%lu) failed: %s\n",
                (unsigned long)pid, w32_strerror (-1));
 #endif
 }
+
+int
+gnupg_remove (const char *fname)
+{
+#ifdef HAVE_W32CE_SYSTEM
+  int rc;
+  wchar_t *wfname;
+
+  wfname = utf8_to_wchar (fname);
+  if (!wfname)
+    rc = 0;
+  else
+    {
+      rc = DeleteFile (wfname);
+      xfree (wfname);
+    }
+  if (!rc)
+    return -1; /* ERRNO is automagically provided by gpg-error.h.  */
+  return 0;
+#else
+  return remove (fname);
+#endif
+}
+
+
+/* A wrapper around mkdir which takes a string for the mode argument.
+   This makes it easier to handle the mode argument which is not
+   defined on all systems.  The format of the modestring is
+
+      "-rwxrwxrwx"
+
+   '-' is a don't care or not set.  'r', 'w', 'x' are read allowed,
+   write allowed, execution allowed with the first group for the user,
+   the second for the group and the third for all others.  If the
+   string is shorter than above the missing mode characters are meant
+   to be not set.  */
+int
+gnupg_mkdir (const char *name, const char *modestr)
+{
+#ifdef HAVE_W32CE_SYSTEM
+  wchar_t *wname;
+  (void)modestr;
+
+  wname = utf8_to_wchar (name);
+  if (!wname)
+    return -1;
+  if (!CreateDirectoryW (wname, NULL))
+    {
+      xfree (wname);
+      return -1;  /* ERRNO is automagically provided by gpg-error.h.  */
+    }
+  xfree (wname);
+  return 0;
+#elif MKDIR_TAKES_ONE_ARG
+  (void)modestr;
+  /* Note: In the case of W32 we better use CreateDirectory and try to
+     set appropriate permissions.  However using mkdir is easier
+     because this sets ERRNO.  */
+  return mkdir (name);
+#else
+  mode_t mode = 0;
+
+  if (modestr && *modestr)
+    {
+      modestr++;
+      if (*modestr && *modestr++ == 'r')
+        mode |= S_IRUSR;
+      if (*modestr && *modestr++ == 'w')
+        mode |= S_IWUSR;
+      if (*modestr && *modestr++ == 'x')
+        mode |= S_IXUSR;
+      if (*modestr && *modestr++ == 'r')
+        mode |= S_IRGRP;
+      if (*modestr && *modestr++ == 'w')
+        mode |= S_IWGRP;
+      if (*modestr && *modestr++ == 'x')
+        mode |= S_IXGRP;
+      if (*modestr && *modestr++ == 'r')
+        mode |= S_IROTH;
+      if (*modestr && *modestr++ == 'w')
+        mode |= S_IWOTH;
+      if (*modestr && *modestr++ == 'x')
+        mode |= S_IXOTH;
+    }
+  return mkdir (name, mode);
+#endif
+}
+
+
+/* Our version of mkdtemp.  The API is identical to POSIX.1-2008
+   version.  We do not use a system provided mkdtemp because we have a
+   good RNG instantly available and this way we don't have diverging
+   versions.  */
+char *
+gnupg_mkdtemp (char *tmpl)
+{
+  /* A lower bound on the number of temporary files to attempt to
+     generate.  The maximum total number of temporary file names that
+     can exist for a given template is 62**6 (5*36**3 for Windows).
+     It should never be necessary to try all these combinations.
+     Instead if a reasonable number of names is tried (we define
+     reasonable as 62**3 or 5*36**3) fail to give the system
+     administrator the chance to remove the problems.  */
+#ifdef HAVE_W32_SYSTEM
+  static const char letters[] =
+    "abcdefghijklmnopqrstuvwxyz0123456789";
+# define NUMBER_OF_LETTERS 36
+# define ATTEMPTS_MIN (5 * 36 * 36 * 36)
+#else
+  static const char letters[] =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+# define NUMBER_OF_LETTERS 62
+# define ATTEMPTS_MIN (62 * 62 * 62)
+#endif
+  int len;
+  char *XXXXXX;
+  uint64_t value;
+  unsigned int count;
+  int save_errno = errno;
+  /* The number of times to attempt to generate a temporary file.  To
+     conform to POSIX, this must be no smaller than TMP_MAX.  */
+#if ATTEMPTS_MIN < TMP_MAX
+  unsigned int attempts = TMP_MAX;
+#else
+  unsigned int attempts = ATTEMPTS_MIN;
+#endif
+
+  len = strlen (tmpl);
+  if (len < 6 || strcmp (&tmpl[len - 6], "XXXXXX"))
+    {
+      gpg_err_set_errno (EINVAL);
+      return NULL;
+    }
+
+  /* This is where the Xs start.  */
+  XXXXXX = &tmpl[len - 6];
+
+  /* Get a random start value.  */
+  gcry_create_nonce (&value, sizeof value);
+
+  /* Loop until a directory was created.  */
+  for (count = 0; count < attempts; value += 7777, ++count)
+    {
+      uint64_t v = value;
+
+      /* Fill in the random bits.  */
+      XXXXXX[0] = letters[v % NUMBER_OF_LETTERS];
+      v /= NUMBER_OF_LETTERS;
+      XXXXXX[1] = letters[v % NUMBER_OF_LETTERS];
+      v /= NUMBER_OF_LETTERS;
+      XXXXXX[2] = letters[v % NUMBER_OF_LETTERS];
+      v /= NUMBER_OF_LETTERS;
+      XXXXXX[3] = letters[v % NUMBER_OF_LETTERS];
+      v /= NUMBER_OF_LETTERS;
+      XXXXXX[4] = letters[v % NUMBER_OF_LETTERS];
+      v /= NUMBER_OF_LETTERS;
+      XXXXXX[5] = letters[v % NUMBER_OF_LETTERS];
+
+      if (!gnupg_mkdir (tmpl, "-rwx"))
+        {
+          gpg_err_set_errno (save_errno);
+          return tmpl;
+        }
+      if (errno != EEXIST)
+	return NULL;
+    }
+
+  /* We got out of the loop because we ran out of combinations to try.  */
+  gpg_err_set_errno (EEXIST);
+  return NULL;
+}
+
+
+int
+gnupg_setenv (const char *name, const char *value, int overwrite)
+{
+#ifdef HAVE_W32CE_SYSTEM
+  (void)name;
+  (void)value;
+  (void)overwrite;
+  return 0;
+#elif defined(HAVE_W32_SYSTEM)
+  if (!overwrite)
+    {
+      char tmpbuf[10];
+      if (GetEnvironmentVariable (name, tmpbuf, sizeof tmpbuf))
+        return 0; /* Exists but overwrite was not requested.  */
+    }
+  if (!SetEnvironmentVariable (name, value))
+    {
+      gpg_err_set_errno (EINVAL); /* (Might also be ENOMEM.) */
+      return -1;
+    }
+  return 0;
+#elif defined(HAVE_SETENV)
+  return setenv (name, value, overwrite);
+#else
+  char *buf;
+
+  (void)overwrite;
+  if (!name || !value)
+    {
+      gpg_err_set_errno (EINVAL);
+      return -1;
+    }
+  buf = xtrymalloc (strlen (name) + 1 + strlen (value) + 1);
+  if (!buf)
+    return -1;
+  strcpy (stpcpy (stpcpy (buf, name), "="), value);
+#if __GNUC__
+# warning no setenv - using putenv but leaking memory.
+#endif
+  return putenv (buf);
+#endif
+}
+
+
+int
+gnupg_unsetenv (const char *name)
+{
+#ifdef HAVE_W32CE_SYSTEM
+  (void)name;
+  return 0;
+#elif defined(HAVE_W32_SYSTEM)
+  if (!SetEnvironmentVariable (name, NULL))
+    {
+      gpg_err_set_errno (EINVAL); /* (Might also be ENOMEM.) */
+      return -1;
+    }
+  return 0;
+#elif defined(HAVE_UNSETENV)
+  return unsetenv (name);
+#else
+  char *buf;
+
+  if (!name)
+    {
+      gpg_err_set_errno (EINVAL);
+      return -1;
+    }
+  buf = xtrystrdup (name);
+  if (!buf)
+    return -1;
+#if __GNUC__
+# warning no unsetenv - trying putenv but leaking memory.
+#endif
+  return putenv (buf);
+#endif
+}
+
+
+/* Return the current working directory as a malloced string.  Return
+   NULL and sets ERRNo on error.  */
+char *
+gnupg_getcwd (void)
+{
+  char *buffer;
+  size_t size = 100;
+
+  for (;;)
+    {
+      buffer = xtrymalloc (size+1);
+      if (!buffer)
+        return NULL;
+#ifdef HAVE_W32CE_SYSTEM
+      strcpy (buffer, "/");  /* Always "/".  */
+      return buffer;
+#else
+      if (getcwd (buffer, size) == buffer)
+        return buffer;
+      xfree (buffer);
+      if (errno != ERANGE)
+        return NULL;
+      size *= 2;
+#endif
+    }
+}
+
+
+
+#ifdef HAVE_W32CE_SYSTEM
+/* There is a isatty function declaration in cegcc but it does not
+   make sense, thus we redefine it.  */
+int
+_gnupg_isatty (int fd)
+{
+  (void)fd;
+  return 0;
+}
+#endif
+
+
+#ifdef HAVE_W32CE_SYSTEM
+/* Replacement for getenv which takes care of the our use of getenv.
+   The code is not thread safe but we expect it to work in all cases
+   because it is called for the first time early enough.  */
+char *
+_gnupg_getenv (const char *name)
+{
+  static int initialized;
+  static char *assuan_debug;
+
+  if (!initialized)
+    {
+      assuan_debug = read_w32_registry_string (NULL,
+                                               "\\Software\\GNU\\libassuan",
+                                               "debug");
+      initialized = 1;
+    }
+
+  if (!strcmp (name, "ASSUAN_DEBUG"))
+    return assuan_debug;
+  else
+    return NULL;
+}
+
+#endif /*HAVE_W32CE_SYSTEM*/
 
 
 #ifdef HAVE_W32_SYSTEM

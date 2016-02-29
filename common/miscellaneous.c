@@ -3,12 +3,22 @@
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -19,31 +29,30 @@
 
 #include <config.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <errno.h>
 
-#define JNLIB_NEED_LOG_LOGV
 #include "util.h"
 #include "iobuf.h"
 #include "i18n.h"
-
 
 /* Used by libgcrypt for logging.  */
 static void
 my_gcry_logger (void *dummy, int level, const char *fmt, va_list arg_ptr)
 {
   (void)dummy;
-  
+
   /* Map the log levels.  */
   switch (level)
     {
-    case GCRY_LOG_CONT: level = JNLIB_LOG_CONT; break;
-    case GCRY_LOG_INFO: level = JNLIB_LOG_INFO; break;
-    case GCRY_LOG_WARN: level = JNLIB_LOG_WARN; break;
-    case GCRY_LOG_ERROR:level = JNLIB_LOG_ERROR; break;
-    case GCRY_LOG_FATAL:level = JNLIB_LOG_FATAL; break;
-    case GCRY_LOG_BUG:  level = JNLIB_LOG_BUG; break;
-    case GCRY_LOG_DEBUG:level = JNLIB_LOG_DEBUG; break;
-    default:            level = JNLIB_LOG_ERROR; break;  
+    case GCRY_LOG_CONT: level = GPGRT_LOG_CONT; break;
+    case GCRY_LOG_INFO: level = GPGRT_LOG_INFO; break;
+    case GCRY_LOG_WARN: level = GPGRT_LOG_WARN; break;
+    case GCRY_LOG_ERROR:level = GPGRT_LOG_ERROR; break;
+    case GCRY_LOG_FATAL:level = GPGRT_LOG_FATAL; break;
+    case GCRY_LOG_BUG:  level = GPGRT_LOG_BUG; break;
+    case GCRY_LOG_DEBUG:level = GPGRT_LOG_DEBUG; break;
+    default:            level = GPGRT_LOG_ERROR; break;
     }
   log_logv (level, fmt, arg_ptr);
 }
@@ -97,6 +106,36 @@ setup_libgcrypt_logging (void)
 }
 
 
+/* A wrapper around gcry_cipher_algo_name to return the string
+   "AES-128" instead of "AES".  Given that we have an alias in
+   libgcrypt for it, it does not harm to too much to return this other
+   string.  Some users complained that we print "AES" but "AES192"
+   and "AES256".  We can't fix that in libgcrypt but it is pretty
+   safe to do it in an application. */
+const char *
+gnupg_cipher_algo_name (int algo)
+{
+  const char *s;
+
+  s = gcry_cipher_algo_name (algo);
+  if (!strcmp (s, "AES"))
+    s = "AES128";
+  return s;
+}
+
+
+void
+obsolete_option (const char *configname, unsigned int configlineno,
+                 const char *name)
+{
+  if (configname)
+    log_info (_("%s:%u: obsolete option \"%s\" - it has no effect\n"),
+              configname, configlineno, name);
+  else
+    log_info (_("WARNING: \"%s%s\" is an obsolete option - it has no effect\n"),
+              "--", name);
+}
+
 
 /* Decide whether the filename is stdout or a real filename and return
  * an appropriate string.  */
@@ -119,23 +158,63 @@ print_fname_stdin (const char *s)
     return s;
 }
 
-/* fixme: Globally replace it by print_sanitized_buffer. */
-void
-print_string( FILE *fp, const byte *p, size_t n, int delim )
+
+static int
+do_print_utf8_buffer (estream_t stream,
+                      const void *buffer, size_t length,
+                      const char *delimiters, size_t *bytes_written)
 {
-  print_sanitized_buffer (fp, p, n, delim);
+  const char *p = buffer;
+  size_t i;
+
+  /* We can handle plain ascii simpler, so check for it first. */
+  for (i=0; i < length; i++ )
+    {
+      if ( (p[i] & 0x80) )
+        break;
+    }
+  if (i < length)
+    {
+      int delim = delimiters? *delimiters : 0;
+      char *buf;
+      int ret;
+
+      /*(utf8 conversion already does the control character quoting). */
+      buf = utf8_to_native (p, length, delim);
+      if (bytes_written)
+        *bytes_written = strlen (buf);
+      ret = es_fputs (buf, stream);
+      xfree (buf);
+      return ret == EOF? ret : (int)i;
+    }
+  else
+    return es_write_sanitized (stream, p, length, delimiters, bytes_written);
 }
 
-void
-print_utf8_string2 ( FILE *fp, const byte *p, size_t n, int delim )
-{
-  print_sanitized_utf8_buffer (fp, p, n, delim);
-}
 
 void
-print_utf8_string( FILE *fp, const byte *p, size_t n )
+print_utf8_buffer3 (estream_t stream, const void *p, size_t n,
+                    const char *delim)
 {
-    print_utf8_string2 (fp, p, n, 0);
+  do_print_utf8_buffer (stream, p, n, delim, NULL);
+}
+
+
+void
+print_utf8_buffer2 (estream_t stream, const void *p, size_t n, int delim)
+{
+  char tmp[2];
+
+  tmp[0] = delim;
+  tmp[1] = 0;
+  do_print_utf8_buffer (stream, p, n, tmp, NULL);
+}
+
+
+void
+print_utf8_buffer (estream_t stream, const void *p, size_t n)
+{
+  do_print_utf8_buffer (stream, p, n, NULL, NULL);
 }
 
 /* Write LENGTH bytes of BUFFER to FP as a hex encoded string.
@@ -183,7 +262,7 @@ is_file_compressed (const char *s, int *ret_rc)
         { 3, { 0x1f, 0x8b, 0x08, 0x00 } }, /* gzip */
         { 4, { 0x50, 0x4b, 0x03, 0x04 } }, /* (pk)zip */
     };
-    
+
     if ( iobuf_is_pipe_filename (s) || !ret_rc )
         return 0; /* We can't check stdin or no file was given */
 
@@ -211,7 +290,7 @@ is_file_compressed (const char *s, int *ret_rc)
         }
     }
 
-leave:    
+leave:
     iobuf_close( a );
     return rc;
 }
@@ -239,3 +318,171 @@ match_multistr (const char *multistr,const char *match)
 }
 
 
+
+/* Parse the first portion of the version number S and store it at
+   NUMBER.  On success, the function returns a pointer into S starting
+   with the first character, which is not part of the initial number
+   portion; on failure, NULL is returned.  */
+static const char*
+parse_version_number (const char *s, int *number)
+{
+  int val = 0;
+
+  if (*s == '0' && digitp (s+1))
+    return NULL; /* Leading zeros are not allowed.  */
+  for (; digitp (s); s++ )
+    {
+      val *= 10;
+      val += *s - '0';
+    }
+  *number = val;
+  return val < 0? NULL : s;
+}
+
+/* Break up the complete string representation of the version number S,
+   which is expected to have this format:
+
+      <major number>.<minor number>.<micro number><patch level>.
+
+   The major, minor and micro number components will be stored at
+   MAJOR, MINOR and MICRO. On success, a pointer to the last
+   component, the patch level, will be returned; on failure, NULL will
+   be returned.  */
+static const char *
+parse_version_string (const char *s, int *major, int *minor, int *micro)
+{
+  s = parse_version_number (s, major);
+  if (!s || *s != '.')
+    return NULL;
+  s++;
+  s = parse_version_number (s, minor);
+  if (!s || *s != '.')
+    return NULL;
+  s++;
+  s = parse_version_number (s, micro);
+  if (!s)
+    return NULL;
+  return s; /* Patchlevel.  */
+}
+
+/* Return true if version string is at least version B. */
+int
+gnupg_compare_version (const char *a, const char *b)
+{
+  int a_major, a_minor, a_micro;
+  int b_major, b_minor, b_micro;
+  const char *a_plvl, *b_plvl;
+
+  if (!a || !b)
+    return 0;
+
+  /* Parse version A.  */
+  a_plvl = parse_version_string (a, &a_major, &a_minor, &a_micro);
+  if (!a_plvl )
+    return 0; /* Invalid version number.  */
+
+  /* Parse version B.  */
+  b_plvl = parse_version_string (b, &b_major, &b_minor, &b_micro);
+  if (!b_plvl )
+    return 0; /* Invalid version number.  */
+
+  /* Compare version numbers.  */
+  return (a_major > b_major
+          || (a_major == b_major && a_minor > b_minor)
+          || (a_major == b_major && a_minor == b_minor
+              && a_micro > b_micro)
+          || (a_major == b_major && a_minor == b_minor
+              && a_micro == b_micro
+              && strcmp (a_plvl, b_plvl) >= 0));
+}
+
+
+
+/* Parse an --debug style argument.  We allow the use of number values
+ * in the usual C notation or a string with comma separated keywords.
+ *
+ * Returns: 0 on success or -1 and ERRNO set on error.  On success the
+ *          supplied variable is updated by the parsed flags.
+ *
+ * If STRING is NULL the enabled debug flags are printed.
+ */
+int
+parse_debug_flag (const char *string, unsigned int *debugvar,
+                  const struct debug_flags_s *flags)
+
+{
+  unsigned long result = 0;
+  int i, j;
+
+  if (!string)
+    {
+      if (debugvar)
+        {
+          log_info ("enabled debug flags:");
+          for (i=0; flags[i].name; i++)
+            if ((*debugvar & flags[i].flag))
+              log_printf (" %s", flags[i].name);
+          log_printf ("\n");
+        }
+      return 0;
+    }
+
+  while (spacep (string))
+    string++;
+  if (*string == '-')
+    {
+      errno = EINVAL;
+      return -1;
+    }
+
+  if (!strcmp (string, "?") || !strcmp (string, "help"))
+    {
+      log_info ("available debug flags:\n");
+      for (i=0; flags[i].name; i++)
+        log_info (" %5u %s\n", flags[i].flag, flags[i].name);
+      if (flags[i].flag != 77)
+        exit (0);
+    }
+  else if (digitp (string))
+    {
+      errno = 0;
+      result = strtoul (string, NULL, 0);
+      if (result == ULONG_MAX && errno == ERANGE)
+        return -1;
+    }
+  else
+    {
+      char **words;
+      words = strtokenize (string, ",");
+      if (!words)
+        return -1;
+      for (i=0; words[i]; i++)
+        {
+          if (*words[i])
+            {
+              for (j=0; flags[j].name; j++)
+                if (!strcmp (words[i], flags[j].name))
+                  {
+                    result |= flags[j].flag;
+                    break;
+                  }
+              if (!flags[j].name)
+                {
+                  if (!strcmp (words[i], "none"))
+                    {
+                      *debugvar = 0;
+                      result = 0;
+                    }
+                  else if (!strcmp (words[i], "all"))
+                    result = ~0;
+                  else
+                    log_info (_("unknown debug flag '%s' ignored\n"), words[i]);
+                }
+            }
+        }
+      xfree (words);
+    }
+
+  *debugvar |= result;
+  return 0;
+}

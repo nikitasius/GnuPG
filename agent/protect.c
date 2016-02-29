@@ -1,6 +1,6 @@
 /* protect.c - Un/Protect a secret key
- * Copyright (C) 1998, 1999, 2000, 2001, 2002,
- *               2003, 2007, 2009 Free Software Foundation, Inc.
+ * Copyright (C) 1998-2003, 2007, 2009, 2011 Free Software Foundation, Inc.
+ * Copyright (C) 1998-2003, 2007, 2009, 2011, 2013-2015 Werner Koch
  *
  * This file is part of GnuPG.
  *
@@ -38,15 +38,21 @@
 
 #include "agent.h"
 
+#include "cvt-openpgp.h"
 #include "sexp-parse.h"
 
-#define PROT_CIPHER        GCRY_CIPHER_AES
+/* The protection mode for encryption.  The supported modes for
+   decryption are listed in agent_unprotect().  */
+#define PROT_CIPHER        GCRY_CIPHER_AES128
 #define PROT_CIPHER_STRING "aes"
 #define PROT_CIPHER_KEYLEN (128/8)
 
+/* Decode an rfc4880 encoded S2K count.  */
+#define S2K_DECODE_COUNT(_val) ((16ul + ((_val) & 15)) << (((_val) >> 4) + 6))
+
 
 /* A table containing the information needed to create a protected
-   private key */
+   private key.  */
 static struct {
   const char *algo;
   const char *parmlist;
@@ -80,12 +86,18 @@ hash_passphrase (const char *passphrase, int hashalgo,
                  const unsigned char *s2ksalt, unsigned long s2kcount,
                  unsigned char *key, size_t keylen);
 
+
+
 /* Get the process time and store it in DATA.  */
 static void
 calibrate_get_time (struct calibrate_time_s *data)
 {
 #ifdef HAVE_W32_SYSTEM
+# ifdef HAVE_W32CE_SYSTEM
+  GetThreadTimes (GetCurrentThread (),
+# else
   GetProcessTimes (GetCurrentProcess (),
+# endif
                    &data->creation_time, &data->exit_time,
                    &data->kernel_time, &data->user_time);
 #else
@@ -168,7 +180,7 @@ calibrate_s2k_count (void)
   if (opt.verbose)
     {
       ms = calibrate_s2k_count_one (count);
-      log_info ("S2K calibration: %lu iterations for %lums\n", count, ms);
+      log_info ("S2K calibration: %lu -> %lums\n", count, ms);
     }
 
   return count;
@@ -190,16 +202,45 @@ get_standard_s2k_count (void)
 }
 
 
+/* Same as get_standard_s2k_count but return the count in the encoding
+   as described by rfc4880.  */
+unsigned char
+get_standard_s2k_count_rfc4880 (void)
+{
+  unsigned long iterations;
+  unsigned int count;
+  unsigned char result;
+  unsigned char c=0;
+
+  iterations = get_standard_s2k_count ();
+  if (iterations >= 65011712)
+    return 255;
+
+  /* Need count to be in the range 16-31 */
+  for (count=iterations>>6; count>=32; count>>=1)
+    c++;
+
+  result = (c<<4)|(count-16);
+
+  if (S2K_DECODE_COUNT(result) < iterations)
+    result++;
+
+  return result;
+
+}
+
 
 
-/* Calculate the MIC for a private key S-Exp. SHA1HASH should point to
-   a 20 byte buffer.  This function is suitable for any algorithms. */
+/* Calculate the MIC for a private key or shared secret S-expression.
+   SHA1HASH should point to a 20 byte buffer.  This function is
+   suitable for all algorithms. */
 static int
 calculate_mic (const unsigned char *plainkey, unsigned char *sha1hash)
 {
   const unsigned char *hash_begin, *hash_end;
   const unsigned char *s;
   size_t n;
+  int is_shared_secret;
 
   s = plainkey;
   if (*s != '(')
@@ -208,16 +249,23 @@ calculate_mic (const unsigned char *plainkey, unsigned char *sha1hash)
   n = snext (&s);
   if (!n)
     return gpg_error (GPG_ERR_INV_SEXP);
-  if (!smatch (&s, n, "private-key"))
+  if (smatch (&s, n, "private-key"))
+    is_shared_secret = 0;
+  else if (smatch (&s, n, "shared-secret"))
+    is_shared_secret = 1;
+  else
     return gpg_error (GPG_ERR_UNKNOWN_SEXP);
   if (*s != '(')
     return gpg_error (GPG_ERR_UNKNOWN_SEXP);
   hash_begin = s;
-  s++;
-  n = snext (&s);
-  if (!n)
-    return gpg_error (GPG_ERR_INV_SEXP);
-  s += n; /* skip over the algorithm name */
+  if (!is_shared_secret)
+    {
+      s++;
+      n = snext (&s);
+      if (!n)
+        return gpg_error (GPG_ERR_INV_SEXP);
+      s += n; /* Skip the algorithm name.  */
+    }
 
   while (*s == '(')
     {
@@ -268,7 +316,8 @@ calculate_mic (const unsigned char *plainkey, unsigned char *sha1hash)
 static int
 do_encryption (const unsigned char *protbegin, size_t protlen,
                const char *passphrase,  const unsigned char *sha1hash,
-               unsigned char **result, size_t *resultlen)
+               unsigned char **result, size_t *resultlen,
+	       unsigned long s2k_count)
 {
   gcry_cipher_hd_t hd;
   const char *modestr = "openpgp-s2k3-sha1-" PROT_CIPHER_STRING "-cbc";
@@ -327,7 +376,8 @@ do_encryption (const unsigned char *protbegin, size_t protlen,
         {
           rc = hash_passphrase (passphrase, GCRY_MD_SHA1,
                                 3, iv+2*blklen,
-                                get_standard_s2k_count (), key, keylen);
+				s2k_count ? s2k_count : get_standard_s2k_count(),
+				key, keylen);
           if (!rc)
             rc = gcry_cipher_setkey (hd, key, keylen);
           xfree (key);
@@ -370,7 +420,8 @@ do_encryption (const unsigned char *protbegin, size_t protlen,
   {
     char countbuf[35];
 
-    snprintf (countbuf, sizeof countbuf, "%lu", get_standard_s2k_count ());
+    snprintf (countbuf, sizeof countbuf, "%lu",
+	    s2k_count ? s2k_count : get_standard_s2k_count ());
     p = xtryasprintf
       ("(9:protected%d:%s((4:sha18:%n_8bytes_%u:%s)%d:%n%*s)%d:%n%*s)",
        (int)strlen (modestr), modestr,
@@ -402,7 +453,8 @@ do_encryption (const unsigned char *protbegin, size_t protlen,
    a valid S-Exp here. */
 int
 agent_protect (const unsigned char *plainkey, const char *passphrase,
-               unsigned char **result, size_t *resultlen)
+               unsigned char **result, size_t *resultlen,
+	       unsigned long s2k_count)
 {
   int rc;
   const char *parmlist;
@@ -419,8 +471,9 @@ agent_protect (const unsigned char *plainkey, const char *passphrase,
   int depth = 0;
   unsigned char *p;
   gcry_md_hd_t md;
+  int have_curve = 0;
 
-  /* Create an S-expression with the procted-at timestamp.  */
+  /* Create an S-expression with the protected-at timestamp.  */
   memcpy (timestamp_exp, "(12:protected-at15:", 19);
   gnupg_get_isotime (timestamp_exp+19);
   timestamp_exp[19+15] = ')';
@@ -451,6 +504,11 @@ agent_protect (const unsigned char *plainkey, const char *passphrase,
   if (!protect_info[infidx].algo)
     return gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM);
 
+  /* The parser below is a complete mess: To make it robust for ECC
+     use we should reorder the s-expression to include only what we
+     really need and thus guarantee the right order for saving stuff.
+     This should be done before calling this function and maybe with
+     the help of the new gcry_sexp_extract_param.  */
   parmlist      = protect_info[infidx].parmlist;
   prot_from_idx = protect_info[infidx].prot_from;
   prot_to_idx   = protect_info[infidx].prot_to;
@@ -474,9 +532,18 @@ agent_protect (const unsigned char *plainkey, const char *passphrase,
               /* This is a private ECC key but the first parameter is
                  the name of the curve.  We change the parameter list
                  here to the one we expect in this case.  */
+              have_curve = 1;
               parmlist = "?qd";
               prot_from_idx = 2;
               prot_to_idx = 2;
+            }
+          else if (n == 5 && !memcmp (s, "flags", 5)
+                   && i == 1 && have_curve)
+            {
+              /* "curve" followed by "flags": Change again.  */
+              parmlist = "??qd";
+              prot_from_idx = 3;
+              prot_to_idx = 3;
             }
           else
             return gpg_error (GPG_ERR_INV_SEXP);
@@ -498,7 +565,7 @@ agent_protect (const unsigned char *plainkey, const char *passphrase,
   depth--;
   hash_end = s;
   s++;
-  /* skip to the end of the S-exp */
+  /* Skip to the end of the S-expression.  */
   assert (depth == 1);
   rc = sskip (&s, &depth);
   if (rc)
@@ -520,7 +587,7 @@ agent_protect (const unsigned char *plainkey, const char *passphrase,
 
   rc = do_encryption (prot_begin, prot_end - prot_begin + 1,
                       passphrase,  hashvalue,
-                      &protected, &protectedlen);
+                      &protected, &protectedlen, s2k_count);
   if (rc)
     return rc;
 
@@ -558,6 +625,7 @@ agent_protect (const unsigned char *plainkey, const char *passphrase,
   return 0;
 }
 
+
 
 /* Do the actual decryption and check the return list for consistency.  */
 static int
@@ -565,6 +633,7 @@ do_decryption (const unsigned char *protected, size_t protectedlen,
                const char *passphrase,
                const unsigned char *s2ksalt, unsigned long s2kcount,
                const unsigned char *iv, size_t ivlen,
+               int prot_cipher, int prot_cipher_keylen,
                unsigned char **result)
 {
   int rc = 0;
@@ -573,11 +642,11 @@ do_decryption (const unsigned char *protected, size_t protectedlen,
   unsigned char *outbuf;
   size_t reallen;
 
-  blklen = gcry_cipher_get_algo_blklen (PROT_CIPHER);
+  blklen = gcry_cipher_get_algo_blklen (prot_cipher);
   if (protectedlen < 4 || (protectedlen%blklen))
     return gpg_error (GPG_ERR_CORRUPTED_PROTECTION);
 
-  rc = gcry_cipher_open (&hd, PROT_CIPHER, GCRY_CIPHER_MODE_CBC,
+  rc = gcry_cipher_open (&hd, prot_cipher, GCRY_CIPHER_MODE_CBC,
                          GCRY_CIPHER_SECURE);
   if (rc)
     return rc;
@@ -590,17 +659,16 @@ do_decryption (const unsigned char *protected, size_t protectedlen,
   if (!rc)
     {
       unsigned char *key;
-      size_t keylen = PROT_CIPHER_KEYLEN;
 
-      key = gcry_malloc_secure (keylen);
+      key = gcry_malloc_secure (prot_cipher_keylen);
       if (!key)
         rc = out_of_core ();
       else
         {
           rc = hash_passphrase (passphrase, GCRY_MD_SHA1,
-                                3, s2ksalt, s2kcount, key, keylen);
+                                3, s2ksalt, s2kcount, key, prot_cipher_keylen);
           if (!rc)
-            rc = gcry_cipher_setkey (hd, key, keylen);
+            rc = gcry_cipher_setkey (hd, key, prot_cipher_keylen);
           xfree (key);
         }
     }
@@ -786,12 +854,22 @@ merge_lists (const unsigned char *protectedkey,
 
 /* Unprotect the key encoded in canonical format.  We assume a valid
    S-Exp here.  If a protected-at item is available, its value will
-   be stored at protocted_at unless this is NULL.  */
+   be stored at protected_at unless this is NULL.  */
 int
-agent_unprotect (const unsigned char *protectedkey, const char *passphrase,
+agent_unprotect (ctrl_t ctrl,
+                 const unsigned char *protectedkey, const char *passphrase,
                  gnupg_isotime_t protected_at,
                  unsigned char **result, size_t *resultlen)
 {
+  static struct {
+    const char *name; /* Name of the protection method. */
+    int algo;         /* (A zero indicates the "openpgp-native" hack.)  */
+    int keylen;       /* Used key length in bytes.  */
+  } algotable[] = {
+    { "openpgp-s2k3-sha1-aes-cbc",    GCRY_CIPHER_AES128, (128/8)},
+    { "openpgp-s2k3-sha1-aes256-cbc", GCRY_CIPHER_AES256, (256/8)},
+    { "openpgp-native", 0, 0 }
+  };
   int rc;
   const unsigned char *s;
   const unsigned char *protect_list;
@@ -801,8 +879,9 @@ agent_unprotect (const unsigned char *protectedkey, const char *passphrase,
   const unsigned char *s2ksalt;
   unsigned long s2kcount;
   const unsigned char *iv;
+  int prot_cipher, prot_cipher_keylen;
   const unsigned char *prot_begin;
-  unsigned char *cleartext = NULL; /* Just to avoid gcc warning.  */
+  unsigned char *cleartext;
   unsigned char *final;
   size_t finallen;
   size_t cutoff, cutlen;
@@ -891,8 +970,40 @@ agent_unprotect (const unsigned char *protectedkey, const char *passphrase,
   n = snext (&s);
   if (!n)
     return gpg_error (GPG_ERR_INV_SEXP);
-  if (!smatch (&s, n, "openpgp-s2k3-sha1-" PROT_CIPHER_STRING "-cbc"))
+
+  /* Lookup the protection algo.  */
+  prot_cipher = 0;        /* (avoid gcc warning) */
+  prot_cipher_keylen = 0; /* (avoid gcc warning) */
+  for (i= 0; i < DIM (algotable); i++)
+    if (smatch (&s, n, algotable[i].name))
+      {
+        prot_cipher = algotable[i].algo;
+        prot_cipher_keylen = algotable[i].keylen;
+        break;
+      }
+  if (i == DIM (algotable))
     return gpg_error (GPG_ERR_UNSUPPORTED_PROTECTION);
+
+  if (!prot_cipher)  /* This is "openpgp-native".  */
+    {
+      gcry_sexp_t s_prot_begin;
+
+      rc = gcry_sexp_sscan (&s_prot_begin, NULL,
+                            prot_begin,
+                            gcry_sexp_canon_len (prot_begin, 0,NULL,NULL));
+      if (rc)
+        return rc;
+
+      rc = convert_from_openpgp_native (ctrl, s_prot_begin, passphrase, &final);
+      gcry_sexp_release (s_prot_begin);
+      if (!rc)
+        {
+          *result = final;
+          *resultlen = gcry_sexp_canon_len (final, 0, NULL, NULL);
+        }
+      return rc;
+    }
+
   if (*s != '(' || s[1] != '(')
     return gpg_error (GPG_ERR_INV_SEXP);
   s += 2;
@@ -935,7 +1046,7 @@ agent_unprotect (const unsigned char *protectedkey, const char *passphrase,
   s++; /* skip list end */
 
   n = snext (&s);
-  if (n != 16) /* Wrong blocksize for IV (we support only aes-128). */
+  if (n != 16) /* Wrong blocksize for IV (we support only 128 bit). */
     return gpg_error (GPG_ERR_CORRUPTED_PROTECTION);
   iv = s;
   s += n;
@@ -946,9 +1057,10 @@ agent_unprotect (const unsigned char *protectedkey, const char *passphrase,
   if (!n)
     return gpg_error (GPG_ERR_INV_SEXP);
 
+  cleartext = NULL; /* Avoid cc warning. */
   rc = do_decryption (s, n,
                       passphrase, s2ksalt, s2kcount,
-                      iv, 16,
+                      iv, 16, prot_cipher, prot_cipher_keylen,
                       &cleartext);
   if (rc)
     return rc;
@@ -972,7 +1084,7 @@ agent_unprotect (const unsigned char *protectedkey, const char *passphrase,
       xfree (final);
       return rc;
     }
-  /* Now remove tha part which is included in the MIC but should not
+  /* Now remove the part which is included in the MIC but should not
      go into the final thing.  */
   if (cutlen)
     {
@@ -989,13 +1101,16 @@ agent_unprotect (const unsigned char *protectedkey, const char *passphrase,
    PRIVATE_KEY_UNKNOWN if we can't figure out the type (this is the
    value 0), PRIVATE_KEY_CLEAR for an unprotected private key.
    PRIVATE_KEY_PROTECTED for an protected private key or
-   PRIVATE_KEY_SHADOWED for a sub key where the secret parts are stored
-   elsewhere. */
+   PRIVATE_KEY_SHADOWED for a sub key where the secret parts are
+   stored elsewhere.  Finally PRIVATE_KEY_OPENPGP_NONE may be returned
+   is the key is still in the openpgp-native format but without
+   protection.  */
 int
 agent_private_key_type (const unsigned char *privatekey)
 {
   const unsigned char *s;
   size_t n;
+  int i;
 
   s = privatekey;
   if (*s != '(')
@@ -1005,7 +1120,75 @@ agent_private_key_type (const unsigned char *privatekey)
   if (!n)
     return PRIVATE_KEY_UNKNOWN;
   if (smatch (&s, n, "protected-private-key"))
-    return PRIVATE_KEY_PROTECTED;
+    {
+      /* We need to check whether this is openpgp-native protected
+         with the protection method "none".  In that case we return a
+         different key type so that the caller knows that there is no
+         need to ask for a passphrase. */
+      if (*s != '(')
+        return PRIVATE_KEY_PROTECTED; /* Unknown sexp - assume protected. */
+      s++;
+      n = snext (&s);
+      if (!n)
+        return PRIVATE_KEY_UNKNOWN; /* Invalid sexp.  */
+      s += n; /* Skip over the algo */
+
+      /* Find the (protected ...) list.  */
+      for (;;)
+        {
+          if (*s != '(')
+            return PRIVATE_KEY_UNKNOWN; /* Invalid sexp.  */
+          s++;
+          n = snext (&s);
+          if (!n)
+            return PRIVATE_KEY_UNKNOWN; /* Invalid sexp.  */
+          if (smatch (&s, n, "protected"))
+            break;
+          s += n;
+          i = 1;
+          if (sskip (&s, &i))
+            return PRIVATE_KEY_UNKNOWN; /* Invalid sexp.  */
+        }
+      /* Found - Is this openpgp-native? */
+      n = snext (&s);
+      if (!n)
+        return PRIVATE_KEY_UNKNOWN; /* Invalid sexp.  */
+      if (smatch (&s, n, "openpgp-native")) /* Yes.  */
+        {
+          if (*s != '(')
+            return PRIVATE_KEY_UNKNOWN; /* Unknown sexp. */
+          s++;
+          n = snext (&s);
+          if (!n)
+            return PRIVATE_KEY_UNKNOWN; /* Invalid sexp.  */
+          s += n; /* Skip over "openpgp-private-key".  */
+          /* Find the (protection ...) list.  */
+          for (;;)
+            {
+              if (*s != '(')
+                return PRIVATE_KEY_UNKNOWN; /* Invalid sexp.  */
+              s++;
+              n = snext (&s);
+              if (!n)
+                return PRIVATE_KEY_UNKNOWN; /* Invalid sexp.  */
+              if (smatch (&s, n, "protection"))
+                break;
+              s += n;
+              i = 1;
+              if (sskip (&s, &i))
+                return PRIVATE_KEY_UNKNOWN; /* Invalid sexp.  */
+            }
+          /* Found - Is the mode "none"? */
+          n = snext (&s);
+          if (!n)
+            return PRIVATE_KEY_UNKNOWN; /* Invalid sexp.  */
+          log_debug ("openpgp-native protection '%.*s'\n", (int)n, s);
+          if (smatch (&s, n, "none"))
+            return PRIVATE_KEY_OPENPGP_NONE;  /* Yes.  */
+        }
+
+      return PRIVATE_KEY_PROTECTED;
+    }
   if (smatch (&s, n, "shadowed-private-key"))
     return PRIVATE_KEY_SHADOWED;
   if (smatch (&s, n, "private-key"))
@@ -1028,70 +1211,30 @@ hash_passphrase (const char *passphrase, int hashalgo,
                  unsigned long s2kcount,
                  unsigned char *key, size_t keylen)
 {
-  int rc;
-  gcry_md_hd_t md;
-  int pass, i;
-  int used = 0;
-  int pwlen = strlen (passphrase);
+  /* The key derive function does not support a zero length string for
+     the passphrase in the S2K modes.  Return a better suited error
+     code than GPG_ERR_INV_DATA.  */
+  if (!passphrase || !*passphrase)
+    return gpg_error (GPG_ERR_NO_PASSPHRASE);
+  return gcry_kdf_derive (passphrase, strlen (passphrase),
+                          s2kmode == 3? GCRY_KDF_ITERSALTED_S2K :
+                          s2kmode == 1? GCRY_KDF_SALTED_S2K :
+                          s2kmode == 0? GCRY_KDF_SIMPLE_S2K : GCRY_KDF_NONE,
+                          hashalgo, s2ksalt, 8, s2kcount,
+                          keylen, key);
+}
 
-  if ( (s2kmode != 0 && s2kmode != 1 && s2kmode != 3)
-      || !hashalgo || !keylen || !key || !passphrase)
-    return gpg_error (GPG_ERR_INV_VALUE);
-  if ((s2kmode == 1 ||s2kmode == 3) && !s2ksalt)
-    return gpg_error (GPG_ERR_INV_VALUE);
 
-  rc = gcry_md_open (&md, hashalgo, GCRY_MD_FLAG_SECURE);
-  if (rc)
-    return rc;
-
-  for (pass=0; used < keylen; pass++)
-    {
-      if (pass)
-        {
-          gcry_md_reset (md);
-          for (i=0; i < pass; i++) /* preset the hash context */
-            gcry_md_putc (md, 0);
-	}
-
-      if (s2kmode == 1 || s2kmode == 3)
-        {
-          int len2 = pwlen + 8;
-          unsigned long count = len2;
-
-          if (s2kmode == 3)
-            {
-              count = s2kcount;
-              if (count < len2)
-                count = len2;
-            }
-
-          while (count > len2)
-            {
-              gcry_md_write (md, s2ksalt, 8);
-              gcry_md_write (md, passphrase, pwlen);
-              count -= len2;
-            }
-          if (count < 8)
-            gcry_md_write (md, s2ksalt, count);
-          else
-            {
-              gcry_md_write (md, s2ksalt, 8);
-              count -= 8;
-              gcry_md_write (md, passphrase, count);
-            }
-        }
-      else
-        gcry_md_write (md, passphrase, pwlen);
-
-      gcry_md_final (md);
-      i = gcry_md_get_algo_dlen (hashalgo);
-      if (i > keylen - used)
-        i = keylen - used;
-      memcpy  (key+used, gcry_md_read (md, hashalgo), i);
-      used += i;
-    }
-  gcry_md_close(md);
-  return 0;
+gpg_error_t
+s2k_hash_passphrase (const char *passphrase, int hashalgo,
+                     int s2kmode,
+                     const unsigned char *s2ksalt,
+                     unsigned int s2kcount,
+                     unsigned char *key, size_t keylen)
+{
+  return hash_passphrase (passphrase, hashalgo, s2kmode, s2ksalt,
+                          S2K_DECODE_COUNT (s2kcount),
+                          key, keylen);
 }
 
 
@@ -1287,7 +1430,7 @@ agent_get_shadow_info (const unsigned char *shadowkey,
    required, NULL may be passed for them.  */
 gpg_error_t
 parse_shadow_info (const unsigned char *shadow_info,
-                   char **r_hexsn, char **r_idstr)
+                   char **r_hexsn, char **r_idstr, int *r_pinlen)
 {
   const unsigned char *s;
   size_t n;
@@ -1296,6 +1439,8 @@ parse_shadow_info (const unsigned char *shadow_info,
     *r_hexsn = NULL;
   if (r_idstr)
     *r_idstr = NULL;
+  if (r_pinlen)
+    *r_pinlen = 0;
 
   s = shadow_info;
   if (*s != '(')
@@ -1340,6 +1485,34 @@ parse_shadow_info (const unsigned char *shadow_info,
       (*r_idstr)[n] = 0;
     }
 
+  /* Parse the optional PINLEN.  */
+  n = snext (&s);
+  if (!n)
+    return 0;
+
+  if (r_pinlen)
+    {
+      char *tmpstr = xtrymalloc (n+1);
+      if (!tmpstr)
+        {
+          if (r_hexsn)
+            {
+              xfree (*r_hexsn);
+              *r_hexsn = NULL;
+            }
+          if (r_idstr)
+            {
+              xfree (*r_idstr);
+              *r_idstr = NULL;
+            }
+          return gpg_error_from_syserror ();
+        }
+      memcpy (tmpstr, s, n);
+      tmpstr[n] = 0;
+
+      *r_pinlen = (int)strtol (tmpstr, NULL, 10);
+      xfree (tmpstr);
+    }
+
   return 0;
 }
-

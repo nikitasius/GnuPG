@@ -3,12 +3,22 @@
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -46,13 +56,13 @@ percent_plus_escape (const char *string)
 
   for (length=1, s=string; *s; s++)
     {
-      if (*s == '+' || *s == '\"' || *s == '%' 
+      if (*s == '+' || *s == '\"' || *s == '%'
           || *(const unsigned char *)s < 0x20)
         length += 3;
       else
         length++;
     }
-  
+
   buffer = p = xtrymalloc (length);
   if (!buffer)
     return NULL;
@@ -82,7 +92,7 @@ percent_plus_escape (const char *string)
    done if WITHPLUS is true.  An escaped Nul character will be
    replaced by NULREPL.  */
 static size_t
-do_unescape (unsigned char *buffer, const unsigned char *string, 
+do_unescape (unsigned char *buffer, const unsigned char *string,
              int withplus, int nulrepl)
 {
   unsigned char *p = buffer;
@@ -90,7 +100,7 @@ do_unescape (unsigned char *buffer, const unsigned char *string,
   while (*string)
     {
       if (*string == '%' && string[1] && string[2])
-        { 
+        {
           string++;
           *p = xtoi_2 (string);
           if (!*p)
@@ -119,7 +129,7 @@ count_unescape (const unsigned char *string)
   while (*string)
     {
       if (*string == '%' && string[1] && string[2])
-        { 
+        {
           string++;
           string++;
         }
@@ -181,7 +191,7 @@ do_unescape_inplace (char *string, int withplus, int nulrepl)
   while (*string)
     {
       if (*string == '%' && string[1] && string[2])
-        { 
+        {
           string++;
           *p = xtoi_2 (string);
           if (!*p)
@@ -226,4 +236,3 @@ percent_unescape_inplace (char *string, int nulrepl)
 {
   return do_unescape_inplace (string, 0, nulrepl);
 }
-

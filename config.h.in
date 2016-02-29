@@ -5,29 +5,11 @@
 #define GNUPG_CONFIG_H_INCLUDED
 
 
-/* Define this to an absolute name of <stdint.h>. */
-#undef ABSOLUTE_STDINT_H
-
 /* Defined if the host has big endian byte ordering */
 #undef BIG_ENDIAN_HOST
 
 /* an Apple OSXism */
 #undef BIND_8_COMPAT
-
-/* Define to the number of bits in type 'ptrdiff_t'. */
-#undef BITSIZEOF_PTRDIFF_T
-
-/* Define to the number of bits in type 'sig_atomic_t'. */
-#undef BITSIZEOF_SIG_ATOMIC_T
-
-/* Define to the number of bits in type 'size_t'. */
-#undef BITSIZEOF_SIZE_T
-
-/* Define to the number of bits in type 'wchar_t'. */
-#undef BITSIZEOF_WCHAR_T
-
-/* Define to the number of bits in type 'wint_t'. */
-#undef BITSIZEOF_WINT_T
 
 /* GIT commit id revision used to build this package */
 #undef BUILD_REVISION
@@ -35,25 +17,44 @@
 /* The time this package was configured for a build */
 #undef BUILD_TIMESTAMP
 
-/* Define to one of `_getb67', `GETB67', `getb67' for Cray-2 and Cray-YMP
-   systems. This function is required for `alloca.c' support on those systems.
-   */
-#undef CRAY_STACKSEG_END
+/* Defined if GPG-AGENT is to be build */
+#undef BUILD_WITH_AGENT
 
-/* Define to 1 if using `alloca.c'. */
-#undef C_ALLOCA
+/* Defined if SCDAEMON is to be build */
+#undef BUILD_WITH_DIRMNGR
 
-/* define to disable keyserver helpers */
-#undef DISABLE_KEYSERVER_HELPERS
+/* Defined if G13 is to be build */
+#undef BUILD_WITH_G13
 
-/* Defined to disable exec-path for keyserver helpers */
-#undef DISABLE_KEYSERVER_PATH
+/* Defined if GPG is to be build */
+#undef BUILD_WITH_GPG
+
+/* Defined if GPGSM is to be build */
+#undef BUILD_WITH_GPGSM
+
+/* Defined if SCDAEMON is to be build */
+#undef BUILD_WITH_SCDAEMON
+
+/* The displayed name of dirmngr */
+#undef DIRMNGR_DISP_NAME
+
+/* The name of the dirmngr info envvar */
+#undef DIRMNGR_INFO_NAME
+
+/* The name of the dirmngr */
+#undef DIRMNGR_NAME
+
+/* The name of the dirmngr socket */
+#undef DIRMNGR_SOCK_NAME
 
 /* define to disable photo viewing */
 #undef DISABLE_PHOTO_VIEWER
 
 /* Define to disable regular expression support */
 #undef DISABLE_REGEX
+
+/* Define to include smartcard support */
+#undef ENABLE_CARD_SUPPORT
 
 /* Define to 1 if translation of program messages to the user's native
    language is requested. */
@@ -62,14 +63,125 @@
 /* Define to enable SELinux support */
 #undef ENABLE_SELINUX_HACKS
 
+/* defines the filename of the encfs program */
+#undef ENCFS
+
 /* The executable file extension, if any */
 #undef EXEEXT
 
 /* if set, restrict photo-viewer to this */
 #undef FIXED_PHOTO_VIEWER
 
-/* version of the libbassuan library */
+/* defines the filename of the fusermount program */
+#undef FUSERMOUNT
+
+/* The displayed name of g13 */
+#undef G13_DISP_NAME
+
+/* The name of the g13 tool */
+#undef G13_NAME
+
+/* version of the libassuan library */
 #undef GNUPG_LIBASSUAN_VERSION
+
+/* The name of the project */
+#undef GNUPG_NAME
+
+/* The directory part of the W32 registry keys */
+#undef GNUPG_REGISTRY_DIR
+
+/* The displayed name of gpgconf */
+#undef GPGCONF_DISP_NAME
+
+/* The name of the gpgconf tool */
+#undef GPGCONF_NAME
+
+/* The standard binary file suffix */
+#undef GPGEXT_GPG
+
+/* The displayed name of gpgsm */
+#undef GPGSM_DISP_NAME
+
+/* The name of the S/MIME tool */
+#undef GPGSM_NAME
+
+/* The name of the gpgtar tool */
+#undef GPGTAR_NAME
+
+/* The displayed name of gpg-agent */
+#undef GPG_AGENT_DISP_NAME
+
+/* The name of the agent */
+#undef GPG_AGENT_NAME
+
+/* The name of the agent socket */
+#undef GPG_AGENT_SOCK_NAME
+
+/* The name of the agent socket for ssh */
+#undef GPG_AGENT_SSH_SOCK_NAME
+
+/* The displayed name of gpg */
+#undef GPG_DISP_NAME
+
+/* The name of the OpenPGP tool */
+#undef GPG_NAME
+
+/* Define to support the AES128 cipher */
+#undef GPG_USE_AES128
+
+/* Define to support the AES192 cipher */
+#undef GPG_USE_AES192
+
+/* Define to support the AES256 cipher */
+#undef GPG_USE_AES256
+
+/* Define to support the BLOWFISH cipher */
+#undef GPG_USE_BLOWFISH
+
+/* Define to support the CAMELLIA128 cipher */
+#undef GPG_USE_CAMELLIA128
+
+/* Define to support the CAMELLIA192 cipher */
+#undef GPG_USE_CAMELLIA192
+
+/* Define to support the CAMELLIA256 cipher */
+#undef GPG_USE_CAMELLIA256
+
+/* Define to support the CAST5 cipher */
+#undef GPG_USE_CAST5
+
+/* Define to support the ECDH public key */
+#undef GPG_USE_ECDH
+
+/* Define to support the ECDSA public key */
+#undef GPG_USE_ECDSA
+
+/* Define to support the EdDSA public key */
+#undef GPG_USE_EDDSA
+
+/* Define to support the IDEA cipher */
+#undef GPG_USE_IDEA
+
+/* Define to support the MD5 hash */
+#undef GPG_USE_MD5
+
+/* Define to support the RIPE-MD160 hash */
+#undef GPG_USE_RMD160
+
+/* Define to support the RSA public key */
+#undef GPG_USE_RSA
+
+/* Define to support the SHA-224 hash */
+#undef GPG_USE_SHA224
+
+/* Define to support the SHA-384 hash */
+#undef GPG_USE_SHA384
+
+/* Define to support the SHA-512 hash */
+#undef GPG_USE_SHA512
+
+/* Define to support the TWOFISH cipher */
+#undef GPG_USE_TWOFISH
 
 /* Define to 1 if you have the `adns_free' function. */
 #undef HAVE_ADNS_FREE
@@ -77,22 +189,26 @@
 /* Define to 1 if you have the <adns.h> header file. */
 #undef HAVE_ADNS_H
 
-/* Define to 1 if you have `alloca' after including <alloca.h>, a header that
-   may be supplied by this distribution. */
-#undef HAVE_ALLOCA
+/* define if adns_if_tormode is available */
+#undef HAVE_ADNS_IF_TORMODE
 
-/* Define HAVE_ALLOCA_H for backward compatibility with older code that
-   includes <alloca.h> only if HAVE_ALLOCA_H is defined. */
-#undef HAVE_ALLOCA_H
+/* Defined if we build for an Android system */
+#undef HAVE_ANDROID_SYSTEM
 
 /* Define to 1 if you have the `atexit' function. */
 #undef HAVE_ATEXIT
+
+/* Defined if ttyname does not work properly */
+#undef HAVE_BROKEN_TTYNAME
 
 /* Defined if a `byte' is typedef'd */
 #undef HAVE_BYTE_TYPEDEF
 
 /* Defined if the bz2 compression library is available */
 #undef HAVE_BZIP2
+
+/* Define to 1 if you have the `canonicalize_file_name' function. */
+#undef HAVE_CANONICALIZE_FILE_NAME
 
 /* Define to 1 if you have the Mac OS X function CFLocaleCopyCurrent in the
    CoreFoundation framework. */
@@ -127,14 +243,12 @@
 #undef HAVE_DOPRNT
 
 /* Defined if we run on some of the PCDOS like systems (DOS, Windoze. OS/2)
-   with special properties like no file modes */
+   with special properties like no file modes, case insensitive file names and
+   preferred use of backslashes as directory name separators. */
 #undef HAVE_DOSISH_SYSTEM
 
-/* defined if we must run on a stupid file system */
+/* Defined if the OS supports drive letters. */
 #undef HAVE_DRIVE_LETTERS
-
-/* Define if you have the declaration of environ. */
-#undef HAVE_ENVIRON_DECL
 
 /* Define to 1 if you have the `fcntl' function. */
 #undef HAVE_FCNTL
@@ -169,6 +283,9 @@
 /* Define to 1 if you have the `getaddrinfo' function. */
 #undef HAVE_GETADDRINFO
 
+/* Define to 1 if you have the `getenv' function. */
+#undef HAVE_GETENV
+
 /* Define to 1 if you have the <getopt.h> header file. */
 #undef HAVE_GETOPT_H
 
@@ -202,8 +319,8 @@
 /* Define to 1 if you have the `inet_ntop' function. */
 #undef HAVE_INET_NTOP
 
-/* Define to 1 if the system has the type `intmax_t'. */
-#undef HAVE_INTMAX_T
+/* Define to 1 if you have the `inet_pton' function. */
+#undef HAVE_INET_PTON
 
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
@@ -217,8 +334,8 @@
 /* Define to 1 if you have the <langinfo.h> header file. */
 #undef HAVE_LANGINFO_H
 
-/* Define if you have <langinfo.h> and nl_langinfo(THOUSANDS_SEP). */
-#undef HAVE_LANGINFO_THOUSANDS_SEP
+/* defined if liblber is available */
+#undef HAVE_LBER
 
 /* Define if your <locale.h> file defines LC_MESSAGES. */
 #undef HAVE_LC_MESSAGES
@@ -238,9 +355,6 @@
 /* Define to 1 if you have the `ldap_start_tls_sA' function. */
 #undef HAVE_LDAP_START_TLS_SA
 
-/* Define to 1 if you have a functional curl library. */
-#undef HAVE_LIBCURL
-
 /* Define to 1 if you have a fully functional readline library. */
 #undef HAVE_LIBREADLINE
 
@@ -253,11 +367,8 @@
 /* Define to 1 if you have the <locale.h> header file. */
 #undef HAVE_LOCALE_H
 
-/* Define to 1 if the system has the type `long double'. */
-#undef HAVE_LONG_DOUBLE
-
-/* Define to 1 if the system has the type 'long long int'. */
-#undef HAVE_LONG_LONG_INT
+/* Define to 1 if you have the `lstat' function. */
+#undef HAVE_LSTAT
 
 /* Define to 1 if you have the `memicmp' function. */
 #undef HAVE_MEMICMP
@@ -271,23 +382,17 @@
 /* Define to 1 if you have the `memrchr' function. */
 #undef HAVE_MEMRCHR
 
-/* Define to 1 if you have the `mkdtemp' function. */
-#undef HAVE_MKDTEMP
-
 /* Define to 1 if you have the `mmap' function. */
 #undef HAVE_MMAP
 
 /* Define to 1 if you have the `nl_langinfo' function. */
 #undef HAVE_NL_LANGINFO
 
+/* Defined if the New Portable Thread Library is available */
+#undef HAVE_NPTH
+
 /* Define to 1 if you have the `pipe' function. */
 #undef HAVE_PIPE
-
-/* Defined if the GNU Pth is available */
-#undef HAVE_PTH
-
-/* Define to 1 if the system has the type `ptrdiff_t'. */
-#undef HAVE_PTRDIFF_T
 
 /* Define to 1 if you have the <pty.h> header file. */
 #undef HAVE_PTY_H
@@ -301,9 +406,6 @@
 /* Define to 1 if you have the `rand' function. */
 #undef HAVE_RAND
 
-/* Define to 1 if you have the <search.h> header file. */
-#undef HAVE_SEARCH_H
-
 /* Define to 1 if you have the `setenv' function. */
 #undef HAVE_SETENV
 
@@ -316,14 +418,8 @@
 /* Define to 1 if you have the `sigaction' function. */
 #undef HAVE_SIGACTION
 
-/* Define to 1 if 'sig_atomic_t' is a signed integer type. */
-#undef HAVE_SIGNED_SIG_ATOMIC_T
-
-/* Define to 1 if 'wchar_t' is a signed integer type. */
-#undef HAVE_SIGNED_WCHAR_T
-
-/* Define to 1 if 'wint_t' is a signed integer type. */
-#undef HAVE_SIGNED_WINT_T
+/* Define to 1 if you have the <signal.h> header file. */
+#undef HAVE_SIGNAL_H
 
 /* Define to 1 if you have the `sigprocmask' function. */
 #undef HAVE_SIGPROCMASK
@@ -382,23 +478,20 @@
 /* Define to 1 if you have the `strtoul' function. */
 #undef HAVE_STRTOUL
 
+/* Define to 1 if you have the `strtoull' function. */
+#undef HAVE_STRTOULL
+
 /* Define to 1 if the system has the type `struct sigaction'. */
 #undef HAVE_STRUCT_SIGACTION
 
-/* Define to 1 if you have the <sys/bitypes.h> header file. */
-#undef HAVE_SYS_BITYPES_H
-
-/* Define to 1 if you have the <sys/inttypes.h> header file. */
-#undef HAVE_SYS_INTTYPES_H
+/* Define to 1 if you have the <sys/select.h> header file. */
+#undef HAVE_SYS_SELECT_H
 
 /* Define to 1 if you have the <sys/socket.h> header file. */
 #undef HAVE_SYS_SOCKET_H
 
 /* Define to 1 if you have the <sys/stat.h> header file. */
 #undef HAVE_SYS_STAT_H
-
-/* Define to 1 if you have the <sys/time.h> header file. */
-#undef HAVE_SYS_TIME_H
 
 /* Define to 1 if you have the <sys/types.h> header file. */
 #undef HAVE_SYS_TYPES_H
@@ -415,12 +508,6 @@
 /* Define to 1 if you have the `times' function. */
 #undef HAVE_TIMES
 
-/* Define to 1 if you have the <time.h> header file. */
-#undef HAVE_TIME_H
-
-/* Define to 1 if you have the `tsearch' function. */
-#undef HAVE_TSEARCH
-
 /* Define to 1 if you have the `ttyname' function. */
 #undef HAVE_TTYNAME
 
@@ -429,9 +516,6 @@
 
 /* Defined if a `u32' is typedef'd */
 #undef HAVE_U32_TYPEDEF
-
-/* Define to 1 if the system has the type `uintmax_t'. */
-#undef HAVE_UINTMAX_T
 
 /* Defined if a `ulong' is typedef'd */
 #undef HAVE_ULONG_TYPEDEF
@@ -442,8 +526,8 @@
 /* Define to 1 if you have the `unsetenv' function. */
 #undef HAVE_UNSETENV
 
-/* Define to 1 if the system has the type 'unsigned long long int'. */
-#undef HAVE_UNSIGNED_LONG_LONG_INT
+/* Defined if time_t is an unsigned type */
+#undef HAVE_UNSIGNED_TIME_T
 
 /* Define to 1 if you have the `usb_create_match' function. */
 #undef HAVE_USB_CREATE_MATCH
@@ -463,6 +547,9 @@
 /* Define to 1 if you have the `vprintf' function. */
 #undef HAVE_VPRINTF
 
+/* Defined if we run on WindowsCE */
+#undef HAVE_W32CE_SYSTEM
+
 /* Defined if we run on a W32 API based system */
 #undef HAVE_W32_SYSTEM
 
@@ -471,9 +558,6 @@
 
 /* Define to 1 if you have the `waitpid' function. */
 #undef HAVE_WAITPID
-
-/* Define to 1 if you have the <wchar.h> header file. */
-#undef HAVE_WCHAR_H
 
 /* Define to 1 if you have the <winsock2.h> header file. */
 #undef HAVE_WINSOCK2_H
@@ -487,74 +571,29 @@
 /* Define to 1 if you have the <ws2tcpip.h> header file. */
 #undef HAVE_WS2TCPIP_H
 
+/* Defined if ZIP and ZLIB are supported */
+#undef HAVE_ZIP
+
+/* Enable GNUTLS support in http.c */
+#undef HTTP_USE_GNUTLS
+
+/* Enable NTBTLS support in http.c */
+#undef HTTP_USE_NTBTLS
+
 /* Define as const if the declaration of iconv() needs const. */
 #undef ICONV_CONST
 
 /* Defined if this is not a regular release */
 #undef IS_DEVELOPMENT_VERSION
 
-/* Defined if libcurl supports AsynchDNS */
-#undef LIBCURL_FEATURE_ASYNCHDNS
-
-/* Defined if libcurl supports IDN */
-#undef LIBCURL_FEATURE_IDN
-
-/* Defined if libcurl supports IPv6 */
-#undef LIBCURL_FEATURE_IPV6
-
-/* Defined if libcurl supports KRB4 */
-#undef LIBCURL_FEATURE_KRB4
-
-/* Defined if libcurl supports libz */
-#undef LIBCURL_FEATURE_LIBZ
-
-/* Defined if libcurl supports NTLM */
-#undef LIBCURL_FEATURE_NTLM
-
-/* Defined if libcurl supports SSL */
-#undef LIBCURL_FEATURE_SSL
-
-/* Defined if libcurl supports SSPI */
-#undef LIBCURL_FEATURE_SSPI
-
-/* Defined if libcurl supports DICT */
-#undef LIBCURL_PROTOCOL_DICT
-
-/* Defined if libcurl supports FILE */
-#undef LIBCURL_PROTOCOL_FILE
-
-/* Defined if libcurl supports FTP */
-#undef LIBCURL_PROTOCOL_FTP
-
-/* Defined if libcurl supports FTPS */
-#undef LIBCURL_PROTOCOL_FTPS
-
-/* Defined if libcurl supports HTTP */
-#undef LIBCURL_PROTOCOL_HTTP
-
-/* Defined if libcurl supports HTTPS */
-#undef LIBCURL_PROTOCOL_HTTPS
-
-/* Defined if libcurl supports LDAP */
-#undef LIBCURL_PROTOCOL_LDAP
-
-/* Defined if libcurl supports TELNET */
-#undef LIBCURL_PROTOCOL_TELNET
-
-/* Defined if libcurl supports TFTP */
-#undef LIBCURL_PROTOCOL_TFTP
-
-/* The version of the libcurl library in packed hex form */
-#undef LIBCURL_VERNUM
-
 /* Defined if the host has little endian byte ordering */
 #undef LITTLE_ENDIAN_HOST
 
-/* If malloc(0) is != NULL, define this to 1. Otherwise define this to 0. */
-#undef MALLOC_0_IS_NONNULL
-
 /* Defined if mkdir() does not take permission flags */
 #undef MKDIR_TAKES_ONE_ARG
+
+/* The name of the installed GPG tool */
+#undef NAME_OF_INSTALLED_GPG
 
 /* Required version of Libksba */
 #undef NEED_KSBA_VERSION
@@ -565,8 +604,14 @@
 /* Required version of Libgcrypt */
 #undef NEED_LIBGCRYPT_VERSION
 
+/* Required version of NTBTLS */
+#undef NEED_NTBTLS_VERSION
+
 /* Define to disable all external program execution */
 #undef NO_EXEC
+
+/* Define to include only trust-model always */
+#undef NO_TRUST_MODELS
 
 /* Name of this package */
 #undef PACKAGE
@@ -598,12 +643,20 @@
 /* A human readable text with the name of the OS */
 #undef PRINTABLE_OS_NAME
 
-/* Define to l, ll, u, ul, ull, etc., as suitable for constants of type
-   'ptrdiff_t'. */
-#undef PTRDIFF_T_SUFFIX
-
 /* Define as the return type of signal handlers (`int' or `void'). */
 #undef RETSIGTYPE
+
+/* Defined if we should run the tests */
+#undef RUN_TESTS
+
+/* The displayed name of scdaemon */
+#undef SCDAEMON_DISP_NAME
+
+/* The name of the scdaemon */
+#undef SCDAEMON_NAME
+
+/* The name of the SCdaemon socket */
+#undef SCDAEMON_SOCK_NAME
 
 /* Size of secure memory buffer */
 #undef SECMEM_BUFFER_SIZE
@@ -611,15 +664,8 @@
 /* defines the filename of the shred program */
 #undef SHRED
 
-/* Define to l, ll, u, ul, ull, etc., as suitable for constants of type
-   'sig_atomic_t'. */
-#undef SIG_ATOMIC_T_SUFFIX
-
 /* The size of `time_t', as computed by sizeof. */
 #undef SIZEOF_TIME_T
-
-/* The size of `uint64_t', as computed by sizeof. */
-#undef SIZEOF_UINT64_T
 
 /* The size of `unsigned int', as computed by sizeof. */
 #undef SIZEOF_UNSIGNED_INT
@@ -633,28 +679,6 @@
 /* The size of `unsigned short', as computed by sizeof. */
 #undef SIZEOF_UNSIGNED_SHORT
 
-/* The size of `void *', as computed by sizeof. */
-#undef SIZEOF_VOID_P
-
-/* Define as the maximum value of type 'size_t', if the system doesn't define
-   it. */
-#undef SIZE_MAX
-
-/* Define to l, ll, u, ul, ull, etc., as suitable for constants of type
-   'size_t'. */
-#undef SIZE_T_SUFFIX
-
-/* If using the C implementation of alloca, define if you know the
-   direction of stack growth for your system; otherwise it will be
-   automatically deduced at runtime.
-	STACK_DIRECTION > 0 => grows toward higher addresses
-	STACK_DIRECTION < 0 => grows toward lower addresses
-	STACK_DIRECTION = 0 => direction of growth unknown */
-#undef STACK_DIRECTION
-
-/* Define to 1 if the `S_IS*' macros in <sys/stat.h> do not work properly. */
-#undef STAT_MACROS_BROKEN
-
 /* Define to 1 if you have the ANSI C header files. */
 #undef STDC_HEADERS
 
@@ -664,27 +688,30 @@
 /* Use ADNS as resolver library. */
 #undef USE_ADNS
 
+/* Define to enable auto starting of the dirmngr */
+#undef USE_DIRMNGR_AUTO_START
+
 /* define to use DNS CERT */
 #undef USE_DNS_CERT
-
-/* define to use our experimental DNS PKA */
-#undef USE_DNS_PKA
 
 /* define to use DNS SRV */
 #undef USE_DNS_SRV
 
-/* Defined if the GNU Portable Thread Library should be used */
-#undef USE_GNU_PTH
+/* Defined if LDAP is support */
+#undef USE_LDAP
 
-/* set this to limit filenames to the 8.3 format */
+/* Build dirmngr with LDAP wrapper process */
+#undef USE_LDAPWRAPPER
+
+/* Defined if support for nPth is requested and nPth is available */
+#undef USE_NPTH
+
+/* Set this to limit filenames to the 8.3 format */
 #undef USE_ONLY_8DOT3
 
-/* because the Unix gettext has too much overhead on MingW32 systems and these
+/* Because the Unix gettext has too much overhead on MingW32 systems and these
    systems lack Posix functions, we use a simplified version of gettext */
 #undef USE_SIMPLE_GETTEXT
-
-/* Use a standard socket for the agent by default */
-#undef USE_STANDARD_SOCKET
 
 /* Enable extensions on AIX 3, Interix.  */
 #ifndef _ALL_SOURCE
@@ -708,19 +735,11 @@
 #endif
 
 
+/* Enable to build the TOFU code */
+#undef USE_TOFU
+
 /* Version of this package */
 #undef VERSION
-
-/* Define if unsetenv() returns void, not int. */
-#undef VOID_UNSETENV
-
-/* Define to l, ll, u, ul, ull, etc., as suitable for constants of type
-   'wchar_t'. */
-#undef WCHAR_T_SUFFIX
-
-/* Define to l, ll, u, ul, ull, etc., as suitable for constants of type
-   'wint_t'. */
-#undef WINT_T_SUFFIX
 
 /* Enable large inode numbers on Mac OS X 10.5.  */
 #ifndef _DARWIN_USE_64_BIT_INODE
@@ -749,18 +768,11 @@
 /* Define to empty if `const' does not conform to ANSI C. */
 #undef const
 
-/* Define curl_free() as free() if our version of curl lacks curl_free. */
-#undef curl_free
-
 /* Define to `__inline__' or `__inline' if that's what the C compiler
    calls it, or to nothing if 'inline' is not supported under any name.  */
 #ifndef __cplusplus
 #undef inline
 #endif
-
-/* Define to the widest signed integer type if <stdint.h> and <inttypes.h> do
-   not define. */
-#undef intmax_t
 
 /* Define to `int' if <sys/types.h> does not define. */
 #undef mode_t
@@ -773,10 +785,6 @@
 
 /* type to use in place of socklen_t if not defined */
 #undef socklen_t
-
-/* Define to the widest unsigned integer type if <stdint.h> and <inttypes.h>
-   do not define. */
-#undef uintmax_t
 
 /* Define as `fork' if `vfork' does not work. */
 #undef vfork
@@ -821,27 +829,39 @@
 #define SAFE_VERSION_DASH '-'
 
 /* Some global constants. */
-#ifdef HAVE_DRIVE_LETTERS
-#define GNUPG_DEFAULT_HOMEDIR "c:/gnupg"
+#ifdef HAVE_DOSISH_SYSTEM
+# ifdef HAVE_DRIVE_LETTERS
+#  define GNUPG_DEFAULT_HOMEDIR "c:/gnupg"
+# else
+#  define GNUPG_DEFAULT_HOMEDIR "/gnupg"
+# endif
 #elif defined(__VMS)
-#define GNUPG_DEFAULT_HOMEDIR "/SYS\$LOGIN/gnupg"
+#define GNUPG_DEFAULT_HOMEDIR "/SYS$LOGIN/gnupg"
 #else
 #define GNUPG_DEFAULT_HOMEDIR "~/.gnupg"
 #endif
-#define GNUPG_PRIVATE_KEYS_DIR "private-keys-v1.d"
+#define GNUPG_PRIVATE_KEYS_DIR  "private-keys-v1.d"
+#define GNUPG_OPENPGP_REVOC_DIR "openpgp-revocs.d"
 
 /* For some systems (DOS currently), we hardcode the path here.  For
    POSIX systems the values are constructed by the Makefiles, so that
    the values may be overridden by the make invocations; this is to
-   comply with the GNU coding standards. */
-#ifdef HAVE_DRIVE_LETTERS
- /* FIXME: We need to use a function to determine these values depending
-    on the actual installation directory. */
-#define GNUPG_BINDIR      "c:\\gnupg"
-#define GNUPG_LIBEXECDIR  "c:\\gnupg"
-#define GNUPG_LIBDIR      "c:\\gnupg"
-#define GNUPG_DATADIR     "c:\\gnupg"
-#define GNUPG_SYSCONFDIR  "c:\\gnupg"
+   comply with the GNU coding standards.  Note that these values are
+   only defaults.  */
+#ifdef HAVE_DOSISH_SYSTEM
+# ifdef HAVE_DRIVE_LETTERS
+#  define GNUPG_BINDIR      "c:\\gnupg"
+#  define GNUPG_LIBEXECDIR  "c:\\gnupg"
+#  define GNUPG_LIBDIR      "c:\\gnupg"
+#  define GNUPG_DATADIR     "c:\\gnupg"
+#  define GNUPG_SYSCONFDIR  "c:\\gnupg"
+# else
+#  define GNUPG_BINDIR      "\\gnupg"
+#  define GNUPG_LIBEXECDIR  "\\gnupg"
+#  define GNUPG_LIBDIR      "\\gnupg"
+#  define GNUPG_DATADIR     "\\gnupg"
+#  define GNUPG_SYSCONFDIR  "\\gnupg"
+# endif
 #endif
 
 /* Derive some other constants. */
@@ -873,12 +893,14 @@
 # endif
 #endif
 
+/* Provide the es_ macro for estream.  */
+#define GPGRT_ENABLE_ES_MACROS 1
 
 /* Tell libgcrypt not to use its own libgpg-error implementation. */
 #define USE_LIBGPG_ERROR 1
 
-/* We use jnlib, so tell other modules about it.  */
-#define HAVE_JNLIB_LOGGING 1
+/* Tell Libgcrypt not to include deprecated definitions.  */
+#define GCRYPT_NO_DEPRECATED 1
 
 /* Our HTTP code is used in estream mode.  */
 #define HTTP_USE_ESTREAM 1
@@ -888,24 +910,11 @@
    handler.  */
 #define HTTP_NO_WSASTARTUP
 
-/* We always include support for the OpenPGP card.  */
-#define ENABLE_CARD_SUPPORT 1
+/* Under Windows we use the gettext code from libgpg-error.  */
+#define GPG_ERR_ENABLE_GETTEXT_MACROS
 
-/* We don't want the old assuan codes anymore. */
-#define _ASSUAN_ONLY_GPG_ERRORS 1
-
-/* We don't need any of the old gcrypt functions.  */
-#define GCRYPT_NO_DEPRECATED 1
-
-/* We explicitly need to disable PTH's soft mapping as Debian
-   currently enables it by default for no reason. */
-#define PTH_SYSCALL_SOFT 0
-
-/* We want to use the libgcrypt provided memory allocation for
-   asprintf.  */
-#define _ESTREAM_PRINTF_MALLOC        gcry_malloc
-#define _ESTREAM_PRINTF_FREE          gcry_free
-#define _ESTREAM_PRINTF_EXTRA_INCLUDE "util.h"
+/* Under WindowsCE we use the strerror replacement from libgpg-error.  */
+#define GPG_ERR_ENABLE_ERRNO_MACROS
 
 #endif /*GNUPG_CONFIG_H_INCLUDED*/
 

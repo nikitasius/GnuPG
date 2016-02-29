@@ -1,13 +1,45 @@
-2011-12-02  Werner Koch  <wk@g10code.com>
+2011-12-01  Werner Koch  <wk@g10code.com>
 
 	NB: ChangeLog files are no longer manually maintained.  Starting
 	on December 1st, 2011 we put change information only in the GIT
 	commit log, and generate a top-level ChangeLog file from logs at
 	"make dist".  See doc/HACKING for details.
 
-2010-05-12  Werner Koch  <wk@g10code.com>
+2011-02-10  Werner Koch  <wk@g10code.com>
 
-	* armor.test: Add test for bug#1179.
+	* ecc.test: New.
+	* pinentry.sh: New.
+	* defs.inc: Do not create a log when running tests with envvar
+	verbose > 1.  Add pinentry-program to gpg-agent.conf.
+	* Makefile.am (sample_keys): New.
+	(EXTRA_DIST): Add them.
+
+2010-10-15  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (clean-local): New.
+
+2010-10-14  Werner Koch  <wk@g10code.com>
+
+	* genkey1024.test: Use the new no-protection option.
+
+	* decrypt-dsa.test: Do not specify an extra keyring.  The keyring
+	has been loaded into pubring.gpg.
+	* sigs-dsa.test: Ditto.
+	* encrypt-dsa.test: Ditto.
+	* signencrypt-dsa.test: Ditto.
+
+	* decrypt.test: Remove passphrase stuff.
+	* sigs.test: Ditto.
+
+	* privkeys/: New.
+
+	* Makefile.am: Move most stuff to ...
+	* version.test: Prepare data files etc.
+	* finish.test: New.
+	* defs.inc: Set all envvars.
+	(usrname1, usrname2, username3): Use full mail address.
+
+2010-06-07  Werner Koch  <wk@g10code.com>
 
 	* Makefile.am (TESTS_ENVIRONMENT): New.  Start all scripts under
 	the control of the gpg-agent.
@@ -16,6 +48,10 @@
 	(GNUPGHOME): Check that it is set properly.
 	(GPG_AGENT_INFO): Do not change.
 
+2010-05-12  Werner Koch  <wk@g10code.com>
+
+	* armor.test (Version): Add test for bug#1179.
+
 2010-05-11  Werner Koch  <wk@g10code.com>
 
 	* genkey1024.test: Use GPG macro.
@@ -23,8 +59,13 @@
 	* gpg-agent.conf.tmpl: New.
 	* defs.inc: Create gpg-agent.conf
 	(GNUPGHOME): Set and export.
-	(GPG_AGENT_INFO): Unset
+	(GPG_AGENT_INFO): Unset.
 	* Makefile.am (CLEANFILES): Add S.gpg-agent
+
+2010-05-07  Werner Koch  <wk@g10code.com>
+
+	* import.test: Add test case for bug#1223.
+	* bug1223-good.asc, bug1223-bogus.asc: New.
 
 2009-12-21  Werner Koch  <wk@g10code.com>
 
@@ -377,3 +418,7 @@ Mon May 18 15:40:02 1998  Werner Koch  (wk@isil.d.shuttle.de)
  This file is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+Local Variables:
+buffer-read-only: t
+End:

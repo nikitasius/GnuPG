@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <unistd.h> 
+#include <unistd.h>
 #include <time.h>
 #include <assert.h>
 
@@ -44,11 +44,11 @@ delete_one (ctrl_t ctrl, const char *username)
   ksba_cert_t cert = NULL;
   int duplicates = 0;
   int is_ephem = 0;
-  
-  rc = keydb_classify_name (username, &desc);
+
+  rc = classify_user_id (username, &desc, 0);
   if (rc)
     {
-      log_error (_("certificate `%s' not found: %s\n"),
+      log_error (_("certificate '%s' not found: %s\n"),
                  username, gpg_strerror (rc));
       gpgsm_status2 (ctrl, STATUS_DELETE_PROBLEM, "1", NULL);
       goto leave;
@@ -109,7 +109,7 @@ delete_one (ctrl_t ctrl, const char *username)
     {
       if (rc == -1)
         rc = gpg_error (GPG_ERR_NO_PUBKEY);
-      log_error (_("certificate `%s' not found: %s\n"),
+      log_error (_("certificate '%s' not found: %s\n"),
                  username, gpg_strerror (rc));
       gpgsm_status2 (ctrl, STATUS_DELETE_PROBLEM, "3", NULL);
       goto leave;
@@ -122,8 +122,8 @@ delete_one (ctrl_t ctrl, const char *username)
       log_error (_("error locking keybox: %s\n"), gpg_strerror (rc));
       goto leave;
     }
-                   
-  do 
+
+  do
     {
       keydb_search_reset (kh);
       rc = keydb_search (kh, &desc, 1);
@@ -133,16 +133,16 @@ delete_one (ctrl_t ctrl, const char *username)
                      gpg_strerror (rc));
           goto leave;
         }
-      
+
       rc = keydb_delete (kh, duplicates ? 0 : 1);
-      if (rc) 
+      if (rc)
         goto leave;
       if (opt.verbose)
         {
           if (duplicates)
-            log_info (_("duplicated certificate `%s' deleted\n"), username);
+            log_info (_("duplicated certificate '%s' deleted\n"), username);
           else
-            log_info (_("certificate `%s' deleted\n"), username);
+            log_info (_("certificate '%s' deleted\n"), username);
         }
     }
   while (duplicates--);
@@ -166,7 +166,7 @@ gpgsm_delete (ctrl_t ctrl, strlist_t names)
       log_error ("nothing to delete\n");
       return gpg_error (GPG_ERR_NO_DATA);
     }
-  
+
   for (; names; names=names->next )
     {
       rc = delete_one (ctrl, names->d);
@@ -177,6 +177,6 @@ gpgsm_delete (ctrl_t ctrl, strlist_t names)
           return rc;
         }
     }
-  
+
   return 0;
 }

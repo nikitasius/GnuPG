@@ -1,7 +1,6 @@
 /* call-agent.c - Divert GPG operations to the agent.
- * Copyright (C) 2001, 2002, 2003, 2006, 2007,
- *               2008, 2009 Free Software Foundation, Inc.
- * Copyright (C) 2014  Werner Koch
+ * Copyright (C) 2001-2003, 2006-2011, 2013 Free Software Foundation, Inc.
+ * Copyright (C) 2013-2015  Werner Koch
  *
  * This file is part of GnuPG.
  *
@@ -41,41 +40,69 @@
 #include "sysutils.h"
 #include "call-agent.h"
 #include "status.h"
+#include "../common/shareddefs.h"
+#include "host2net.h"
 
-#ifndef DBG_ASSUAN
-# define DBG_ASSUAN 1
-#endif
+#define CONTROL_D ('D' - 'A' + 1)
+
 
 static assuan_context_t agent_ctx = NULL;
 static int did_early_card_test;
 
+struct default_inq_parm_s
+{
+  ctrl_t ctrl;
+  assuan_context_t ctx;
+  struct {
+    u32 *keyid;
+    u32 *mainkeyid;
+    int pubkey_algo;
+  } keyinfo;
+};
+
 struct cipher_parm_s
 {
+  struct default_inq_parm_s *dflt;
   assuan_context_t ctx;
-  const char *ciphertext;
+  unsigned char *ciphertext;
   size_t ciphertextlen;
 };
 
 struct writecert_parm_s
 {
-  assuan_context_t ctx;
+  struct default_inq_parm_s *dflt;
   const unsigned char *certdata;
   size_t certdatalen;
 };
 
 struct writekey_parm_s
 {
-  assuan_context_t ctx;
+  struct default_inq_parm_s *dflt;
   const unsigned char *keydata;
   size_t keydatalen;
 };
 
 struct genkey_parm_s
 {
-  assuan_context_t ctx;
-  const char *sexp;
-  size_t sexplen;
+  struct default_inq_parm_s *dflt;
+  const char *keyparms;
+  const char *passphrase;
 };
+
+struct import_key_parm_s
+{
+  struct default_inq_parm_s *dflt;
+  const void *key;
+  size_t keylen;
+};
+
+
+struct cache_nonce_parm_s
+{
+  char **cache_nonce_addr;
+  char **passwd_nonce_addr;
+};
+
 
 struct scd_genkey_parm_s
 {
@@ -97,6 +124,7 @@ status_sc_op_failure (int rc)
     case 0:
       break;
     case GPG_ERR_CANCELED:
+    case GPG_ERR_FULLY_CANCELED:
       write_status_text (STATUS_SC_OP_FAILURE, "1");
       break;
     case GPG_ERR_BAD_PIN:
@@ -109,36 +137,56 @@ status_sc_op_failure (int rc)
 }
 
 
-static gpg_error_t
-membuf_data_cb (void *opaque, const void *buffer, size_t length)
-{
-  membuf_t *data = opaque;
-
-  if (buffer)
-    put_membuf (data, buffer, length);
-  return 0;
-}
-
-
 /* This is the default inquiry callback.  It mainly handles the
    Pinentry notifications.  */
 static gpg_error_t
 default_inq_cb (void *opaque, const char *line)
 {
-  (void)opaque;
+  gpg_error_t err = 0;
+  struct default_inq_parm_s *parm = opaque;
 
-  if (!strncmp (line, "PINENTRY_LAUNCHED", 17) && (line[17]==' '||!line[17]))
+  if (has_leading_keyword (line, "PINENTRY_LAUNCHED"))
     {
-      /* There is no working server mode yet thus we use
-         AllowSetForegroundWindow window right here.  We might want to
-         do this anyway in case gpg is called on the console. */
-      gnupg_allow_set_foregound_window ((pid_t)strtoul (line+17, NULL, 10));
+      err = gpg_proxy_pinentry_notify (parm->ctrl, line);
+      if (err)
+        log_error (_("failed to proxy %s inquiry to client\n"),
+                   "PINENTRY_LAUNCHED");
       /* We do not pass errors to avoid breaking other code.  */
     }
-  else
-    log_debug ("ignoring gpg-agent inquiry `%s'\n", line);
+  else if ((has_leading_keyword (line, "PASSPHRASE")
+            || has_leading_keyword (line, "NEW_PASSPHRASE"))
+           && opt.pinentry_mode == PINENTRY_MODE_LOOPBACK)
+    {
+      if (have_static_passphrase ())
+        {
+          const char *s = get_static_passphrase ();
+          err = assuan_send_data (parm->ctx, s, strlen (s));
+        }
+      else
+        {
+          char *pw;
+          char buf[32];
 
-  return 0;
+          if (parm->keyinfo.keyid)
+            emit_status_need_passphrase (parm->keyinfo.keyid,
+                                         parm->keyinfo.mainkeyid,
+                                         parm->keyinfo.pubkey_algo);
+
+          snprintf (buf, sizeof (buf), "%u", 100);
+          write_status_text (STATUS_INQUIRE_MAXLEN, buf);
+          pw = cpr_get_hidden ("passphrase.enter", _("Enter passphrase: "));
+          cpr_kill_prompt ();
+          if (*pw == CONTROL_D && !pw[1])
+            err = gpg_error (GPG_ERR_CANCELED);
+          else
+            err = assuan_send_data (parm->ctx, pw, strlen (pw));
+          xfree (pw);
+        }
+    }
+  else
+    log_debug ("ignoring gpg-agent inquiry '%s'\n", line);
+
+  return err;
 }
 
 
@@ -151,10 +199,10 @@ check_hijacking (assuan_context_t ctx)
 
   init_membuf (&mb, 64);
 
-  /* AGENT_ID is a command implemented by gnome-keyring-daemon.  IT
-     does not reatun any data but an OK line with a remark.  */
+  /* AGENT_ID is a command implemented by gnome-keyring-daemon.  It
+     does not return any data but an OK line with a remark.  */
   if (assuan_transact (ctx, "AGENT_ID",
-                       membuf_data_cb, &mb, NULL, NULL, NULL, NULL))
+                       put_membuf_cb, &mb, NULL, NULL, NULL, NULL))
     {
       xfree (get_membuf (&mb, NULL));
       return; /* Error - Probably not hijacked.  */
@@ -188,8 +236,12 @@ check_hijacking (assuan_context_t ctx)
           xfree (cmdargs);
           if (cmd)
             {
+              struct default_inq_parm_s dfltparm;
+
+              memset (&dfltparm, 0, sizeof dfltparm);
+              dfltparm.ctx = ctx;
               assuan_transact (ctx, cmd, NULL, NULL,
-                               default_inq_cb, NULL,
+                               default_inq_cb, &dfltparm,
                                NULL, NULL);
               xfree (cmd);
               shown = 1;
@@ -200,12 +252,49 @@ check_hijacking (assuan_context_t ctx)
 }
 
 
+
+/* Print a warning if the server's version number is less than our
+   version number.  Returns an error code on a connection problem.  */
+static gpg_error_t
+warn_version_mismatch (assuan_context_t ctx, const char *servername, int mode)
+{
+  gpg_error_t err;
+  char *serverversion;
+  const char *myversion = strusage (13);
+
+  err = get_assuan_server_version (ctx, mode, &serverversion);
+  if (err)
+    log_error (_("error getting version from '%s': %s\n"),
+               servername, gpg_strerror (err));
+  else if (!compare_version_strings (serverversion, myversion))
+    {
+      char *warn;
+
+      warn = xtryasprintf (_("server '%s' is older than us (%s < %s)"),
+                           servername, serverversion, myversion);
+      if (!warn)
+        err = gpg_error_from_syserror ();
+      else
+        {
+          log_info (_("WARNING: %s\n"), warn);
+          write_status_strings (STATUS_WARNING, "server_version_mismatch 0",
+                                " ", warn, NULL);
+          xfree (warn);
+        }
+    }
+  xfree (serverversion);
+  return err;
+}
+
+
 /* Try to connect to the agent via socket or fork it off and work by
    pipes.  Handle the server's initial greeting */
 static int
-start_agent (int for_card)
+start_agent (ctrl_t ctrl, int for_card)
 {
   int rc;
+
+  (void)ctrl;  /* Not yet used.  */
 
   /* Fixme: We need a context for each thread or serialize the access
      to the agent. */
@@ -219,15 +308,47 @@ start_agent (int for_card)
                                 opt.agent_program,
                                 opt.lc_ctype, opt.lc_messages,
                                 opt.session_env,
-                                opt.verbose, DBG_ASSUAN,
+                                opt.autostart, opt.verbose, DBG_IPC,
                                 NULL, NULL);
-      if (!rc)
+      if (!opt.autostart && gpg_err_code (rc) == GPG_ERR_NO_AGENT)
+        {
+          static int shown;
+
+          if (!shown)
+            {
+              shown = 1;
+              log_info (_("no gpg-agent running in this session\n"));
+            }
+        }
+      else if (!rc
+               && !(rc = warn_version_mismatch (agent_ctx, GPG_AGENT_NAME, 0)))
         {
           /* Tell the agent that we support Pinentry notifications.
              No error checking so that it will work also with older
              agents.  */
           assuan_transact (agent_ctx, "OPTION allow-pinentry-notify",
                            NULL, NULL, NULL, NULL, NULL, NULL);
+          /* Tell the agent about what version we are aware.  This is
+             here used to indirectly enable GPG_ERR_FULLY_CANCELED.  */
+          assuan_transact (agent_ctx, "OPTION agent-awareness=2.1.0",
+                           NULL, NULL, NULL, NULL, NULL, NULL);
+          /* Pass on the pinentry mode.  */
+          if (opt.pinentry_mode)
+            {
+              char *tmp = xasprintf ("OPTION pinentry-mode=%s",
+                                     str_pinentry_mode (opt.pinentry_mode));
+              rc = assuan_transact (agent_ctx, tmp,
+                               NULL, NULL, NULL, NULL, NULL, NULL);
+              xfree (tmp);
+              if (rc)
+                {
+                  log_error ("setting pinentry mode '%s' failed: %s\n",
+                             str_pinentry_mode (opt.pinentry_mode),
+                             gpg_strerror (rc));
+                  write_status_error ("set_pinentry_mode", rc);
+                }
+            }
+
           check_hijacking (agent_ctx);
         }
     }
@@ -238,9 +359,12 @@ start_agent (int for_card)
       struct agent_card_info_s info;
 
       memset (&info, 0, sizeof info);
-      rc = assuan_transact (agent_ctx, "SCD SERIALNO openpgp",
-                            NULL, NULL, NULL, NULL,
-                            learn_status_cb, &info);
+
+      rc = warn_version_mismatch (agent_ctx, SCDAEMON_NAME, 2);
+      if (!rc)
+        rc = assuan_transact (agent_ctx, "SCD SERIALNO openpgp",
+                              NULL, NULL, NULL, NULL,
+                              learn_status_cb, &info);
       if (rc)
         {
           switch (gpg_err_code (rc))
@@ -248,6 +372,9 @@ start_agent (int for_card)
             case GPG_ERR_NOT_SUPPORTED:
             case GPG_ERR_NO_SCDAEMON:
               write_status_text (STATUS_CARDCTRL, "6");
+              break;
+            case GPG_ERR_OBJ_TERM_STATE:
+              write_status_text (STATUS_CARDCTRL, "7");
               break;
             default:
               write_status_text (STATUS_CARDCTRL, "4");
@@ -369,13 +496,17 @@ get_serialno_cb (void *opaque, const char *line)
 }
 
 
+
 /* Release the card info structure INFO. */
 void
 agent_release_card_info (struct agent_card_info_s *info)
 {
+  int i;
+
   if (!info)
     return;
 
+  xfree (info->reader); info->reader = NULL;
   xfree (info->serialno); info->serialno = NULL;
   xfree (info->apptype); info->apptype = NULL;
   xfree (info->disp_name); info->disp_name = NULL;
@@ -384,7 +515,13 @@ agent_release_card_info (struct agent_card_info_s *info)
   xfree (info->login_data); info->login_data = NULL;
   info->cafpr1valid = info->cafpr2valid = info->cafpr3valid = 0;
   info->fpr1valid = info->fpr2valid = info->fpr3valid = 0;
+  for (i=0; i < DIM(info->private_do); i++)
+    {
+      xfree (info->private_do[i]);
+      info->private_do[i] = NULL;
+    }
 }
+
 
 static gpg_error_t
 learn_status_cb (void *opaque, const char *line)
@@ -399,7 +536,12 @@ learn_status_cb (void *opaque, const char *line)
   while (spacep (line))
     line++;
 
-  if (keywordlen == 8 && !memcmp (keyword, "SERIALNO", keywordlen))
+  if (keywordlen == 6 && !memcmp (keyword, "READER", keywordlen))
+    {
+      xfree (parm->reader);
+      parm->reader = unescape_status_string (line);
+    }
+  else if (keywordlen == 8 && !memcmp (keyword, "SERIALNO", keywordlen))
     {
       xfree (parm->serialno);
       parm->serialno = store_serialno (line);
@@ -491,6 +633,8 @@ learn_status_cb (void *opaque, const char *line)
                     parm->extcap.ki = abool;
                   else if (!strcmp (p, "aac"))
                     parm->extcap.aac = abool;
+                  else if (!strcmp (p, "si"))
+                    parm->status_indicator = strtoul (p2, NULL, 10);
                 }
             }
           xfree (buf);
@@ -540,27 +684,56 @@ learn_status_cb (void *opaque, const char *line)
     }
   else if (keywordlen == 8 && !memcmp (keyword, "KEY-ATTR", keywordlen))
     {
-      int keyno, algo, nbits;
+      int keyno = 0;
+      int algo = PUBKEY_ALGO_RSA;
+      int n = 0;
 
-      sscanf (line, "%d %d %d", &keyno, &algo, &nbits);
+      sscanf (line, "%d %d %n", &keyno, &algo, &n);
       keyno--;
-      if (keyno >= 0 && keyno < DIM (parm->key_attr))
+      if (keyno < 0 || keyno >= DIM (parm->key_attr))
+        return 0;
+
+      parm->key_attr[keyno].algo = algo;
+      if (algo == PUBKEY_ALGO_RSA)
+        parm->key_attr[keyno].nbits = strtoul (line+n+3, NULL, 10);
+      else if (algo == PUBKEY_ALGO_ECDH || algo == PUBKEY_ALGO_ECDSA
+               || algo == PUBKEY_ALGO_EDDSA)
         {
-          parm->key_attr[keyno].algo = algo;
-          parm->key_attr[keyno].nbits = nbits;
+          const char *curve;
+
+          for (i = 0; (curve = openpgp_enum_curves (&i));)
+            if (!strcmp (curve, line+n))
+              break;
+
+          parm->key_attr[keyno].curve = curve;
         }
+    }
+  else if (keywordlen == 12 && !memcmp (keyword, "PRIVATE-DO-", 11)
+           && strchr("1234", keyword[11]))
+    {
+      int no = keyword[11] - '1';
+      assert (no >= 0 && no <= 3);
+      xfree (parm->private_do[no]);
+      parm->private_do[no] = unescape_status_string (line);
     }
 
   return 0;
 }
 
-/* Call the agent to learn about a smartcard */
+/* Call the scdaemon to learn about a smartcard */
 int
-agent_learn (struct agent_card_info_s *info)
+agent_scd_learn (struct agent_card_info_s *info, int force)
 {
   int rc;
+  struct default_inq_parm_s parm;
+  struct agent_card_info_s dummyinfo;
 
-  rc = start_agent (1);
+  if (!info)
+    info = &dummyinfo;
+  memset (info, 0, sizeof *info);
+  memset (&parm, 0, sizeof parm);
+
+  rc = start_agent (NULL, 1);
   if (rc)
     return rc;
 
@@ -576,18 +749,106 @@ agent_learn (struct agent_card_info_s *info)
   if (rc)
     return rc;
 
-
-  memset (info, 0, sizeof *info);
-  rc = assuan_transact (agent_ctx, "SCD LEARN --force",
-                        dummy_data_cb, NULL, default_inq_cb, NULL,
+  parm.ctx = agent_ctx;
+  rc = assuan_transact (agent_ctx,
+                        force ? "LEARN --sendinfo --force" : "LEARN --sendinfo",
+                        dummy_data_cb, NULL, default_inq_cb, &parm,
                         learn_status_cb, info);
   /* Also try to get the key attributes.  */
   if (!rc)
     agent_scd_getattr ("KEY-ATTR", info);
 
+  if (info == &dummyinfo)
+    agent_release_card_info (info);
+
   return rc;
 }
 
+
+/* Send an APDU to the current card.  On success the status word is
+   stored at R_SW.  With HEXAPDU being NULL only a RESET command is
+   send to scd.  With HEXAPDU being the string "undefined" the command
+   "SERIALNO undefined" is send to scd. */
+gpg_error_t
+agent_scd_apdu (const char *hexapdu, unsigned int *r_sw)
+{
+  gpg_error_t err;
+
+  /* Start the agent but not with the card flag so that we do not
+     autoselect the openpgp application.  */
+  err = start_agent (NULL, 0);
+  if (err)
+    return err;
+
+  if (!hexapdu)
+    {
+      err = assuan_transact (agent_ctx, "SCD RESET",
+                             NULL, NULL, NULL, NULL, NULL, NULL);
+
+    }
+  else if (!strcmp (hexapdu, "undefined"))
+    {
+      err = assuan_transact (agent_ctx, "SCD SERIALNO undefined",
+                             NULL, NULL, NULL, NULL, NULL, NULL);
+    }
+  else
+    {
+      char line[ASSUAN_LINELENGTH];
+      membuf_t mb;
+      unsigned char *data;
+      size_t datalen;
+
+      init_membuf (&mb, 256);
+
+      snprintf (line, DIM(line)-1, "SCD APDU %s", hexapdu);
+      err = assuan_transact (agent_ctx, line,
+                             put_membuf_cb, &mb, NULL, NULL, NULL, NULL);
+      if (!err)
+        {
+          data = get_membuf (&mb, &datalen);
+          if (!data)
+            err = gpg_error_from_syserror ();
+          else if (datalen < 2) /* Ooops */
+            err = gpg_error (GPG_ERR_CARD);
+          else
+            {
+              *r_sw = buf16_to_uint (data+datalen-2);
+            }
+          xfree (data);
+        }
+    }
+
+  return err;
+}
+
+
+int
+agent_keytocard (const char *hexgrip, int keyno, int force,
+                 const char *serialno, const char *timestamp)
+{
+  int rc;
+  char line[ASSUAN_LINELENGTH];
+  struct default_inq_parm_s parm;
+
+  memset (&parm, 0, sizeof parm);
+  parm.ctx = agent_ctx;
+
+  snprintf (line, DIM(line)-1, "KEYTOCARD %s%s %s OPENPGP.%d %s",
+            force?"--force ": "", hexgrip, serialno, keyno, timestamp);
+  line[DIM(line)-1] = 0;
+
+  rc = start_agent (NULL, 1);
+  if (rc)
+    return rc;
+
+  rc = assuan_transact (agent_ctx, line, NULL, NULL, default_inq_cb, &parm,
+                        NULL, NULL);
+  if (rc)
+    return rc;
+
+  return rc;
+}
+
 /* Call the agent to retrieve a data object.  This function returns
    the data in the same structure as used by the learn command.  It is
    allowed to update such a structure using this commmand. */
@@ -596,6 +857,9 @@ agent_scd_getattr (const char *name, struct agent_card_info_s *info)
 {
   int rc;
   char line[ASSUAN_LINELENGTH];
+  struct default_inq_parm_s parm;
+
+  memset (&parm, 0, sizeof parm);
 
   if (!*name)
     return gpg_error (GPG_ERR_INV_VALUE);
@@ -605,11 +869,12 @@ agent_scd_getattr (const char *name, struct agent_card_info_s *info)
     return gpg_error (GPG_ERR_TOO_LARGE);
   stpcpy (stpcpy (line, "SCD GETATTR "), name);
 
-  rc = start_agent (1);
+  rc = start_agent (NULL, 1);
   if (rc)
     return rc;
 
-  rc = assuan_transact (agent_ctx, line, NULL, NULL, default_inq_cb, NULL,
+  parm.ctx = agent_ctx;
+  rc = assuan_transact (agent_ctx, line, NULL, NULL, default_inq_cb, &parm,
                         learn_status_cb, info);
 
   return rc;
@@ -627,6 +892,9 @@ agent_scd_setattr (const char *name,
   int rc;
   char line[ASSUAN_LINELENGTH];
   char *p;
+  struct default_inq_parm_s parm;
+
+  memset (&parm, 0, sizeof parm);
 
   (void)serialno;
 
@@ -655,11 +923,12 @@ agent_scd_setattr (const char *name,
     }
   *p = 0;
 
-  rc = start_agent (1);
+  rc = start_agent (NULL, 1);
   if (!rc)
     {
+      parm.ctx = agent_ctx;
       rc = assuan_transact (agent_ctx, line, NULL, NULL,
-                            default_inq_cb, NULL, NULL, NULL);
+                            default_inq_cb, &parm, NULL, NULL);
     }
 
   status_sc_op_failure (rc);
@@ -677,12 +946,13 @@ inq_writecert_parms (void *opaque, const char *line)
   int rc;
   struct writecert_parm_s *parm = opaque;
 
-  if (!strncmp (line, "CERTDATA", 8) && (line[8]==' '||!line[8]))
+  if (has_leading_keyword (line, "CERTDATA"))
     {
-      rc = assuan_send_data (parm->ctx, parm->certdata, parm->certdatalen);
+      rc = assuan_send_data (parm->dflt->ctx,
+                             parm->certdata, parm->certdatalen);
     }
   else
-    rc = default_inq_cb (opaque, line);
+    rc = default_inq_cb (parm->dflt, line);
 
   return rc;
 }
@@ -696,8 +966,11 @@ agent_scd_writecert (const char *certidstr,
   int rc;
   char line[ASSUAN_LINELENGTH];
   struct writecert_parm_s parms;
+  struct default_inq_parm_s dfltparm;
 
-  rc = start_agent (1);
+  memset (&dfltparm, 0, sizeof dfltparm);
+
+  rc = start_agent (NULL, 1);
   if (rc)
     return rc;
 
@@ -705,7 +978,8 @@ agent_scd_writecert (const char *certidstr,
 
   snprintf (line, DIM(line)-1, "SCD WRITECERT %s", certidstr);
   line[DIM(line)-1] = 0;
-  parms.ctx = agent_ctx;
+  dfltparm.ctx = agent_ctx;
+  parms.dflt = &dfltparm;
   parms.certdata = certdata;
   parms.certdatalen = certdatalen;
 
@@ -725,12 +999,12 @@ inq_writekey_parms (void *opaque, const char *line)
   int rc;
   struct writekey_parm_s *parm = opaque;
 
-  if (!strncmp (line, "KEYDATA", 7) && (line[7]==' '||!line[7]))
+  if (has_leading_keyword (line, "KEYDATA"))
     {
-      rc = assuan_send_data (parm->ctx, parm->keydata, parm->keydatalen);
+      rc = assuan_send_data (parm->dflt->ctx, parm->keydata, parm->keydatalen);
     }
   else
-    rc = default_inq_cb (opaque, line);
+    rc = default_inq_cb (parm->dflt, line);
 
   return rc;
 }
@@ -744,10 +1018,13 @@ agent_scd_writekey (int keyno, const char *serialno,
   int rc;
   char line[ASSUAN_LINELENGTH];
   struct writekey_parm_s parms;
+  struct default_inq_parm_s dfltparm;
+
+  memset (&dfltparm, 0, sizeof dfltparm);
 
   (void)serialno;
 
-  rc = start_agent (1);
+  rc = start_agent (NULL, 1);
   if (rc)
     return rc;
 
@@ -755,7 +1032,8 @@ agent_scd_writekey (int keyno, const char *serialno,
 
   snprintf (line, DIM(line)-1, "SCD WRITEKEY --force OPENPGP.%d", keyno);
   line[DIM(line)-1] = 0;
-  parms.ctx = agent_ctx;
+  dfltparm.ctx = agent_ctx;
+  parms.dflt = &dfltparm;
   parms.keydata = keydata;
   parms.keydatalen = keydatalen;
 
@@ -796,7 +1074,6 @@ scd_genkey_cb_append_savedbytes (struct scd_genkey_parm_s *parm,
 
   return err;
 }
-
 
 /* Status callback for the SCD GENKEY command. */
 static gpg_error_t
@@ -870,10 +1147,9 @@ scd_genkey_cb (void *opaque, const char *line)
 }
 
 /* Send a GENKEY command to the SCdaemon.  SERIALNO is not used in
-   this implementation.  If CREATEDATE has been given, it will be
-   passed to SCDAEMON so that the key can be created with this
-   timestamp; note the user needs to use the returned timestamp as old
-   versions of scddaemon don't support this option.  */
+   this implementation.  If CREATEDATE is not 0, it will be passed to
+   SCDAEMON so that the key is created with this timestamp.  INFO will
+   receive information about the generated key.  */
 int
 agent_scd_genkey (struct agent_card_genkey_s *info, int keyno, int force,
                   const char *serialno, u32 createtime)
@@ -882,13 +1158,16 @@ agent_scd_genkey (struct agent_card_genkey_s *info, int keyno, int force,
   char line[ASSUAN_LINELENGTH];
   gnupg_isotime_t tbuf;
   struct scd_genkey_parm_s parms;
+  struct default_inq_parm_s dfltparm;
+
+  memset (&dfltparm, 0, sizeof dfltparm);
 
   (void)serialno;
 
   memset (&parms, 0, sizeof parms);
   parms.cgk = info;
 
-  rc = start_agent (1);
+  rc = start_agent (NULL, 1);
   if (rc)
     return rc;
 
@@ -897,16 +1176,16 @@ agent_scd_genkey (struct agent_card_genkey_s *info, int keyno, int force,
   else
     *tbuf = 0;
 
-  memset (info, 0, sizeof *info);
   snprintf (line, DIM(line)-1, "SCD GENKEY %s%s %s %d",
             *tbuf? "--timestamp=":"", tbuf,
             force? "--force":"",
             keyno);
   line[DIM(line)-1] = 0;
 
+  dfltparm.ctx = agent_ctx;
   memset (info, 0, sizeof *info);
   rc = assuan_transact (agent_ctx, line,
-                        NULL, NULL, default_inq_cb, NULL,
+                        NULL, NULL, default_inq_cb, &dfltparm,
                         scd_genkey_cb, &parms);
 
   xfree (parms.savedbytes);
@@ -1010,155 +1289,6 @@ select_openpgp (const char *serialno)
 
 
 
-/* Helper returning a command option to describe the used hash
-   algorithm.  See scd/command.c:cmd_pksign.  */
-static const char *
-hash_algo_option (int algo)
-{
-  switch (algo)
-    {
-    case GCRY_MD_RMD160: return "--hash=rmd160";
-    case GCRY_MD_SHA1  : return "--hash=sha1";
-    case GCRY_MD_SHA224: return "--hash=sha224";
-    case GCRY_MD_SHA256: return "--hash=sha256";
-    case GCRY_MD_SHA384: return "--hash=sha384";
-    case GCRY_MD_SHA512: return "--hash=sha512";
-    case GCRY_MD_MD5   : return "--hash=md5";
-    default:             return "";
-    }
-}
-
-/* Send a sign command to the scdaemon via gpg-agent's pass thru
-   mechanism. */
-int
-agent_scd_pksign (const char *serialno, int hashalgo,
-                  const unsigned char *indata, size_t indatalen,
-                  unsigned char **r_buf, size_t *r_buflen)
-{
-  int rc, i;
-  char *p, line[ASSUAN_LINELENGTH];
-  membuf_t data;
-  size_t len;
-
-  /* Note, hashalgo is not yet used but hardwired to SHA1 in SCdaemon. */
-
-  *r_buf = NULL;
-  *r_buflen = 0;
-
-  rc = start_agent (1);
-  if (gpg_err_code (rc) == GPG_ERR_CARD_NOT_PRESENT
-      || gpg_err_code (rc) == GPG_ERR_NOT_SUPPORTED)
-    rc = 0; /* We check later.  */
-  if (rc)
-    return rc;
-
-  if (indatalen*2 + 50 > DIM(line))
-    return gpg_error (GPG_ERR_GENERAL);
-
-  rc = select_openpgp (serialno);
-  if (rc)
-    return rc;
-
-  sprintf (line, "SCD SETDATA ");
-  p = line + strlen (line);
-  for (i=0; i < indatalen ; i++, p += 2 )
-    sprintf (p, "%02X", indata[i]);
-  rc = assuan_transact (agent_ctx, line, NULL, NULL, NULL, NULL, NULL, NULL);
-  if (rc)
-    return rc;
-
-  init_membuf (&data, 1024);
-#if 0
-  if (!hashalgo) /* Temporary test hack. */
-    snprintf (line, DIM(line)-1, "SCD PKAUTH %s", serialno);
-  else
-#endif
-    snprintf (line, DIM(line)-1, "SCD PKSIGN %s %s",
-              hash_algo_option (hashalgo), serialno);
-  line[DIM(line)-1] = 0;
-  rc = assuan_transact (agent_ctx, line, membuf_data_cb, &data,
-                        default_inq_cb, NULL, NULL, NULL);
-  if (rc)
-    {
-      xfree (get_membuf (&data, &len));
-    }
-  else
-    *r_buf = get_membuf (&data, r_buflen);
-
-  status_sc_op_failure (rc);
-  return rc;
-}
-
-
-/* Decrypt INDATA of length INDATALEN using the card identified by
-   SERIALNO.  Return the plaintext in a newly allocated buffer stored
-   at the address of R_BUF.
-
-   Note, we currently support only RSA or more exactly algorithms
-   taking one input data element. */
-int
-agent_scd_pkdecrypt (const char *serialno,
-                     const unsigned char *indata, size_t indatalen,
-                     unsigned char **r_buf, size_t *r_buflen)
-{
-  int rc, i;
-  char *p, line[ASSUAN_LINELENGTH];
-  membuf_t data;
-  size_t len;
-
-  *r_buf = NULL;
-  rc = start_agent (1);
-  if (gpg_err_code (rc) == GPG_ERR_CARD_NOT_PRESENT
-      || gpg_err_code (rc) == GPG_ERR_NOT_SUPPORTED)
-    rc = 0; /* We check later.  */
-  if (rc)
-    return rc;
-
-  /* FIXME: use secure memory where appropriate */
-
-  rc = select_openpgp (serialno);
-  if (rc)
-    return rc;
-
-  for (len = 0; len < indatalen;)
-    {
-      p = stpcpy (line, "SCD SETDATA ");
-      if (len)
-        p = stpcpy (p, "--append ");
-      for (i=0; len < indatalen && (i*2 < DIM(line)-50); i++, len++)
-        {
-          sprintf (p, "%02X", indata[len]);
-          p += 2;
-        }
-      rc = assuan_transact (agent_ctx, line,
-                            NULL, NULL, NULL, NULL, NULL, NULL);
-      if (rc)
-        return rc;
-    }
-
-  init_membuf (&data, 1024);
-  snprintf (line, DIM(line)-1, "SCD PKDECRYPT %s", serialno);
-  line[DIM(line)-1] = 0;
-  rc = assuan_transact (agent_ctx, line,
-                        membuf_data_cb, &data,
-                        default_inq_cb, NULL, NULL, NULL);
-  if (rc)
-    {
-      xfree (get_membuf (&data, &len));
-    }
-  else
-    {
-      *r_buf = get_membuf (&data, r_buflen);
-      if (!*r_buf)
-        rc = gpg_error (GPG_ERR_ENOMEM);
-    }
-
-  status_sc_op_failure (rc);
-  return rc;
-}
-
-
-
 /* Send a READCERT command to the SCdaemon. */
 int
 agent_scd_readcert (const char *certidstr,
@@ -1168,19 +1298,25 @@ agent_scd_readcert (const char *certidstr,
   char line[ASSUAN_LINELENGTH];
   membuf_t data;
   size_t len;
+  struct default_inq_parm_s dfltparm;
+
+  memset (&dfltparm, 0, sizeof dfltparm);
 
   *r_buf = NULL;
-  rc = start_agent (1);
+  rc = start_agent (NULL, 1);
   if (rc)
     return rc;
+
+  dfltparm.ctx = agent_ctx;
 
   init_membuf (&data, 2048);
 
   snprintf (line, DIM(line)-1, "SCD READCERT %s", certidstr);
   line[DIM(line)-1] = 0;
   rc = assuan_transact (agent_ctx, line,
-                        membuf_data_cb, &data,
-                        default_inq_cb, NULL, NULL, NULL);
+                        put_membuf_cb, &data,
+                        default_inq_cb, &dfltparm,
+                        NULL, NULL);
   if (rc)
     {
       xfree (get_membuf (&data, &len));
@@ -1211,6 +1347,9 @@ agent_scd_change_pin (int chvno, const char *serialno)
   int rc;
   char line[ASSUAN_LINELENGTH];
   const char *reset = "";
+  struct default_inq_parm_s dfltparm;
+
+  memset (&dfltparm, 0, sizeof dfltparm);
 
   (void)serialno;
 
@@ -1218,14 +1357,17 @@ agent_scd_change_pin (int chvno, const char *serialno)
     reset = "--reset";
   chvno %= 100;
 
-  rc = start_agent (1);
+  rc = start_agent (NULL, 1);
   if (rc)
     return rc;
+  dfltparm.ctx = agent_ctx;
 
   snprintf (line, DIM(line)-1, "SCD PASSWD %s %d", reset, chvno);
   line[DIM(line)-1] = 0;
-  rc = assuan_transact (agent_ctx, line, NULL, NULL,
-                        default_inq_cb, NULL, NULL, NULL);
+  rc = assuan_transact (agent_ctx, line,
+                        NULL, NULL,
+                        default_inq_cb, &dfltparm,
+                        NULL, NULL);
   status_sc_op_failure (rc);
   return rc;
 }
@@ -1239,16 +1381,21 @@ agent_scd_checkpin  (const char *serialno)
 {
   int rc;
   char line[ASSUAN_LINELENGTH];
+  struct default_inq_parm_s dfltparm;
 
-  rc = start_agent (1);
+  memset (&dfltparm, 0, sizeof dfltparm);
+
+  rc = start_agent (NULL, 1);
   if (rc)
     return rc;
+  dfltparm.ctx = agent_ctx;
 
   snprintf (line, DIM(line)-1, "SCD CHECKPIN %s", serialno);
   line[DIM(line)-1] = 0;
   rc = assuan_transact (agent_ctx, line,
                         NULL, NULL,
-                        default_inq_cb, NULL, NULL, NULL);
+                        default_inq_cb, &dfltparm,
+                        NULL, NULL);
   status_sc_op_failure (rc);
   return rc;
 }
@@ -1284,12 +1431,16 @@ agent_get_passphrase (const char *cache_id,
   char *arg3 = NULL;
   char *arg4 = NULL;
   membuf_t data;
+  struct default_inq_parm_s dfltparm;
+
+  memset (&dfltparm, 0, sizeof dfltparm);
 
   *r_passphrase = NULL;
 
-  rc = start_agent (0);
+  rc = start_agent (NULL, 0);
   if (rc)
     return rc;
+  dfltparm.ctx = agent_ctx;
 
   /* Check that the gpg-agent understands the repeat option.  */
   if (assuan_transact (agent_ctx,
@@ -1326,8 +1477,9 @@ agent_get_passphrase (const char *cache_id,
 
   init_membuf_secure (&data, 64);
   rc = assuan_transact (agent_ctx, line,
-                        membuf_data_cb, &data,
-                        default_inq_cb, NULL, NULL, NULL);
+                        put_membuf_cb, &data,
+                        default_inq_cb, &dfltparm,
+                        NULL, NULL);
 
   if (rc)
     xfree (get_membuf (&data, NULL));
@@ -1354,18 +1506,24 @@ agent_clear_passphrase (const char *cache_id)
 {
   int rc;
   char line[ASSUAN_LINELENGTH];
+  struct default_inq_parm_s dfltparm;
+
+  memset (&dfltparm, 0, sizeof dfltparm);
 
   if (!cache_id || !*cache_id)
     return 0;
 
-  rc = start_agent (0);
+  rc = start_agent (NULL, 0);
   if (rc)
     return rc;
+  dfltparm.ctx = agent_ctx;
 
   snprintf (line, DIM(line)-1, "CLEAR_PASSPHRASE %s", cache_id);
   line[DIM(line)-1] = 0;
-  return assuan_transact (agent_ctx, line, NULL, NULL,
-                          default_inq_cb, NULL, NULL, NULL);
+  return assuan_transact (agent_ctx, line,
+                          NULL, NULL,
+                          default_inq_cb, &dfltparm,
+                          NULL, NULL);
 }
 
 
@@ -1377,10 +1535,14 @@ gpg_agent_get_confirmation (const char *desc)
   int rc;
   char *tmp;
   char line[ASSUAN_LINELENGTH];
+  struct default_inq_parm_s dfltparm;
 
-  rc = start_agent (0);
+  memset (&dfltparm, 0, sizeof dfltparm);
+
+  rc = start_agent (NULL, 0);
   if (rc)
     return rc;
+  dfltparm.ctx = agent_ctx;
 
   tmp = percent_plus_escape (desc);
   if (!tmp)
@@ -1389,8 +1551,10 @@ gpg_agent_get_confirmation (const char *desc)
   line[DIM(line)-1] = 0;
   xfree (tmp);
 
-  rc = assuan_transact (agent_ctx, line, NULL, NULL,
-                        default_inq_cb, NULL, NULL, NULL);
+  rc = assuan_transact (agent_ctx, line,
+                        NULL, NULL,
+                        default_inq_cb, &dfltparm,
+                        NULL, NULL);
   return rc;
 }
 
@@ -1405,13 +1569,13 @@ agent_get_s2k_count (unsigned long *r_count)
 
   *r_count = 0;
 
-  err = start_agent (0);
+  err = start_agent (NULL, 0);
   if (err)
     return err;
 
   init_membuf (&data, 32);
   err = assuan_transact (agent_ctx, "GETINFO s2k_count",
-                        membuf_data_cb, &data,
+                        put_membuf_cb, &data,
                         NULL, NULL, NULL, NULL);
   if (err)
     xfree (get_membuf (&data, NULL));
@@ -1430,3 +1594,858 @@ agent_get_s2k_count (unsigned long *r_count)
   return err;
 }
 
+
+
+/* Ask the agent whether a secret key for the given public key is
+   available.  Returns 0 if available.  */
+gpg_error_t
+agent_probe_secret_key (ctrl_t ctrl, PKT_public_key *pk)
+{
+  gpg_error_t err;
+  char line[ASSUAN_LINELENGTH];
+  char *hexgrip;
+
+  err = start_agent (ctrl, 0);
+  if (err)
+    return err;
+
+  err = hexkeygrip_from_pk (pk, &hexgrip);
+  if (err)
+    return err;
+
+  snprintf (line, sizeof line, "HAVEKEY %s", hexgrip);
+  xfree (hexgrip);
+
+  err = assuan_transact (agent_ctx, line, NULL, NULL, NULL, NULL, NULL, NULL);
+  return err;
+}
+
+/* Ask the agent whether a secret key is available for any of the
+   keys (primary or sub) in KEYBLOCK.  Returns 0 if available.  */
+gpg_error_t
+agent_probe_any_secret_key (ctrl_t ctrl, kbnode_t keyblock)
+{
+  gpg_error_t err;
+  char line[ASSUAN_LINELENGTH];
+  char *p;
+  kbnode_t kbctx, node;
+  int nkeys;
+  unsigned char grip[20];
+
+  err = start_agent (ctrl, 0);
+  if (err)
+    return err;
+
+  err = gpg_error (GPG_ERR_NO_SECKEY); /* Just in case no key was
+                                          found in KEYBLOCK.  */
+  p = stpcpy (line, "HAVEKEY");
+  for (kbctx=NULL, nkeys=0; (node = walk_kbnode (keyblock, &kbctx, 0)); )
+    if (node->pkt->pkttype == PKT_PUBLIC_KEY
+        || node->pkt->pkttype == PKT_PUBLIC_SUBKEY
+        || node->pkt->pkttype == PKT_SECRET_KEY
+        || node->pkt->pkttype == PKT_SECRET_SUBKEY)
+      {
+        if (nkeys && ((p - line) + 41) > (ASSUAN_LINELENGTH - 2))
+          {
+            err = assuan_transact (agent_ctx, line,
+                                   NULL, NULL, NULL, NULL, NULL, NULL);
+            if (err != gpg_err_code (GPG_ERR_NO_SECKEY))
+              break; /* Seckey available or unexpected error - ready.  */
+            p = stpcpy (line, "HAVEKEY");
+            nkeys = 0;
+          }
+
+        err = keygrip_from_pk (node->pkt->pkt.public_key, grip);
+        if (err)
+          return err;
+        *p++ = ' ';
+        bin2hex (grip, 20, p);
+        p += 40;
+        nkeys++;
+      }
+
+  if (!err && nkeys)
+    err = assuan_transact (agent_ctx, line,
+                           NULL, NULL, NULL, NULL, NULL, NULL);
+
+  return err;
+}
+
+
+
+static gpg_error_t
+keyinfo_status_cb (void *opaque, const char *line)
+{
+  char **serialno = opaque;
+  const char *s, *s2;
+
+  if ((s = has_leading_keyword (line, "KEYINFO")) && !*serialno)
+    {
+      s = strchr (s, ' ');
+      if (s && s[1] == 'T' && s[2] == ' ' && s[3])
+        {
+          s += 3;
+          s2 = strchr (s, ' ');
+          if ( s2 > s )
+            {
+              *serialno = xtrymalloc ((s2 - s)+1);
+              if (*serialno)
+                {
+                  memcpy (*serialno, s, s2 - s);
+                  (*serialno)[s2 - s] = 0;
+                }
+            }
+        }
+    }
+  return 0;
+}
+
+
+/* Return the serial number for a secret key.  If the returned serial
+   number is NULL, the key is not stored on a smartcard.  Caller needs
+   to free R_SERIALNO.  */
+gpg_error_t
+agent_get_keyinfo (ctrl_t ctrl, const char *hexkeygrip, char **r_serialno)
+{
+  gpg_error_t err;
+  char line[ASSUAN_LINELENGTH];
+  char *serialno = NULL;
+
+  *r_serialno = NULL;
+
+  err = start_agent (ctrl, 0);
+  if (err)
+    return err;
+
+  if (!hexkeygrip || strlen (hexkeygrip) != 40)
+    return gpg_error (GPG_ERR_INV_VALUE);
+
+  snprintf (line, DIM(line)-1, "KEYINFO %s", hexkeygrip);
+  line[DIM(line)-1] = 0;
+
+  err = assuan_transact (agent_ctx, line, NULL, NULL, NULL, NULL,
+                         keyinfo_status_cb, &serialno);
+  if (!err && serialno)
+    {
+      /* Sanity check for bad characters.  */
+      if (strpbrk (serialno, ":\n\r"))
+        err = GPG_ERR_INV_VALUE;
+    }
+  if (err)
+    xfree (serialno);
+  else
+    *r_serialno = serialno;
+  return err;
+}
+
+
+/* Status callback for agent_import_key, agent_export_key and
+   agent_genkey.  */
+static gpg_error_t
+cache_nonce_status_cb (void *opaque, const char *line)
+{
+  struct cache_nonce_parm_s *parm = opaque;
+  const char *s;
+
+  if ((s = has_leading_keyword (line, "CACHE_NONCE")))
+    {
+      if (parm->cache_nonce_addr)
+        {
+          xfree (*parm->cache_nonce_addr);
+          *parm->cache_nonce_addr = xtrystrdup (s);
+        }
+    }
+  else if ((s = has_leading_keyword (line, "PASSWD_NONCE")))
+    {
+      if (parm->passwd_nonce_addr)
+        {
+          xfree (*parm->passwd_nonce_addr);
+          *parm->passwd_nonce_addr = xtrystrdup (s);
+        }
+    }
+  else if ((s = has_leading_keyword (line, "PROGRESS")))
+    {
+      if (opt.enable_progress_filter)
+        write_status_text (STATUS_PROGRESS, s);
+    }
+
+  return 0;
+}
+
+
+
+/* Handle a KEYPARMS inquiry.  Note, we only send the data,
+   assuan_transact takes care of flushing and writing the end */
+static gpg_error_t
+inq_genkey_parms (void *opaque, const char *line)
+{
+  struct genkey_parm_s *parm = opaque;
+  gpg_error_t err;
+
+  if (has_leading_keyword (line, "KEYPARAM"))
+    {
+      err = assuan_send_data (parm->dflt->ctx,
+                              parm->keyparms, strlen (parm->keyparms));
+    }
+  else if (has_leading_keyword (line, "NEWPASSWD") && parm->passphrase)
+    {
+      err = assuan_send_data (parm->dflt->ctx,
+                              parm->passphrase,  strlen (parm->passphrase));
+    }
+  else
+    err = default_inq_cb (parm->dflt, line);
+
+  return err;
+}
+
+
+/* Call the agent to generate a new key.  KEYPARMS is the usual
+   S-expression giving the parameters of the key.  gpg-agent passes it
+   gcry_pk_genkey.  If NO_PROTECTION is true the agent is advised not
+   to protect the generated key.  If NO_PROTECTION is not set and
+   PASSPHRASE is not NULL the agent is requested to protect the key
+   with that passphrase instead of asking for one.  */
+gpg_error_t
+agent_genkey (ctrl_t ctrl, char **cache_nonce_addr,
+              const char *keyparms, int no_protection,
+              const char *passphrase, gcry_sexp_t *r_pubkey)
+{
+  gpg_error_t err;
+  struct genkey_parm_s gk_parm;
+  struct cache_nonce_parm_s cn_parm;
+  struct default_inq_parm_s dfltparm;
+  membuf_t data;
+  size_t len;
+  unsigned char *buf;
+  char line[ASSUAN_LINELENGTH];
+
+  memset (&dfltparm, 0, sizeof dfltparm);
+  dfltparm.ctrl = ctrl;
+
+  *r_pubkey = NULL;
+  err = start_agent (ctrl, 0);
+  if (err)
+    return err;
+  dfltparm.ctx = agent_ctx;
+
+  err = assuan_transact (agent_ctx, "RESET",
+                         NULL, NULL, NULL, NULL, NULL, NULL);
+  if (err)
+    return err;
+
+  init_membuf (&data, 1024);
+  gk_parm.dflt     = &dfltparm;
+  gk_parm.keyparms = keyparms;
+  gk_parm.passphrase = passphrase;
+  snprintf (line, sizeof line, "GENKEY%s%s%s",
+            no_protection? " --no-protection" :
+            passphrase   ? " --inq-passwd" :
+            /*          */ "",
+            cache_nonce_addr && *cache_nonce_addr? " ":"",
+            cache_nonce_addr && *cache_nonce_addr? *cache_nonce_addr:"");
+  cn_parm.cache_nonce_addr = cache_nonce_addr;
+  cn_parm.passwd_nonce_addr = NULL;
+  err = assuan_transact (agent_ctx, line,
+                         put_membuf_cb, &data,
+                         inq_genkey_parms, &gk_parm,
+                         cache_nonce_status_cb, &cn_parm);
+  if (err)
+    {
+      xfree (get_membuf (&data, &len));
+      return err;
+    }
+
+  buf = get_membuf (&data, &len);
+  if (!buf)
+    err = gpg_error_from_syserror ();
+  else
+    {
+      err = gcry_sexp_sscan (r_pubkey, NULL, buf, len);
+      xfree (buf);
+    }
+  return err;
+}
+
+
+
+/* Call the agent to read the public key part for a given keygrip.  If
+   FROMCARD is true, the key is directly read from the current
+   smartcard. In this case HEXKEYGRIP should be the keyID
+   (e.g. OPENPGP.3). */
+gpg_error_t
+agent_readkey (ctrl_t ctrl, int fromcard, const char *hexkeygrip,
+               unsigned char **r_pubkey)
+{
+  gpg_error_t err;
+  membuf_t data;
+  size_t len;
+  unsigned char *buf;
+  char line[ASSUAN_LINELENGTH];
+  struct default_inq_parm_s dfltparm;
+
+  memset (&dfltparm, 0, sizeof dfltparm);
+  dfltparm.ctrl = ctrl;
+
+  *r_pubkey = NULL;
+  err = start_agent (ctrl, 0);
+  if (err)
+    return err;
+  dfltparm.ctx = agent_ctx;
+
+  err = assuan_transact (agent_ctx, "RESET",NULL, NULL, NULL, NULL, NULL, NULL);
+  if (err)
+    return err;
+
+  snprintf (line, DIM(line)-1, "%sREADKEY %s", fromcard? "SCD ":"", hexkeygrip);
+
+  init_membuf (&data, 1024);
+  err = assuan_transact (agent_ctx, line,
+                         put_membuf_cb, &data,
+                         default_inq_cb, &dfltparm,
+                         NULL, NULL);
+  if (err)
+    {
+      xfree (get_membuf (&data, &len));
+      return err;
+    }
+  buf = get_membuf (&data, &len);
+  if (!buf)
+    return gpg_error_from_syserror ();
+  if (!gcry_sexp_canon_len (buf, len, NULL, NULL))
+    {
+      xfree (buf);
+      return gpg_error (GPG_ERR_INV_SEXP);
+    }
+  *r_pubkey = buf;
+  return 0;
+}
+
+
+
+/* Call the agent to do a sign operation using the key identified by
+   the hex string KEYGRIP.  DESC is a description of the key to be
+   displayed if the agent needs to ask for the PIN.  DIGEST and
+   DIGESTLEN is the hash value to sign and DIGESTALGO the algorithm id
+   used to compute the digest.  If CACHE_NONCE is used the agent is
+   advised to first try a passphrase associated with that nonce. */
+gpg_error_t
+agent_pksign (ctrl_t ctrl, const char *cache_nonce,
+              const char *keygrip, const char *desc,
+              u32 *keyid, u32 *mainkeyid, int pubkey_algo,
+              unsigned char *digest, size_t digestlen, int digestalgo,
+              gcry_sexp_t *r_sigval)
+{
+  gpg_error_t err;
+  char line[ASSUAN_LINELENGTH];
+  membuf_t data;
+  struct default_inq_parm_s dfltparm;
+
+  memset (&dfltparm, 0, sizeof dfltparm);
+  dfltparm.ctrl = ctrl;
+  dfltparm.keyinfo.keyid       = keyid;
+  dfltparm.keyinfo.mainkeyid   = mainkeyid;
+  dfltparm.keyinfo.pubkey_algo = pubkey_algo;
+
+  *r_sigval = NULL;
+  err = start_agent (ctrl, 0);
+  if (err)
+    return err;
+  dfltparm.ctx = agent_ctx;
+
+  if (digestlen*2 + 50 > DIM(line))
+    return gpg_error (GPG_ERR_GENERAL);
+
+  err = assuan_transact (agent_ctx, "RESET",
+                         NULL, NULL, NULL, NULL, NULL, NULL);
+  if (err)
+    return err;
+
+  snprintf (line, DIM(line)-1, "SIGKEY %s", keygrip);
+  line[DIM(line)-1] = 0;
+  err = assuan_transact (agent_ctx, line, NULL, NULL, NULL, NULL, NULL, NULL);
+  if (err)
+    return err;
+
+  if (desc)
+    {
+      snprintf (line, DIM(line)-1, "SETKEYDESC %s", desc);
+      line[DIM(line)-1] = 0;
+      err = assuan_transact (agent_ctx, line,
+                            NULL, NULL, NULL, NULL, NULL, NULL);
+      if (err)
+        return err;
+    }
+
+  snprintf (line, sizeof line, "SETHASH %d ", digestalgo);
+  bin2hex (digest, digestlen, line + strlen (line));
+  err = assuan_transact (agent_ctx, line, NULL, NULL, NULL, NULL, NULL, NULL);
+  if (err)
+    return err;
+
+  init_membuf (&data, 1024);
+
+  snprintf (line, sizeof line, "PKSIGN%s%s",
+            cache_nonce? " -- ":"",
+            cache_nonce? cache_nonce:"");
+  err = assuan_transact (agent_ctx, line,
+                         put_membuf_cb, &data,
+                         default_inq_cb, &dfltparm,
+                         NULL, NULL);
+  if (err)
+    xfree (get_membuf (&data, NULL));
+  else
+    {
+      unsigned char *buf;
+      size_t len;
+
+      buf = get_membuf (&data, &len);
+      if (!buf)
+        err = gpg_error_from_syserror ();
+      else
+        {
+          err = gcry_sexp_sscan (r_sigval, NULL, buf, len);
+          xfree (buf);
+        }
+    }
+  return err;
+}
+
+
+
+/* Handle a CIPHERTEXT inquiry.  Note, we only send the data,
+   assuan_transact takes care of flushing and writing the END. */
+static gpg_error_t
+inq_ciphertext_cb (void *opaque, const char *line)
+{
+  struct cipher_parm_s *parm = opaque;
+  int rc;
+
+  if (has_leading_keyword (line, "CIPHERTEXT"))
+    {
+      assuan_begin_confidential (parm->ctx);
+      rc = assuan_send_data (parm->dflt->ctx,
+                             parm->ciphertext, parm->ciphertextlen);
+      assuan_end_confidential (parm->ctx);
+    }
+  else
+    rc = default_inq_cb (parm->dflt, line);
+
+  return rc;
+}
+
+
+/* Check whether there is any padding info from the agent.  */
+static gpg_error_t
+padding_info_cb (void *opaque, const char *line)
+{
+  int *r_padding = opaque;
+  const char *s;
+
+  if ((s=has_leading_keyword (line, "PADDING")))
+    {
+      *r_padding = atoi (s);
+    }
+
+  return 0;
+}
+
+
+/* Call the agent to do a decrypt operation using the key identified
+   by the hex string KEYGRIP and the input data S_CIPHERTEXT.  On the
+   success the decoded value is stored verbatim at R_BUF and its
+   length at R_BUF; the callers needs to release it.  KEYID, MAINKEYID
+   and PUBKEY_ALGO are used to construct additional promots or status
+   messages.   The padding information is stored at R_PADDING with -1
+   for not known.  */
+gpg_error_t
+agent_pkdecrypt (ctrl_t ctrl, const char *keygrip, const char *desc,
+                 u32 *keyid, u32 *mainkeyid, int pubkey_algo,
+                 gcry_sexp_t s_ciphertext,
+                 unsigned char **r_buf, size_t *r_buflen, int *r_padding)
+{
+  gpg_error_t err;
+  char line[ASSUAN_LINELENGTH];
+  membuf_t data;
+  size_t n, len;
+  char *p, *buf, *endp;
+  struct default_inq_parm_s dfltparm;
+
+  memset (&dfltparm, 0, sizeof dfltparm);
+  dfltparm.ctrl = ctrl;
+  dfltparm.keyinfo.keyid       = keyid;
+  dfltparm.keyinfo.mainkeyid   = mainkeyid;
+  dfltparm.keyinfo.pubkey_algo = pubkey_algo;
+
+  if (!keygrip || strlen(keygrip) != 40
+      || !s_ciphertext || !r_buf || !r_buflen || !r_padding)
+    return gpg_error (GPG_ERR_INV_VALUE);
+
+  *r_buf = NULL;
+  *r_padding = -1;
+
+  err = start_agent (ctrl, 0);
+  if (err)
+    return err;
+  dfltparm.ctx = agent_ctx;
+
+  err = assuan_transact (agent_ctx, "RESET",
+                         NULL, NULL, NULL, NULL, NULL, NULL);
+  if (err)
+    return err;
+
+  snprintf (line, sizeof line, "SETKEY %s", keygrip);
+  err = assuan_transact (agent_ctx, line, NULL, NULL, NULL, NULL, NULL, NULL);
+  if (err)
+    return err;
+
+  if (desc)
+    {
+      snprintf (line, DIM(line)-1, "SETKEYDESC %s", desc);
+      line[DIM(line)-1] = 0;
+      err = assuan_transact (agent_ctx, line,
+                            NULL, NULL, NULL, NULL, NULL, NULL);
+      if (err)
+        return err;
+    }
+
+  init_membuf_secure (&data, 1024);
+  {
+    struct cipher_parm_s parm;
+
+    parm.dflt = &dfltparm;
+    parm.ctx = agent_ctx;
+    err = make_canon_sexp (s_ciphertext, &parm.ciphertext, &parm.ciphertextlen);
+    if (err)
+      return err;
+    err = assuan_transact (agent_ctx, "PKDECRYPT",
+                           put_membuf_cb, &data,
+                           inq_ciphertext_cb, &parm,
+                           padding_info_cb, r_padding);
+    xfree (parm.ciphertext);
+  }
+  if (err)
+    {
+      xfree (get_membuf (&data, &len));
+      return err;
+    }
+
+  put_membuf (&data, "", 1); /* Make sure it is 0 terminated.  */
+  buf = get_membuf (&data, &len);
+  if (!buf)
+    return gpg_error_from_syserror ();
+  assert (len); /* (we forced Nul termination.)  */
+
+  if (*buf != '(')
+    {
+      xfree (buf);
+      return gpg_error (GPG_ERR_INV_SEXP);
+    }
+
+  if (len < 13 || memcmp (buf, "(5:value", 8) ) /* "(5:valueN:D)\0" */
+    {
+      xfree (buf);
+      return gpg_error (GPG_ERR_INV_SEXP);
+    }
+  len -= 10;   /* Count only the data of the second part. */
+  p = buf + 8; /* Skip leading parenthesis and the value tag. */
+
+  n = strtoul (p, &endp, 10);
+  if (!n || *endp != ':')
+    {
+      xfree (buf);
+      return gpg_error (GPG_ERR_INV_SEXP);
+    }
+  endp++;
+  if (endp-p+n > len)
+    {
+      xfree (buf);
+      return gpg_error (GPG_ERR_INV_SEXP); /* Oops: Inconsistent S-Exp. */
+    }
+
+  memmove (buf, endp, n);
+
+  *r_buflen = n;
+  *r_buf = buf;
+  return 0;
+}
+
+
+
+/* Retrieve a key encryption key from the agent.  With FOREXPORT true
+   the key shall be used for export, with false for import.  On success
+   the new key is stored at R_KEY and its length at R_KEKLEN.  */
+gpg_error_t
+agent_keywrap_key (ctrl_t ctrl, int forexport, void **r_kek, size_t *r_keklen)
+{
+  gpg_error_t err;
+  membuf_t data;
+  size_t len;
+  unsigned char *buf;
+  char line[ASSUAN_LINELENGTH];
+  struct default_inq_parm_s dfltparm;
+
+  memset (&dfltparm, 0, sizeof dfltparm);
+  dfltparm.ctrl = ctrl;
+
+  *r_kek = NULL;
+  err = start_agent (ctrl, 0);
+  if (err)
+    return err;
+  dfltparm.ctx = agent_ctx;
+
+  snprintf (line, DIM(line)-1, "KEYWRAP_KEY %s",
+            forexport? "--export":"--import");
+
+  init_membuf_secure (&data, 64);
+  err = assuan_transact (agent_ctx, line,
+                         put_membuf_cb, &data,
+                         default_inq_cb, &dfltparm,
+                         NULL, NULL);
+  if (err)
+    {
+      xfree (get_membuf (&data, &len));
+      return err;
+    }
+  buf = get_membuf (&data, &len);
+  if (!buf)
+    return gpg_error_from_syserror ();
+  *r_kek = buf;
+  *r_keklen = len;
+  return 0;
+}
+
+
+
+/* Handle the inquiry for an IMPORT_KEY command.  */
+static gpg_error_t
+inq_import_key_parms (void *opaque, const char *line)
+{
+  struct import_key_parm_s *parm = opaque;
+  gpg_error_t err;
+
+  if (has_leading_keyword (line, "KEYDATA"))
+    {
+      err = assuan_send_data (parm->dflt->ctx, parm->key, parm->keylen);
+    }
+  else
+    err = default_inq_cb (parm->dflt, line);
+
+  return err;
+}
+
+
+/* Call the agent to import a key into the agent.  */
+gpg_error_t
+agent_import_key (ctrl_t ctrl, const char *desc, char **cache_nonce_addr,
+                  const void *key, size_t keylen, int unattended, int force)
+{
+  gpg_error_t err;
+  struct import_key_parm_s parm;
+  struct cache_nonce_parm_s cn_parm;
+  char line[ASSUAN_LINELENGTH];
+  struct default_inq_parm_s dfltparm;
+
+  memset (&dfltparm, 0, sizeof dfltparm);
+  dfltparm.ctrl = ctrl;
+
+  err = start_agent (ctrl, 0);
+  if (err)
+    return err;
+  dfltparm.ctx = agent_ctx;
+
+  if (desc)
+    {
+      snprintf (line, DIM(line)-1, "SETKEYDESC %s", desc);
+      line[DIM(line)-1] = 0;
+      err = assuan_transact (agent_ctx, line,
+                            NULL, NULL, NULL, NULL, NULL, NULL);
+      if (err)
+        return err;
+    }
+
+  parm.dflt   = &dfltparm;
+  parm.key    = key;
+  parm.keylen = keylen;
+
+  snprintf (line, sizeof line, "IMPORT_KEY%s%s%s%s",
+            unattended? " --unattended":"",
+            force? " --force":"",
+            cache_nonce_addr && *cache_nonce_addr? " ":"",
+            cache_nonce_addr && *cache_nonce_addr? *cache_nonce_addr:"");
+  cn_parm.cache_nonce_addr = cache_nonce_addr;
+  cn_parm.passwd_nonce_addr = NULL;
+  err = assuan_transact (agent_ctx, line,
+                         NULL, NULL,
+                         inq_import_key_parms, &parm,
+                         cache_nonce_status_cb, &cn_parm);
+  return err;
+}
+
+
+
+/* Receive a secret key from the agent.  HEXKEYGRIP is the hexified
+   keygrip, DESC a prompt to be displayed with the agent's passphrase
+   question (needs to be plus+percent escaped).  If CACHE_NONCE_ADDR
+   is not NULL the agent is advised to first try a passphrase
+   associated with that nonce.  On success the key is stored as a
+   canonical S-expression at R_RESULT and R_RESULTLEN.  */
+gpg_error_t
+agent_export_key (ctrl_t ctrl, const char *hexkeygrip, const char *desc,
+                  char **cache_nonce_addr,
+                  unsigned char **r_result, size_t *r_resultlen)
+{
+  gpg_error_t err;
+  struct cache_nonce_parm_s cn_parm;
+  membuf_t data;
+  size_t len;
+  unsigned char *buf;
+  char line[ASSUAN_LINELENGTH];
+  struct default_inq_parm_s dfltparm;
+
+  memset (&dfltparm, 0, sizeof dfltparm);
+  dfltparm.ctrl = ctrl;
+
+  *r_result = NULL;
+
+  err = start_agent (ctrl, 0);
+  if (err)
+    return err;
+  dfltparm.ctx = agent_ctx;
+
+  if (desc)
+    {
+      snprintf (line, DIM(line)-1, "SETKEYDESC %s", desc);
+      err = assuan_transact (agent_ctx, line,
+                             NULL, NULL, NULL, NULL, NULL, NULL);
+      if (err)
+        return err;
+    }
+
+  snprintf (line, DIM(line)-1, "EXPORT_KEY --openpgp %s%s %s",
+            cache_nonce_addr && *cache_nonce_addr? "--cache-nonce=":"",
+            cache_nonce_addr && *cache_nonce_addr? *cache_nonce_addr:"",
+            hexkeygrip);
+
+  init_membuf_secure (&data, 1024);
+  cn_parm.cache_nonce_addr = cache_nonce_addr;
+  cn_parm.passwd_nonce_addr = NULL;
+  err = assuan_transact (agent_ctx, line,
+                         put_membuf_cb, &data,
+                         default_inq_cb, &dfltparm,
+                         cache_nonce_status_cb, &cn_parm);
+  if (err)
+    {
+      xfree (get_membuf (&data, &len));
+      return err;
+    }
+  buf = get_membuf (&data, &len);
+  if (!buf)
+    return gpg_error_from_syserror ();
+  *r_result = buf;
+  *r_resultlen = len;
+  return 0;
+}
+
+
+
+/* Ask the agent to delete the key identified by HEXKEYGRIP.  If DESC
+   is not NULL, display DESC instead of the default description
+   message.  */
+gpg_error_t
+agent_delete_key (ctrl_t ctrl, const char *hexkeygrip, const char *desc)
+{
+  gpg_error_t err;
+  char line[ASSUAN_LINELENGTH];
+  struct default_inq_parm_s dfltparm;
+
+  memset (&dfltparm, 0, sizeof dfltparm);
+  dfltparm.ctrl = ctrl;
+
+  err = start_agent (ctrl, 0);
+  if (err)
+    return err;
+
+  if (!hexkeygrip || strlen (hexkeygrip) != 40)
+    return gpg_error (GPG_ERR_INV_VALUE);
+
+  if (desc)
+    {
+      snprintf (line, DIM(line)-1, "SETKEYDESC %s", desc);
+      err = assuan_transact (agent_ctx, line,
+                             NULL, NULL, NULL, NULL, NULL, NULL);
+      if (err)
+        return err;
+    }
+
+  snprintf (line, DIM(line)-1, "DELETE_KEY %s", hexkeygrip);
+  err = assuan_transact (agent_ctx, line, NULL, NULL,
+                         default_inq_cb, &dfltparm,
+                         NULL, NULL);
+  return err;
+}
+
+
+
+/* Ask the agent to change the passphrase of the key identified by
+   HEXKEYGRIP.  If DESC is not NULL, display DESC instead of the
+   default description message.  If CACHE_NONCE_ADDR is not NULL the
+   agent is advised to first try a passphrase associated with that
+   nonce.  If PASSWD_NONCE_ADDR is not NULL the agent will try to use
+   the passphrase associated with that nonce.  */
+gpg_error_t
+agent_passwd (ctrl_t ctrl, const char *hexkeygrip, const char *desc,
+              char **cache_nonce_addr, char **passwd_nonce_addr)
+{
+  gpg_error_t err;
+  struct cache_nonce_parm_s cn_parm;
+  char line[ASSUAN_LINELENGTH];
+  struct default_inq_parm_s dfltparm;
+
+  memset (&dfltparm, 0, sizeof dfltparm);
+  dfltparm.ctrl = ctrl;
+
+  err = start_agent (ctrl, 0);
+  if (err)
+    return err;
+  dfltparm.ctx = agent_ctx;
+
+  if (!hexkeygrip || strlen (hexkeygrip) != 40)
+    return gpg_error (GPG_ERR_INV_VALUE);
+
+
+  if (desc)
+    {
+      snprintf (line, DIM(line)-1, "SETKEYDESC %s", desc);
+      err = assuan_transact (agent_ctx, line,
+                             NULL, NULL, NULL, NULL, NULL, NULL);
+      if (err)
+        return err;
+    }
+
+  snprintf (line, DIM(line)-1, "PASSWD %s%s %s%s %s",
+            cache_nonce_addr && *cache_nonce_addr? "--cache-nonce=":"",
+            cache_nonce_addr && *cache_nonce_addr? *cache_nonce_addr:"",
+            passwd_nonce_addr && *passwd_nonce_addr? "--passwd-nonce=":"",
+            passwd_nonce_addr && *passwd_nonce_addr? *passwd_nonce_addr:"",
+            hexkeygrip);
+  cn_parm.cache_nonce_addr = cache_nonce_addr;
+  cn_parm.passwd_nonce_addr = passwd_nonce_addr;
+  err = assuan_transact (agent_ctx, line, NULL, NULL,
+                         default_inq_cb, &dfltparm,
+                         cache_nonce_status_cb, &cn_parm);
+  return err;
+}
+
+/* Return the version reported by gpg-agent.  */
+gpg_error_t
+agent_get_version (ctrl_t ctrl, char **r_version)
+{
+  gpg_error_t err;
+
+  err = start_agent (ctrl, 0);
+  if (err)
+    return err;
+
+  err = get_assuan_server_version (agent_ctx, 0, r_version);
+  return err;
+}

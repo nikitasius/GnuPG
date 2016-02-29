@@ -3,10 +3,7 @@
 @c This is part of the GnuPG manual.
 @c For copying conditions, see the file gnupg.texi.
 
-@c Note that we use this texinfo file for all versions of GnuPG: 1.4.x,
-@c 2.0 and 2.1.  The macro "gpgone" controls parts which are only valid
-@c for GnuPG 1.4, the macro "gpgtwoone" controls parts which are only
-@c valid for GnupG 2.1 and later.
+@include defs.inc
 
 @node Invoking GPG
 @chapter Invoking GPG
@@ -14,33 +11,6 @@
 @cindex command options
 @cindex options, GPG command
 
-@c Begin GnuPG 1.x specific stuff
-@ifset gpgone
-@macro gpgname
-gpg
-@end macro
-@manpage gpg.1
-@ifset manverb
-.B gpg
-\- OpenPGP encryption and signing tool
-@end ifset
-
-@mansect synopsis
-@ifset manverb
-.B  gpg
-.RB [ \-\-homedir
-.IR dir ]
-.RB [ \-\-options
-.IR file ]
-.RI [ options ]
-.I command
-.RI [ args ]
-@end ifset
-@end ifset
-@c End GnuPG 1.x specific stuff
-
-@c Begin GnuPG 2 specific stuff
-@ifclear gpgone
 @macro gpgname
 gpg2
 @end macro
@@ -61,8 +31,7 @@ gpg2
 .I command
 .RI [ args ]
 @end ifset
-@end ifclear
-@c Begin GnuPG 2 specific stuff
+
 
 @mansect description
 @command{@gpgname} is the OpenPGP part of the GNU Privacy Guard (GnuPG). It
@@ -71,28 +40,17 @@ OpenPGP standard. @command{@gpgname} features complete key management and
 all bells and whistles you can expect from a decent OpenPGP
 implementation.
 
-@ifset gpgone
-This is the standalone version of @command{gpg}.  For desktop use you
-should consider using @command{gpg2} @footnote{On some platforms gpg2 is
-installed under the name @command{gpg}}.
-@end ifset
-
-@ifclear gpgone
-In contrast to the standalone version @command{gpg}, which is more
-suited for server and embedded platforms, this version is commonly
-installed under the name @command{gpg2} and more targeted to the desktop
-as it requires several other modules to be installed.  The standalone
-version will be kept maintained and it is possible to install both
-versions on the same system.  If you need to use different configuration
-files, you should make use of something like @file{gpg.conf-2} instead
-of just @file{gpg.conf}.
-@end ifclear
+In contrast to the standalone command gpg from GnuPG 1.x, which is
+might be better suited for server and embedded platforms, the 2.x
+version is commonly installed under the name @command{gpg2} and
+targeted to the desktop as it requires several other modules to be
+installed.
 
 @manpause
-@ifclear gpgone
-Documentation for the old standard @command{gpg} is available as a man
-page and at @inforef{Top,GnuPG 1,gpg}.
-@end ifclear
+The old 1.x version will be kept maintained and it is possible to
+install both versions on the same system.  Documentation for the old
+GnuPG 1.x command is available as a man page and at
+@inforef{Top,GnuPG 1,gpg}.
 
 @xref{Option Index}, for an index to @command{@gpgname}'s commands and options.
 @mancont
@@ -217,7 +175,7 @@ decrypted via a secret key or a passphrase).
 @itemx -c
 @opindex symmetric
 Encrypt with a symmetric cipher using a passphrase. The default
-symmetric cipher used is CAST5, but may be chosen with the
+symmetric cipher used is @value{GPGSYMENCALGO}, but may be chosen with the
 @option{--cipher-algo} option. This option may be combined with
 @option{--sign} (for a signed and symmetrically encrypted message),
 @option{--encrypt} (for a message that may be decrypted via a secret key
@@ -227,7 +185,7 @@ passphrase).
 
 @item --store
 @opindex store
-Store only (make a simple RFC1991 literal data packet).
+Store only (make a simple literal data packet).
 
 @item --decrypt
 @itemx -d
@@ -241,16 +199,22 @@ files which don't begin with an encrypted message.
 
 @item --verify
 @opindex verify
-Assume that the first argument is a signed file or a detached signature
-and verify it without generating any output. With no arguments, the
-signature packet is read from STDIN. If only a sigfile is given, it may
-be a complete signature or a detached signature, in which case the
-signed stuff is expected in a file without the ".sig" or ".asc"
-extension.  With more than 1 argument, the first should be a detached
-signature and the remaining files are the signed stuff. To read the
-signed stuff from STDIN, use @samp{-} as the second filename.  For
-security reasons a detached signature cannot read the signed material
-from STDIN without denoting it in the above way.
+Assume that the first argument is a signed file and verify it without
+generating any output.  With no arguments, the signature packet is
+read from STDIN.  If only a one argument is given, it is expected to
+be a complete signature.
+
+With more than 1 argument, the first should be a detached signature
+and the remaining files ake up the the signed data. To read the signed
+data from STDIN, use @samp{-} as the second filename.  For security
+reasons a detached signature cannot read the signed material from
+STDIN without denoting it in the above way.
+
+Note: If the option @option{--batch} is not used, @command{@gpgname}
+may assume that a single argument is a file with a detached signature
+and it will try to find a matching data file by stripping certain
+suffixes.  Using this historical feature to verify a detached
+signature is strongly discouraged; always specify the data file too.
 
 Note: When verifying a cleartext signature, @command{gpg} verifies
 only what makes up the cleartext signed data and not any extra data
@@ -287,12 +251,6 @@ Identical to @option{--multifile --decrypt}.
 @opindex list-keys
 List all keys from the public keyrings, or just the keys given on the
 command line.
-@ifset gpgone
-@option{-k} is slightly different from @option{--list-keys} in that it
-allows only for one argument and takes the second argument as the
-keyring to search.  This is for command line compatibility with PGP 2
-and has been removed in @command{gpg2}.
-@end ifset
 
 Avoid using the output of this command in scripts or other programs as
 it is likely to change as GnuPG changes. See @option{--with-colons} for a
@@ -310,10 +268,8 @@ secret key is not usable (for example, if it was created via
 @item --list-sigs
 @opindex list-sigs
 Same as @option{--list-keys}, but the signatures are listed too.
-@ifclear gpgone
 This command has the same effect as
 using @option{--list-keys} with @option{--with-sig-list}.
-@end ifclear
 
 For each signature listed, there are several flags in between the "sig"
 tag and keyid. These flags give additional information about each
@@ -333,10 +289,8 @@ command "tsign").
 Same as @option{--list-sigs}, but the signatures are verified.  Note
 that for performance reasons the revocation status of a signing key is
 not shown.
-@ifclear gpgone
 This command has the same effect as
 using @option{--list-keys} with @option{--with-sig-check}.
-@end ifclear
 
 The status of the verification is indicated by a flag directly following
 the "sig" tag (and thus before the flags described above for
@@ -345,7 +299,6 @@ successfully verified, a "-" denotes a bad signature and a "%" is used
 if an error occurred while checking the signature (e.g. a non supported
 algorithm).
 
-@ifclear gpgone
 @item --locate-keys
 @opindex locate-keys
 Locate the keys given as arguments.  This command basically uses the
@@ -353,8 +306,6 @@ same algorithm as used when locating keys for encryption or signing and
 may thus be used to see what keys @command{@gpgname} might use.  In
 particular external methods as defined by @option{--auto-key-locate} may
 be used to locate a key.  Only public keys are listed.
-@end ifclear
-
 
 @item --fingerprint
 @opindex fingerprint
@@ -367,8 +318,9 @@ listed too.
 
 @item --list-packets
 @opindex list-packets
-List only the sequence of packets. This is mainly
-useful for debugging.
+List only the sequence of packets. This is mainly useful for
+debugging.  When used with option @option{--verbose} the actual MPI
+values are dumped and not only their lengths.
 
 
 @item --card-edit
@@ -388,14 +340,14 @@ Present a menu to allow changing the PIN of a smartcard. This
 functionality is also available as the subcommand "passwd" with the
 @option{--card-edit} command.
 
-@item --delete-key @code{name}
-@opindex delete-key
+@item --delete-keys @code{name}
+@itemx --delete-keys @code{name}
 Remove key from the public keyring. In batch mode either @option{--yes} is
 required or the key must be specified by fingerprint. This is a
 safeguard against accidental deletion of multiple keys.
 
-@item --delete-secret-key @code{name}
-@opindex delete-secret-key
+@item --delete-secret-keys @code{name}
+@opindex delete-secret-keys
 Remove key from the secret keyring. In batch mode the key
 must be specified by fingerprint.
 
@@ -440,15 +392,22 @@ an additional signing subkey on a dedicated machine and then using
 this command to export the key without the primary key to the main
 machine.
 
-@ifset gpgtwoone
 GnuPG may ask you to enter the passphrase for the key.  This is
 required because the internal protection method of the secret key is
 different from the one specified by the OpenPGP protocol.
-@end ifset
-@ifclear gpgtwoone
-See the option @option{--simple-sk-checksum} if you want to import an
-exported secret key into ancient OpenPGP implementations.
-@end ifclear
+
+@item --export-ssh-key
+@opindex export-ssh-key
+This command is used to export a key in the OpenSSH public key format.
+It requires the specification of one key by the usual means and
+exports the latest valid subkey which has an authentication capability
+to STDOUT or to the file given with option @option{--output}.  That
+output can directly be added to ssh's @file{authorized_key} file.
+
+By specifying the key to export using a key ID or a fingerprint
+suffixed with an exclamation mark (!), a specific subkey or the
+primary key can be exported.  This does not even require that the key
+has the authentication capability flag set.
 
 @item --import
 @itemx --fast-import
@@ -579,6 +538,18 @@ Use the source, Luke :-). The output format is still subject to change.
 Pack or unpack an arbitrary input into/from an OpenPGP ASCII armor.
 This is a GnuPG extension to OpenPGP and in general not very useful.
 
+@item --tofu-set-policy @code{auto|good|unknown|bad|ask}  @code{key...}
+@opindex tofu-set-policy
+Set the TOFU policy for all the bindings associated with the specified
+keys.  For more information about the meaning of the policies,
+@pxref{trust-model-tofu}.  The keys may be specified either by their
+fingerprint (preferred) or their keyid.
+
+@c @item --server
+@c @opindex server
+@c Run gpg in server mode.  This feature is not yet ready for use and
+@c thus not documented.
+
 @end table
 
 
@@ -592,19 +563,57 @@ This section explains the main commands for key management
 
 @table @gnupgtabopt
 
+@item --quick-gen-key @code{user-id}
+@opindex quick-gen-key
+This is a simple command to generate a standard key with one user id.
+In contrast to @option{--gen-key} the key is generated directly
+without the need to answer a bunch of prompts.  Unless the option
+@option{--yes} is given, the key creation will be canceled if the
+given user id already exists in the key ring.
+
+If invoked directly on the console without any special options an
+answer to a ``Continue?'' style confirmation prompt is required.  In
+case the user id already exists in the key ring a second prompt to
+force the creation of the key will show up.
+
+If this command is used with @option{--batch},
+@option{--pinentry-mode} has been set to @code{loopback}, and one of
+the passphrase options (@option{--passphrase},
+@option{--passphrase-fd}, or @option{passphrase-file}) is used, the
+supplied passphrase is used for the new key and the agent does not ask
+for it.  To create a key without any protection @code{--passphrase ''}
+may be used.
+
 @item --gen-key
 @opindex gen-key
-Generate a new key pair. This command is normally only used
-interactively.
+Generate a new key pair using the current default parameters.  This is
+the standard command to create a new key.  In addition to the key a
+revocation certificate is created and stored in the
+@file{openpgp-revocs.d} directory below the GnuPG home directory.
 
-There is an experimental feature which allows you to create keys in
-batch mode. See the file @file{doc/DETAILS} in the source distribution
-on how to use this.
+@item --full-gen-key
+@opindex gen-key
+Generate a new key pair with dialogs for all options.  This is an
+extended version of @option{--gen-key}.
+
+There is also a feature which allows you to create keys in batch
+mode. See the manual section ``Unattended key generation'' on how
+to use this.
 
 @item --gen-revoke @code{name}
 @opindex gen-revoke
-Generate a revocation certificate for the complete key. To revoke
-a subkey or a signature, use the @option{--edit} command.
+Generate a revocation certificate for the complete key.  To only revoke
+a subkey or a key signature, use the @option{--edit} command.
+
+This command merely creates the revocation certificate so that it can
+be used to revoke the key if that is ever needed.  To actually revoke
+a key the created revocation certificate needs to be merged with the
+key to revoke.  This is done by importing the revocation certificate
+using the @option{--import} command.  Then the revoked key needs to be
+published, which is best done by sending the key to a keyserver
+(command @option{--send-key}) and by exporting (@option{--export}) it
+to a file which is then send to frequent communication partners.
+
 
 @item --desig-revoke @code{name}
 @opindex desig-revoke
@@ -629,7 +638,7 @@ line.
 
   @item key @code{n}
   @opindex keyedit:key
-  Toggle selection of subkey with index @code{n}.
+  Toggle selection of subkey with index @code{n} or key ID @code{n}.
   Use @code{*} to select all and @code{0} to deselect all.
 
   @item sign
@@ -666,6 +675,10 @@ and "t" (for trust) may be freely mixed and prefixed to "sign" to
 create a signature of any type desired.
 @c man:.RE
 
+If the option @option{--only-sign-text-ids} is specified, then any
+non-text based user ids (e.g., photo IDs) will not be selected for
+signing.
+
 @table @asis
 
   @item delsig
@@ -682,7 +695,8 @@ create a signature of any type desired.
 
   @item check
   @opindex keyedit:check
-  Check the signatures on all selected user IDs.
+  Check the signatures on all selected user IDs.  With the extra
+  option @code{selfsig} only self-signatures are shown.
 
   @item adduid
   @opindex keyedit:adduid
@@ -802,7 +816,7 @@ create a signature of any type desired.
 
   @item delkey
   @opindex keyedit:delkey
-  Remove a subkey (secondart key). Note that it is not possible to retract
+  Remove a subkey (secondary key). Note that it is not possible to retract
   a subkey, once it has been send to the public (i.e. to a keyserver).  In
   that case you better use @code{revkey}.
 
@@ -840,7 +854,7 @@ create a signature of any type desired.
 
   @item toggle
   @opindex keyedit:toggle
-  Toggle between public and secret key listing.
+  This is dummy command which exists only for backward compatibility.
 
   @item clean
   @opindex keyedit:clean
@@ -922,9 +936,8 @@ Signs a public key with your secret key but marks it as
 non-exportable. This is a shortcut version of the subcommand "lsign"
 from @option{--edit-key}.
 
-@ifset gpgtwoone
 @item --quick-sign-key @code{fpr} [@code{names}]
-@itemx --quick-lsign-key @code{name}
+@itemx --quick-lsign-key @code{fpr} [@code{names}]
 @opindex quick-sign-key
 @opindex quick-lsign-key
 Directly sign a key from the passphrase without any further user
@@ -932,21 +945,28 @@ interaction.  The @code{fpr} must be the verified primary fingerprint
 of a key in the local keyring. If no @code{names} are given, all
 useful user ids are signed; with given [@code{names}] only useful user
 ids matching one of theses names are signed.  The command
-@option{--quick-lsign-key} marks the signatures as non-exportable.
+@option{--quick-lsign-key} marks the signatures as non-exportable.  If
+such a non-exportable signature already exists the
+@option{--quick-sign-key} turns it into a exportable signature.
 
 This command uses reasonable defaults and thus does not provide the
 full flexibility of the "sign" subcommand from @option{--edit-key}.
-Its intended use to help unattended signing using a list of verified
-fingerprints.
-@end ifset
+Its intended use is to help unattended key signing by utilizing a list
+of verified fingerprints.
 
-@ifclear gpgone
+@item --quick-adduid  @var{user-id} @var{new-user-id}
+@opindex quick-adduid
+This command adds a new user id to an existing key.  In contrast to
+the interactive sub-command @code{adduid} of @option{--edit-key} the
+@var{new-user-id} is added verbatim with only leading and trailing
+white space removed, it is expected to be UTF-8 encoded, and no checks
+on its form are applied.
+
 @item --passwd @var{user_id}
 @opindex passwd
 Change the passphrase of the secret key belonging to the certificate
 specified as @var{user_id}.  This is a shortcut for the sub-command
 @code{passwd} of the edit key menu.
-@end ifclear
 
 @end table
 
@@ -1002,6 +1022,10 @@ in the option file.
 Use @var{name} as the default key to sign with. If this option is not
 used, the default key is the first key found in the secret keyring.
 Note that @option{-u} or @option{--local-user} overrides this option.
+This option may be given multiple times.  In this case, the last key
+for which a secret key is available is used.  If there is no secret
+key available for any of the specified values, GnuPG will not emit an
+error message but continue as if this option wasn't given.
 
 @item --default-recipient @var{name}
 @opindex default-recipient
@@ -1079,6 +1103,13 @@ give the opposite meaning.  The options are:
   see @option{--attribute-fd} for the appropriate way to get photo data
   for scripts and other frontends.
 
+  @item show-usage
+  @opindex list-options:show-usage
+  Show usage information for keys and subkeys in the standard key
+  listing.  This is a list of letters indicating the allowed usage for a
+  key (@code{E}=encryption, @code{S}=signing, @code{C}=certification,
+  @code{A}=authentication).  Defaults to yes.
+
   @item show-policy-urls
   @opindex list-options:show-policy-urls
   Show policy URLs in the @option{--list-sigs} or @option{--check-sigs}
@@ -1101,7 +1132,7 @@ give the opposite meaning.  The options are:
   @item show-uid-validity
   @opindex list-options:show-uid-validity
   Display the calculated validity of user IDs during key listings.
-  Defaults to no.
+  Defaults to yes.
 
   @item show-unusable-uids
   @opindex list-options:show-unusable-uids
@@ -1146,7 +1177,7 @@ the opposite meaning. The options are:
 
   @item show-policy-urls
   @opindex verify-options:show-policy-urls
-  Show policy URLs in the signature being verified. Defaults to no.
+  Show policy URLs in the signature being verified. Defaults to yes.
 
   @item show-notations
   @itemx show-std-notations
@@ -1160,12 +1191,12 @@ the opposite meaning. The options are:
   @item show-keyserver-urls
   @opindex verify-options:show-keyserver-urls
   Show any preferred keyserver URL in the signature being verified.
-  Defaults to no.
+  Defaults to yes.
 
   @item show-uid-validity
   @opindex verify-options:show-uid-validity
   Display the calculated validity of the user IDs on the key that issued
-  the signature. Defaults to no.
+  the signature. Defaults to yes.
 
   @item show-unusable-uids
   @opindex verify-options:show-unusable-uids
@@ -1251,7 +1282,8 @@ use the specified keyring alone, use @option{--keyring} along with
 
 @item --secret-keyring @code{file}
 @opindex secret-keyring
-Same as @option{--keyring} but for the secret keyrings.
+This is an obsolete option and ignored.  All secret keys are stored in
+the @file{private-keys-v1.d} directory below the GnuPG home directory.
 
 @item --primary-keyring @code{file}
 @opindex primary-keyring
@@ -1267,40 +1299,8 @@ the filename does not contain a slash, it is assumed to be in the GnuPG
 home directory (@file{~/.gnupg} if @option{--homedir} or $GNUPGHOME is
 not used).
 
-@ifset gpgone
-@anchor{option --homedir}
-@end ifset
 @include opt-homedir.texi
 
-
-@ifset gpgone
-@item --pcsc-driver @code{file}
-@opindex pcsc-driver
-Use @code{file} to access the smartcard reader. The current default is
-`libpcsclite.so.1' for GLIBC based systems,
-`/System/Library/Frameworks/PCSC.framework/PCSC' for MAC OS X,
-`winscard.dll' for Windows and `libpcsclite.so' for other systems.
-@end ifset
-
-@ifset gpgone
-@item --disable-ccid
-@opindex disable-ccid
-Disable the integrated support for CCID compliant readers. This
-allows to fall back to one of the other drivers even if the internal
-CCID driver can handle the reader. Note, that CCID support is only
-available if libusb was available at build time.
-@end ifset
-
-@ifset gpgone
-@item --reader-port @code{number_or_string}
-@opindex reader-port
-This option may be used to specify the port of the card terminal. A
-value of 0 refers to the first serial device; add 32768 to access USB
-devices. The default is 32768 (first USB device). PC/SC or CCID
-readers might need a string here; run the program in verbose mode to get
-a list of available readers. The default is then the first reader
-found.
-@end ifset
 
 @item --display-charset @code{name}
 @opindex display-charset
@@ -1447,7 +1447,7 @@ don't want to keep your secret keys (or one of them)
 online but still want to be able to check the validity of a given
 recipient's or signator's key.
 
-@item --trust-model @code{pgp|classic|direct|always|auto}
+@item --trust-model @code{pgp|classic|tofu|tofu+pgp|direct|always|auto}
 @opindex trust-model
 Set what trust model GnuPG should follow. The models are:
 
@@ -1461,7 +1461,66 @@ Set what trust model GnuPG should follow. The models are:
 
   @item classic
   @opindex trust-mode:classic
-  This is the standard Web of Trust as used in PGP 2.x and earlier.
+  This is the standard Web of Trust as introduced by PGP 2.
+
+  @item tofu
+  @opindex trust-mode:tofu
+  @anchor{trust-model-tofu}
+  TOFU stands for Trust On First Use.  In this trust model, the first
+  time a key is seen, it is memorized.  If later another key is seen
+  with a user id with the same email address, a warning is displayed
+  indicating that there is a conflict and that the key might be a
+  forgery and an attempt at a man-in-the-middle attack.
+
+  Because a potential attacker is able to control the email address
+  and thereby circumvent the conflict detection algorithm by using an
+  email address that is similar in appearance to a trusted email
+  address, whenever a message is verified, statistics about the number
+  of messages signed with the key are shown.  In this way, a user can
+  easily identify attacks using fake keys for regular correspondents.
+
+  When compared with the Web of Trust, TOFU offers significantly
+  weaker security guarantees.  In particular, TOFU only helps ensure
+  consistency (that is, that the binding between a key and email
+  address doesn't change).  A major advantage of TOFU is that it
+  requires little maintenance to use correctly.  To use the web of
+  trust properly, you need to actively sign keys and mark users as
+  trusted introducers.  This is a time-consuming process and anecdotal
+  evidence suggests that even security-conscious users rarely take the
+  time to do this thoroughly and instead rely on an ad-hoc TOFU
+  process.
+
+  In the TOFU model, policies are associated with bindings between
+  keys and email addresses (which are extracted from user ids and
+  normalized).  There are five policies, which can be set manually
+  using the @option{--tofu-policy} option.  The default policy can be
+  set using the @option{--tofu-default-policy} policy.
+
+  The TOFU policies are: @code{auto}, @code{good}, @code{unknown},
+  @code{bad} and @code{ask}.  The @code{auto} policy is used by
+  default (unless overridden by @option{--tofu-default-policy}) and
+  marks a binding as marginally trusted.  The @code{good},
+  @code{unknown} and @code{bad} policies mark a binding as fully
+  trusted, as having unknown trust or as having trust never,
+  respectively.  The @code{unknown} policy is useful for just using
+  TOFU to detect conflicts, but to never assign positive trust to a
+  binding.  The final policy, @code{ask} prompts the user to indicate
+  the binding's trust.  If batch mode is enabled (or input is
+  inappropriate in the context), then the user is not prompted and the
+  @code{undefined} trust level is returned.
+
+  @item tofu+pgp
+  @opindex trust-mode:tofu+pgp
+  This trust model combines TOFU with the Web of Trust.  This is done
+  by computing the trust level for each model and then taking the
+  maximum trust level where the trust levels are ordered as follows:
+  @code{unknown < undefined < marginal < fully < ultimate < expired <
+  never}.
+
+  By setting @option{--tofu-default-policy=unknown}, this model can be
+  used to implement the web of trust with TOFU's conflict detection
+  algorithm, but without its assignment of positive trust values,
+  which some security-conscious users don't like.
 
   @item direct
   @opindex trust-mode:direct
@@ -1471,7 +1530,7 @@ Set what trust model GnuPG should follow. The models are:
   @item always
   @opindex trust-mode:always
   Skip key validation and assume that used keys are always fully
-  trusted. You generally won't use this unless you are using some
+  valid. You generally won't use this unless you are using some
   external validation scheme. This option also suppresses the
   "[uncertain]" tag printed with signature checks when there is no
   evidence that the user ID is bound to the key.  Note that this
@@ -1501,6 +1560,10 @@ mechanisms, in the order they are to be tried:
 
   @item pka
   Locate a key using DNS PKA.
+
+  @item dane
+  Locate a key using DANE, as specified
+  in draft-ietf-dane-openpgpkey-05.txt.
 
   @item ldap
   Using DNS Service Discovery, check the domain in question for any LDAP
@@ -1543,6 +1606,9 @@ ignored if the option --with-colons is used.
 
 @item --keyserver @code{name}
 @opindex keyserver
+This option is deprecated - please use the @option{--keyserver} in
+@file{dirmngr.conf} instead.
+
 Use @code{name} as your keyserver. This is the server that
 @option{--recv-keys}, @option{--send-keys}, and @option{--search-keys}
 will communicate with to receive keys from, send keys to, and search for
@@ -1561,7 +1627,7 @@ need to send keys to more than one server. The keyserver
 @code{hkp://keys.gnupg.net} uses round robin DNS to give a different
 keyserver each time you use it.
 
-@item --keyserver-options @code{name=value1 }
+@item --keyserver-options @code{name=value}
 @opindex keyserver-options
 This is a space or comma delimited string that gives options for the
 keyserver. Options can be prefixed with a `no-' to give the opposite
@@ -1602,32 +1668,19 @@ are available for all keyserver types, some common options are:
   keyserver URL, then use that preferred keyserver to refresh the key
   from. In addition, if auto-key-retrieve is set, and the signature
   being verified has a preferred keyserver URL, then use that preferred
-  keyserver to fetch the key from. Defaults to yes.
+  keyserver to fetch the key from. Note that this option introduces a
+  "web bug": The creator of the key can see when the keys is
+  refreshed.  Thus this option is not enabled by default.
 
   @item honor-pka-record
   If auto-key-retrieve is set, and the signature being verified has a
   PKA record, then use the PKA information to fetch the key. Defaults
-  to yes.
+  to "yes".
 
   @item include-subkeys
   When receiving a key, include subkeys as potential targets. Note that
   this option is not used with HKP keyservers, as they do not support
   retrieving keys by subkey id.
-
-  @item use-temp-files
-  On most Unix-like platforms, GnuPG communicates with the keyserver
-  helper program via pipes, which is the most efficient method. This
-  option forces GnuPG to use temporary files to communicate. On some
-  platforms (such as Win32 and RISC OS), this option is always enabled.
-
-  @item keep-temp-files
-  If using `use-temp-files', do not delete the temp files after using
-  them. This option is useful to learn the keyserver communication
-  protocol by reading the temporary files.
-
-  @item verbose
-  Tell the keyserver helper program to be more verbose. This option can
-  be repeated multiple times to increase the verbosity level.
 
   @item timeout
   Tell the keyserver helper program how long (in seconds) to try and
@@ -1638,45 +1691,25 @@ are available for all keyserver types, some common options are:
   @option{--recv-keys} command as a whole. Defaults to 30 seconds.
 
   @item http-proxy=@code{value}
-  Set the proxy to use for HTTP and HKP keyservers.  This overrides the
-  "http_proxy" environment variable, if any.
+  This options is deprecated.
+  Set the proxy to use for HTTP and HKP keyservers.
+  This overrides any proxy defined in @file{dirmngr.conf}.
 
-
-@ifclear gpgtwoone
-  @item max-cert-size
-  When retrieving a key via DNS CERT, only accept keys up to this size.
-  Defaults to 16384 bytes.
-@end ifclear
+  @item verbose
+  This option has no more function since GnuPG 2.1.  Use the
+  @code{dirmngr} configuration options instead.
 
   @item debug
-  Turn on debug output in the keyserver helper program.  Note that the
-  details of debug output depends on which keyserver helper program is
-  being used, and in turn, on any libraries that the keyserver helper
-  program uses internally (libcurl, openldap, etc).
+  This option has no more function since GnuPG 2.1.  Use the
+  @code{dirmngr} configuration options instead.
 
   @item check-cert
-@ifset gpgtwoone
   This option has no more function since GnuPG 2.1.  Use the
   @code{dirmngr} configuration options instead.
-@end ifset
-@ifclear gpgtwoone
-  Enable certificate checking if the keyserver presents one (for hkps or
-  ldaps).  Defaults to on.
-@end ifclear
 
   @item ca-cert-file
-@ifset gpgtwoone
   This option has no more function since GnuPG 2.1.  Use the
   @code{dirmngr} configuration options instead.
-@end ifset
-@ifclear gpgtwoone
-  Provide a certificate store to override the system default.  Only
-  necessary if check-cert is enabled, and the keyserver is using a
-  certificate that is not present in a system default certificate list.
-
-  Note that depending on the SSL library that the keyserver helper is
-  built with, this may actually be a directory or a file.
-@end ifclear
 
 @end table
 
@@ -1690,23 +1723,33 @@ key signer (defaults to 1).
 Number of marginally trusted users to introduce a new
 key signer (defaults to 3)
 
+@item --tofu-default-policy @code{auto|good|unknown|bad|ask}
+@opindex tofu-default-policy
+The default TOFU policy (defaults to @code{auto}).  For more
+information about the meaning of this option, @xref{trust-model-tofu}.
+
+@item --tofu-db-format @code{auto|split|flat}
+@opindex tofu-default-policy
+The format for the TOFU DB.
+
+The split file format splits the data across many DBs under the
+@code{tofu.d} directory (one per email address and one per key).  This
+makes it easier to automatically synchronize the data using a tool
+such as Unison (@url{https://www.cis.upenn.edu/~bcpierce/unison/}),
+since the individual files change rarely.
+
+The flat file format keeps all of the data in the single file
+@code{tofu.db}.  This format results in better performance.
+
+If set to auto (which is the default), GnuPG will first check for the
+existence of @code{tofu.d} and @code{tofu.db}.  If one of these
+exists, the corresponding format is used.  If neither or both of these
+exist, then GnuPG defaults to the @code{split} format.  In the latter
+case, a warning is emitted.
+
 @item --max-cert-depth @code{n}
 @opindex max-cert-depth
 Maximum depth of a certification chain (default is 5).
-
-@ifclear gpgtwoone
-@item --simple-sk-checksum
-@opindex simple-sk-checksum
-Secret keys are integrity protected by using a SHA-1 checksum. This
-method is part of the upcoming enhanced OpenPGP specification but
-GnuPG already uses it as a countermeasure against certain attacks.
-Old applications don't understand this new format, so this option may
-be used to switch back to the old behaviour. Using this option bears
-a security risk. Note that using this option only takes effect when
-the secret key is encrypted - the simplest way to make this happen is
-to change the passphrase on the key (even changing it to the same
-value is acceptable).
-@end ifclear
 
 @item --no-sig-cache
 @opindex no-sig-cache
@@ -1716,10 +1759,6 @@ you suspect that your public keyring is not save against write
 modifications, you can use this option to disable the caching. It
 probably does not make sense to disable it because all kind of damage
 can be done if someone else has write access to your public keyring.
-
-@item --no-sig-create-check
-@opindex no-sig-create-check
-This option is obsolete.  It has no function.
 
 @item --auto-check-trustdb
 @itemx --no-auto-check-trustdb
@@ -1732,45 +1771,35 @@ process. @option{--no-auto-check-trustdb} disables this option.
 @item --use-agent
 @itemx --no-use-agent
 @opindex use-agent
-@ifclear gpgone
 This is dummy option. @command{@gpgname} always requires the agent.
-@end ifclear
-@ifset gpgone
-Try to use the GnuPG-Agent.  With this option, GnuPG first tries to
-connect to the agent before it asks for a
-passphrase. @option{--no-use-agent} disables this option.
-@end ifset
 
 @item --gpg-agent-info
 @opindex gpg-agent-info
-@ifclear gpgone
 This is dummy option. It has no effect when used with @command{gpg2}.
-@end ifclear
-@ifset gpgone
-Override the value of the environment variable
-@samp{GPG_AGENT_INFO}. This is only used when @option{--use-agent} has
-been given.  Given that this option is not anymore used by
-@command{gpg2}, it should be avoided if possible.
-@end ifset
 
 
-@ifclear gpgone
 @item --agent-program @var{file}
 @opindex agent-program
 Specify an agent program to be used for secret key operations.  The
-default value is the @file{/usr/bin/gpg-agent}.  This is only used
-as a fallback when the environment variable @code{GPG_AGENT_INFO} is not
-set or a running agent cannot be connected.
-@end ifclear
+default value is determined by running @command{gpgconf} with the
+option @option{--list-dirs}.  Note that the pipe symbol (@code{|}) is
+used for a regression test suite hack and may thus not be used in the
+file name.
 
-@ifset gpgtwoone
 @item --dirmngr-program @var{file}
 @opindex dirmngr-program
 Specify a dirmngr program to be used for keyserver access.  The
-default value is @file{/usr/sbin/dirmngr}.  This is only used as a
+default value is @file{@value{BINDIR}/dirmngr}.  This is only used as a
 fallback when the environment variable @code{DIRMNGR_INFO} is not set or
 a running dirmngr cannot be connected.
-@end ifset
+
+@item --no-autostart
+@opindex no-autostart
+Do not start the gpg-agent or the dirmngr if it has not yet been
+started and its service is required.  This option is mostly useful on
+machines where the connection to gpg-agent has been redirected to
+another machines.  If dirmngr is required on the remote machine, it
+may be started manually using @command{gpgconf --launch dirmngr}.
 
 @item --lock-once
 @opindex lock-once
@@ -1916,6 +1945,11 @@ recipients given either by use of @option{--recipient} or by the asked user id.
 No trust checking is performed for these user ids and even disabled
 keys can be used.
 
+@item --encrypt-to-default-key
+@opindex encrypt-to-default-key
+If the default secret key is taken from @option{--default-key}, then
+also encrypt to that key.
+
 @item --no-encrypt-to
 @opindex no-encrypt-to
 Disable the use of all @option{--encrypt-to} and
@@ -1951,7 +1985,6 @@ Remove all entries from the @option{--group} list.
 Use @var{name} as the key to sign with. Note that this option overrides
 @option{--default-key}.
 
-@ifset gpgtwoone
 @item --try-secret-key @var{name}
 @opindex try-secret-key
 For hidden recipients GPG needs to know the keys to use for trial
@@ -1963,7 +1996,6 @@ the long keyid to avoid ambiguities.  Note that gpg-agent might pop up a
 pinentry for a lot keys to do the trial decryption.  If you want to stop
 all further trial decryption you may use close-window button instead of
 the cancel button.
-@end ifset
 
 @item --try-all-secrets
 @opindex try-all-secrets
@@ -1981,7 +2013,7 @@ During decryption skip all anonymous recipients.  This option helps in
 the case that people use the hidden recipients feature to hide there
 own encrypt-to key from others.  If oneself has many secret keys this
 may lead to a major annoyance because all keys are tried in turn to
-decrypt soemthing which was not really intended for it.  The drawback
+decrypt something which was not really intended for it.  The drawback
 of this option is that it is currently not possible to decrypt a
 message which includes real anonymous recipients.
 
@@ -2034,7 +2066,7 @@ opposite meaning. The options are:
   generally useful unless a shared keyring scheme is being used.
   Defaults to no.
 
-  @item import-keep-ownertrust
+  @item keep-ownertrust
   Normally possible still existing ownertrust values of a key are
   cleared if a key is imported.  This is in general desirable so that
   a formerly deleted key does not automatically gain an ownertrust
@@ -2094,15 +2126,13 @@ opposite meaning. The options are:
 
   @c Since GnuPG 2.1 gpg-agent manages the secret key and thus the
   @c export-reset-subkey-passwd hack is not anymore justified.  Such use
-  @c cases need to be implemented using a specialized secret key export
+  @c cases may be implemented using a specialized secret key export
   @c tool.
-@ifclear gpgtwoone
-  @item export-reset-subkey-passwd
-  When using the @option{--export-secret-subkeys} command, this option resets
-  the passphrases for all exported subkeys to empty. This is useful
-  when the exported subkey is to be used on an unattended machine where
-  a passphrase doesn't necessarily make sense. Defaults to no.
-@end ifclear
+  @c @item export-reset-subkey-passwd
+  @c When using the @option{--export-secret-subkeys} command, this option resets
+  @c the passphrases for all exported subkeys to empty. This is useful
+  @c when the exported subkey is to be used on an unattended machine where
+  @c a passphrase doesn't necessarily make sense. Defaults to no.
 
   @item export-clean
   Compact (remove all signatures from) user IDs on the key being
@@ -2129,30 +2159,43 @@ as it is easily machine parsed. The details of this format are
 documented in the file @file{doc/DETAILS}, which is included in the GnuPG
 source distribution.
 
+
+@item --print-pka-records
+@opindex print-pka-records
+Modify the output of the list commands to print PKA records suitable
+to put into DNS zone files.  An ORIGIN line is printed before each
+record to allow diverting the records to the corresponding zone file.
+
+@item --print-dane-records
+@opindex print-dane-records
+Modify the output of the list commands to print OpenPGP DANE records
+suitable to put into DNS zone files.  An ORIGIN line is printed before
+each record to allow diverting the records to the corresponding zone
+file.
+
 @item --fixed-list-mode
 @opindex fixed-list-mode
 Do not merge primary user ID and primary key in @option{--with-colon}
 listing mode and print all timestamps as seconds since 1970-01-01.
-@ifclear gpgone
 Since GnuPG 2.0.10, this mode is always used and thus this option is
 obsolete; it does not harm to use it though.
-@end ifclear
 
-@ifset gpgtwoone
 @item --legacy-list-mode
 @opindex legacy-list-mode
 Revert to the pre-2.1 public key list mode.  This only affects the
 human readable output and not the machine interface
 (i.e. @code{--with-colons}).  Note that the legacy format does not
 allow to convey suitable information for elliptic curves.
-@end ifset
 
 @item --with-fingerprint
 @opindex with-fingerprint
 Same as the command @option{--fingerprint} but changes only the format
 of the output and may be used together with another command.
 
-@ifset gpgtwoone
+@item --with-icao-spelling
+@opindex with-icao-spelling
+Print the ICAO spelling of the fingerprint in addition to the hex digits.
+
 @item --with-keygrip
 @opindex with-keygrip
 Include the keygrip in the key listings.
@@ -2161,8 +2204,6 @@ Include the keygrip in the key listings.
 @opindex with-secret
 Include info about the presence of a secret key in public key listings
 done with @code{--with-colons}.
-
-@end ifset
 
 @end table
 
@@ -2186,32 +2227,11 @@ platforms that have different line ending conventions (UNIX-like to Mac,
 Mac to Windows, etc). @option{--no-textmode} disables this option, and
 is the default.
 
-@ifset gpgone
-If @option{-t} (but not @option{--textmode}) is used together with
-armoring and signing, this enables clearsigned messages. This kludge is
-needed for command-line compatibility with command-line versions of PGP;
-normally you would use @option{--sign} or @option{--clearsign} to select
-the type of the signature.
-@end ifset
-
 @item --force-v3-sigs
 @itemx --no-force-v3-sigs
-@opindex force-v3-sigs
-OpenPGP states that an implementation should generate v4 signatures
-but PGP versions 5 through 7 only recognize v4 signatures on key
-material. This option forces v3 signatures for signatures on data.
-Note that this option implies @option{--no-ask-sig-expire}, and unsets
-@option{--sig-policy-url}, @option{--sig-notation}, and
-@option{--sig-keyserver-url}, as these features cannot be used with v3
-signatures.  @option{--no-force-v3-sigs} disables this option.
-Defaults to no.
-
 @item --force-v4-certs
 @itemx --no-force-v4-certs
-@opindex force-v4-certs
-Always use v4 key signatures even on v3 keys. This option also
-changes the default hash algorithm for v3 RSA keys from MD5 to SHA-1.
-@option{--no-force-v4-certs} disables this option.
+These options are obsolete and have no effect since GnuPG 2.1.
 
 @item --force-mdc
 @opindex force-mdc
@@ -2260,32 +2280,32 @@ to consider (e.g. @option{--symmetric}).
 
 @item --s2k-cipher-algo @code{name}
 @opindex s2k-cipher-algo
-Use @code{name} as the cipher algorithm used to protect secret keys.
-The default cipher is CAST5. This cipher is also used for symmetric
-encryption with a passphrase if @option{--personal-cipher-preferences}
-and @option{--cipher-algo} is not given.
+Use @code{name} as the cipher algorithm for symmetric encryption with
+a passphrase if @option{--personal-cipher-preferences} and
+@option{--cipher-algo} are not given.  The default is @value{GPGSYMENCALGO}.
 
 @item --s2k-digest-algo @code{name}
 @opindex s2k-digest-algo
-Use @code{name} as the digest algorithm used to mangle the passphrases.
-The default algorithm is SHA-1.
+Use @code{name} as the digest algorithm used to mangle the passphrases
+for symmetric encryption.  The default is SHA-1.
 
 @item --s2k-mode @code{n}
 @opindex s2k-mode
-Selects how passphrases are mangled. If @code{n} is 0 a plain
-passphrase (which is not recommended) will be used, a 1 adds a salt to
-the passphrase and a 3 (the default) iterates the whole process a
-number of times (see --s2k-count).  Unless @option{--rfc1991} is used,
-this mode is also used for symmetric encryption with a passphrase.
+Selects how passphrases for symmetric encryption are mangled. If
+@code{n} is 0 a plain passphrase (which is in general not recommended)
+will be used, a 1 adds a salt (which should not be used) to the
+passphrase and a 3 (the default) iterates the whole process a number
+of times (see @option{--s2k-count}).
 
 @item --s2k-count @code{n}
 @opindex s2k-count
-Specify how many times the passphrase mangling is repeated.  This
-value may range between 1024 and 65011712 inclusive.  The default is
-inquired from gpg-agent.  Note that not all values in the
-1024-65011712 range are legal and if an illegal value is selected,
-GnuPG will round up to the nearest legal value.  This option is only
-meaningful if @option{--s2k-mode} is 3.
+Specify how many times the passphrases mangling for symmetric
+encryption is repeated.  This value may range between 1024 and
+65011712 inclusive.  The default is inquired from gpg-agent.  Note
+that not all values in the 1024-65011712 range are legal and if an
+illegal value is selected, GnuPG will round up to the nearest legal
+value.  This option is only meaningful if @option{--s2k-mode} is set
+to the default of 3.
 
 
 @end table
@@ -2331,31 +2351,6 @@ behavior. Note that this is currently the same thing as
 Reset all packet, cipher and digest options to strict RFC-2440
 behavior.
 
-@item --rfc1991
-@opindex rfc1991
-Try to be more RFC-1991 (PGP 2.x) compliant.
-
-@item --pgp2
-@opindex pgp2
-Set up all options to be as PGP 2.x compliant as possible, and warn if
-an action is taken (e.g. encrypting to a non-RSA key) that will create
-a message that PGP 2.x will not be able to handle. Note that `PGP
-2.x' here means `MIT PGP 2.6.2'. There are other versions of PGP 2.x
-available, but the MIT release is a good common baseline.
-
-This option implies
-@ifset gpgone
-@option{--rfc1991 --disable-mdc --no-force-v4-certs
---escape-from-lines --force-v3-sigs
---cipher-algo IDEA --digest-algo MD5 --compress-algo ZIP}.
-@end ifset
-@ifclear gpgone
-@option{--rfc1991 --disable-mdc --no-force-v4-certs
---escape-from-lines --force-v3-sigs --allow-weak-digest-algos
---cipher-algo IDEA --digest-algo MD5 --compress-algo ZIP}.
-@end ifclear
-It also disables @option{--textmode} when encrypting.
-
 @item --pgp6
 @opindex pgp6
 Set up all options to be as PGP 6 compliant as possible. This
@@ -2365,8 +2360,7 @@ compression algorithms none and ZIP. This also disables
 --throw-keyids, and making signatures with signing subkeys as PGP 6
 does not understand signatures made by signing subkeys.
 
-This option implies @option{--disable-mdc --escape-from-lines
---force-v3-sigs}.
+This option implies @option{--disable-mdc --escape-from-lines}.
 
 @item --pgp7
 @opindex pgp7
@@ -2441,19 +2435,19 @@ however carefully selected to best aid in debugging.
 
 @item --debug @var{flags}
 @opindex debug
-Set debugging flags. All flags are or-ed and @var{flags} may
-be given in C syntax (e.g. 0x0042).
+Set debugging flags. All flags are or-ed and @var{flags} may be given
+in C syntax (e.g. 0x0042) or as a comma separated list of flag names.
+To get a list of all supported flags the single word "help" can be
+used.
 
 @item --debug-all
 @opindex debug-all
 Set all useful debugging flags.
 
-@ifset gpgone
-@item --debug-ccid-driver
-@opindex debug-ccid-driver
-Enable debug output from the included CCID driver for smartcards.
-Note that this option is only available on some system.
-@end ifset
+@item --debug-iolbf
+@opindex debug-iolbf
+Set stdout into line buffered mode.  This option is only honored when
+given on the command line.
 
 @item --faked-system-time @var{epoch}
 @opindex faked-system-time
@@ -2581,7 +2575,8 @@ The same %-expandos used for notation data are available here as well.
 @opindex set-filename
 Use @code{string} as the filename which is stored inside messages.
 This overrides the default, which is to use the actual filename of the
-file being encrypted.
+file being encrypted.  Using the empty string for @var{string}
+effectively removes the filename from the output.
 
 @item --for-your-eyes-only
 @itemx --no-for-your-eyes-only
@@ -2704,10 +2699,9 @@ Read the passphrase from file descriptor @code{n}. Only the first line
 will be read from file descriptor @code{n}. If you use 0 for @code{n},
 the passphrase will be read from STDIN. This can only be used if only
 one passphrase is supplied.
-@ifclear gpgone
+
 Note that this passphrase is only used if the option @option{--batch}
-has also been given.  This is different from @command{gpg}.
-@end ifclear
+has also been given.  This is different from GnuPG version 1.x.
 
 @item --passphrase-file @code{file}
 @opindex passphrase-file
@@ -2716,10 +2710,8 @@ be read from file @code{file}. This can only be used if only one
 passphrase is supplied. Obviously, a passphrase stored in a file is
 of questionable security if other users can read this file. Don't use
 this option if you can avoid it.
-@ifclear gpgone
 Note that this passphrase is only used if the option @option{--batch}
-has also been given.  This is different from @command{gpg}.
-@end ifclear
+has also been given.  This is different from GnuPG version 1.x.
 
 @item --passphrase @code{string}
 @opindex passphrase
@@ -2727,12 +2719,9 @@ Use @code{string} as the passphrase. This can only be used if only one
 passphrase is supplied. Obviously, this is of very questionable
 security on a multi-user system. Don't use this option if you can
 avoid it.
-@ifclear gpgone
 Note that this passphrase is only used if the option @option{--batch}
-has also been given.  This is different from @command{gpg}.
-@end ifclear
+has also been given.  This is different from GnuPG version 1.x.
 
-@ifset gpgtwoone
 @item --pinentry-mode @code{mode}
 @opindex pinentry-mode
 Set the pinentry mode to @code{mode}.  Allowed values for @code{mode}
@@ -2750,7 +2739,6 @@ are:
   Redirect Pinentry queries to the caller.  Note that in contrast to
   Pinentry the user is not prompted again if he enters a bad password.
 @end table
-@end ifset
 
 @item --command-fd @code{n}
 @opindex command-fd
@@ -2810,13 +2798,22 @@ necessary to get as much data as possible out of the corrupt message.
 However, be aware that a MDC protection failure may also mean that the
 message was tampered with intentionally by an attacker.
 
-@ifclear gpgone
 @item --allow-weak-digest-algos
 @opindex allow-weak-digest-algos
-Signatures made with the broken MD5 algorithm are normally rejected
-with an ``invalid digest algorithm'' message.  This option allows the
-verification of signatures made with such weak algorithms.
-@end ifclear
+Signatures made with known-weak digest algorithms are normally
+rejected with an ``invalid digest algorithm'' message.  This option
+allows the verification of signatures made with such weak algorithms.
+MD5 is the only digest algorithm considered weak by default.  See also
+@option{--weak-digest} to reject other digest algorithms.
+
+@item --weak-digest @code{name}
+@opindex weak-digest
+Treat the specified digest algorithm as weak.  Signatures made over
+weak digests algorithms are normally rejected. This option can be
+supplied multiple times if multiple algorithms should be considered
+weak.  See also @option{--allow-weak-digest-algos} to disable
+rejection of weak digests.  MD5 is always considered weak, and does
+not need to be listed explicitly.
 
 @item --no-default-keyring
 @opindex no-default-keyring
@@ -2862,8 +2859,13 @@ Display the session key used for one message. See
 We think that Key Escrow is a Bad Thing; however the user should have
 the freedom to decide whether to go to prison or to reveal the content
 of one specific message without compromising all messages ever
-encrypted for one secret key. DON'T USE IT UNLESS YOU ARE REALLY
-FORCED TO DO SO.
+encrypted for one secret key.
+
+You can also use this option if you receive an encrypted message which
+is abusive or offensive, to prove to the administrators of the
+messaging system that the ciphertext transmitted corresponds to an
+inappropriate plaintext so they can take action against the offending
+user.
 
 @item --override-session-key @code{string}
 @opindex override-session-key
@@ -2959,6 +2961,10 @@ source distribution for the details of which configuration items may be
 listed. @option{--list-config} is only usable with
 @option{--with-colons} set.
 
+@item --list-gcrypt-config
+@opindex list-gcrypt-config
+Display various internal configuration parameters of Libgcrypt.
+
 @item --gpgconf-list
 @opindex gpgconf-list
 This command is similar to @option{--list-config} but in general only
@@ -2981,15 +2987,6 @@ on the configuration file.
 
 @table @gnupgtabopt
 
-@ifset gpgone
-@item --load-extension @code{name}
-@opindex load-extension
-Load an extension module. If @code{name} does not contain a slash it is
-searched for in the directory configured when GnuPG was built
-(generally "/usr/local/lib/gnupg"). Extensions are not generally
-useful anymore, and the use of this option is deprecated.
-@end ifset
-
 @item --show-photos
 @itemx --no-show-photos
 @opindex show-photos
@@ -3005,14 +3002,6 @@ any. See also @option{--photo-viewer}. These options are deprecated. Use
 Display the keyring name at the head of key listings to show which
 keyring a given key resides on. This option is deprecated: use
 @option{--list-options [no-]show-keyring} instead.
-
-@ifset gpgone
-@item --ctapi-driver @code{file}
-@opindex ctapi-driver
-Use @code{file} to access the smartcard reader. The current default
-is `libtowitoko.so'. Note that the use of this interface is
-deprecated; it may be removed in future releases.
-@end ifset
 
 @item --always-trust
 @opindex always-trust
@@ -3066,16 +3055,14 @@ current home directory (@pxref{option --homedir}).
 
 @c man:.RE
 Note that on larger installations, it is useful to put predefined files
-into the directory @file{/etc/skel/.gnupg/} so that newly created users
-start up with a working configuration.
-@ifclear gpgone
-For existing users the a small
+into the directory @file{@value{SYSCONFSKELDIR}} so that
+newly created users start up with a working configuration.
+For existing users a small
 helper script is provided to create these files (@pxref{addgnupghome}).
-@end ifclear
 
 For internal purposes @command{@gpgname} creates and maintains a few other
 files; They all live in in the current home directory (@pxref{option
---homedir}).  Only the @command{@gpgname} may modify these files.
+--homedir}).  Only the @command{@gpgname} program may modify these files.
 
 
 @table @file
@@ -3085,26 +3072,19 @@ files; They all live in in the current home directory (@pxref{option
   @item ~/.gnupg/pubring.gpg.lock
   The lock file for the public keyring.
 
-@ifset gpgtwoone
   @item ~/.gnupg/pubring.kbx
   The public keyring using a different format.  This file is sharred
   with @command{gpgsm}.  You should backup this file.
 
   @item ~/.gnupg/pubring.kbx.lock
   The lock file for @file{pubring.kbx}.
-@end ifset
 
   @item ~/.gnupg/secring.gpg
-@ifclear gpgtwoone
-  The secret keyring.  You should backup this file.
-@end ifclear
-@ifset gpgtwoone
   A secret keyring as used by GnuPG versions before 2.1.  It is not
   used by GnuPG 2.1 and later.
 
   @item ~/.gnupg/.gpg-v21-migrated
-  File indicating that a migration to GnuPG 2.1 has taken place.
-@end ifset
+  File indicating that a migration to GnuPG 2.1 has been done.
 
   @item ~/.gnupg/trustdb.gpg
   The trust database.  There is no need to backup this file; it is better
@@ -3119,10 +3099,20 @@ files; They all live in in the current home directory (@pxref{option
   @item ~/.gnupg/secring.gpg.lock
   The lock file for the secret keyring.
 
-  @item /usr[/local]/share/gnupg/options.skel
+  @item ~/.gnupg/openpgp-revocs.d/
+  This is the directory where gpg stores pre-generated revocation
+  certificates.  The file name corresponds to the OpenPGP fingerprint of
+  the respective key.  It is suggested to backup those certificates and
+  if the primary private key is not stored on the disk to move them to
+  an external storage device.  Anyone who can access theses files is
+  able to revoke the corresponding key.  You may want to print them out.
+  You should backup all files in this directory and take care to keep
+  this backup closed away.
+
+  @item @value{DATADIR}/options.skel
   The skeleton options file.
 
-  @item /usr[/local]/lib/gnupg/
+  @item @value{LIBDIR}/
   Default location for extensions.
 
 @end table
@@ -3139,15 +3129,7 @@ Operation is further controlled by a few environment variables:
   If set directory used instead of "~/.gnupg".
 
   @item GPG_AGENT_INFO
-  Used to locate the gpg-agent.
-@ifset gpgone
-  This is only honored when @option{--use-agent} is set.
-@end ifset
-  The value consists of 3 colon delimited fields: The first is the path
-  to the Unix Domain Socket, the second the PID of the gpg-agent and the
-  protocol version which should be set to 1. When starting the gpg-agent
-  as described in its documentation, this variable is set to the correct
-  value. The option @option{--gpg-agent-info} can be used to override it.
+  This variable was used by GnuPG versions before 2.1
 
   @item PINENTRY_USER_DATA
   This value is passed via gpg-agent to pinentry.  It is useful to convey
@@ -3379,17 +3361,9 @@ control statements must be given. For GnuPG 2.1 and later
 
 @item %ask-passphrase
 @itemx %no-ask-passphrase
-Enable (or disable) a mode where the command @option{passphrase} is
-ignored and instead the usual passphrase dialog is used.  This does
-not make sense for batch key generation; however the unattended key
-generation feature is also used by GUIs and this feature relinquishes
-the GUI from implementing its own passphrase entry code.  These are
-global control statements and affect all future key genrations.
+This option is a no-op for GnuPG 2.1 and later.
 
 @item %no-protection
-Since GnuPG version 2.1 it is not anymore possible to specify a
-passphrase for unattended key generation.  The passphrase command is
-simply ignored and @samp{%ask-passpharse} is thus implicitly enabled.
 Using this option allows the creation of keys without any passphrase
 protection.  This option is mainly intended for regression tests.
 
@@ -3447,8 +3421,8 @@ by running the command @samp{gpg2 --gpgconf-list}".
 Key usage lists for a subkey; similar to @samp{Key-Usage}.
 
 @item Passphrase: @var{string}
-If you want to specify a passphrase for the secret key,
-enter it here.	Default is not to use any passphrase.
+If you want to specify a passphrase for the secret key, enter it here.
+Default is to use the Pinentry dialog to ask for a passphrase.
 
 @item Name-Real: @var{name}
 @itemx Name-Comment: @var{comment}
@@ -3468,7 +3442,7 @@ sense.  Although OpenPGP works with time intervals, GnuPG uses an
 absolute value internally and thus the last year we can represent is
 2105.
 
-@item Creation-Date: @var{iso-date}
+@item  Creation-Date: @var{iso-date}
 Set the creation date of the key as stored in the key information and
 which is also part of the fingerprint calculation.  Either a date like
 "1986-04-26" or a full timestamp like "19860426T042640" may be used.
@@ -3556,9 +3530,7 @@ these parameters:
 @mansect see also
 @ifset isman
 @command{gpgv}(1),
-@ifclear gpgone
 @command{gpgsm}(1),
 @command{gpg-agent}(1)
-@end ifclear
 @end ifset
 @include see-also-note.texi

@@ -1,5 +1,6 @@
 /* agent.h - Global definitions for the agent
- *	Copyright (C) 2001, 2002, 2003, 2005 Free Software Foundation, Inc.
+ * Copyright (C) 2001, 2002, 2003, 2005, 2011 Free Software Foundation, Inc.
+ * Copyright (C) 2015 g10 Code GmbH.
  *
  * This file is part of GnuPG.
  *
@@ -34,6 +35,7 @@
 #include "../common/membuf.h"
 #include "../common/sysutils.h" /* (gnupg_fd_t) */
 #include "../common/session-env.h"
+#include "../common/shareddefs.h"
 
 /* To convey some special hash algorithms we use algorithm numbers
    reserved for application use. */
@@ -45,6 +47,13 @@
 /* Maximum length of a digest.  */
 #define MAX_DIGEST_LEN 64
 
+/* The maximum length of a passphrase (in bytes).  Note: this is
+   further contrained by the Assuan line length (and any other text on
+   the same line).  However, the Assuan line length is 1k bytes so
+   this shouldn't be a problem in practice.  */
+#define MAX_PASSPHRASE_LEN 255
+
+
 /* A large struct name "opt" to keep global flags */
 struct
 {
@@ -55,28 +64,40 @@ struct
   int batch;           /* Batch mode */
   const char *homedir; /* Configuration directory name */
 
-  /* Environment setting gathered at program start or changed using the
+  /* True if we handle sigusr2.  */
+  int sigusr2_enabled;
+
+  /* Environment settings gathered at program start or changed using the
      Assuan command UPDATESTARTUPTTY. */
   session_env_t startup_env;
   char *startup_lc_ctype;
   char *startup_lc_messages;
 
-  /* True if we are listening on the standard socket.  */
-  int use_standard_socket;
+  /* Enable pinentry debugging (--debug 1024 should also be used).  */
+  int debug_pinentry;
 
-  /* True if we handle sigusr2.  */
-  int sigusr2_enabled;
+  /* Filename of the program to start as pinentry.  */
+  const char *pinentry_program;
 
-  const char *pinentry_program; /* Filename of the program to start as
-                                   pinentry.  */
-  const char *scdaemon_program; /* Filename of the program to handle
-                                   smartcard tasks.  */
+  /* Filename of the program to handle smartcard tasks.  */
+  const char *scdaemon_program;
+
   int disable_scdaemon;         /* Never use the SCdaemon. */
+
   int no_grab;         /* Don't let the pinentry grab the keyboard */
 
-  /* The name of the file pinentry shall tocuh before exiting.  If
-     this is not set the filoe name of the standard socket is used. */
+  /* The name of the file pinentry shall touch before exiting.  If
+     this is not set the file name of the standard socket is used. */
   const char *pinentry_touch_file;
+
+  /* A string where the first character is used by the pinentry as a
+     custom invisible character.  */
+  char *pinentry_invisible_char;
+
+  /* The timeout value for the Pinentry in seconds.  This is passed to
+     the pinentry if it is not 0.  It is up to the pinentry to act
+     upon this timeout value.  */
+  unsigned long pinentry_timeout;
 
   /* The default and maximum TTL of cache entries. */
   unsigned long def_cache_ttl;     /* Default. */
@@ -86,36 +107,68 @@ struct
 
   /* Flag disallowing bypassing of the warning.  */
   int enforce_passphrase_constraints;
+
   /* The require minmum length of a passphrase. */
   unsigned int min_passphrase_len;
+
   /* The minimum number of non-alpha characters in a passphrase.  */
   unsigned int min_passphrase_nonalpha;
+
   /* File name with a patternfile or NULL if not enabled.  */
   const char *check_passphrase_pattern;
+
   /* If not 0 the user is asked to change his passphrase after these
      number of days.  */
   unsigned int max_passphrase_days;
+
   /* If set, a passphrase history will be written and checked at each
      passphrase change.  */
   int enable_passhrase_history;
 
   int running_detached; /* We are running detached from the tty. */
 
+  /* If this global option is true, the passphrase cache is ignored
+     for signing operations.  */
   int ignore_cache_for_signing;
+
+  /* If this global option is true, the user is allowed to
+     interactively mark certificate in trustlist.txt as trusted. */
   int allow_mark_trusted;
+
+  /* If this global option is true, the Assuan command
+     PRESET_PASSPHRASE is allowed.  */
   int allow_preset_passphrase;
+
+  /* If this global option is true, the Assuan option
+     pinentry-mode=loopback is allowed.  */
+  int allow_loopback_pinentry;
 
   /* Allow the use of an external password cache.  If this option is
      enabled (which is the default) we send an option to Pinentry
      to allow it to enable such a cache.  */
   int allow_external_cache;
 
+  /* If this global option is true, the Assuan option of Pinentry
+     allow-emacs-prompt is allowed.  */
+  int allow_emacs_pinentry;
+
   int keep_tty;      /* Don't switch the TTY (for pinentry) on request */
   int keep_display;  /* Don't switch the DISPLAY (for pinentry) on request */
-  int ssh_support;   /* Enable ssh-agent emulation.  */
+
+  /* This global options indicates the use of an extra socket. Note
+     that we use a hack for cleanup handling in gpg-agent.c: If the
+     value is less than 2 the name has not yet been malloced. */
+  int extra_socket;
+
+  /* This global options indicates the use of an extra socket for web
+     browsers. Note that we use a hack for cleanup handling in
+     gpg-agent.c: If the value is less than 2 the name has not yet
+     been malloced. */
+  int browser_socket;
 } opt;
 
 
+/* Bit values for the --debug option.  */
 #define DBG_COMMAND_VALUE 1	/* debug commands i/o */
 #define DBG_MPI_VALUE	  2	/* debug mpi details */
 #define DBG_CRYPTO_VALUE  4	/* debug low level crypto */
@@ -123,14 +176,15 @@ struct
 #define DBG_CACHE_VALUE   64	/* debug the caching */
 #define DBG_MEMSTAT_VALUE 128	/* show memory statistics */
 #define DBG_HASHING_VALUE 512	/* debug hashing operations */
-#define DBG_ASSUAN_VALUE 1024
+#define DBG_IPC_VALUE     1024  /* Enable Assuan debugging.  */
 
+/* Test macros for the debug option.  */
 #define DBG_COMMAND (opt.debug & DBG_COMMAND_VALUE)
 #define DBG_CRYPTO  (opt.debug & DBG_CRYPTO_VALUE)
 #define DBG_MEMORY  (opt.debug & DBG_MEMORY_VALUE)
 #define DBG_CACHE   (opt.debug & DBG_CACHE_VALUE)
 #define DBG_HASHING (opt.debug & DBG_HASHING_VALUE)
-#define DBG_ASSUAN  (opt.debug & DBG_ASSUAN_VALUE)
+#define DBG_IPC     (opt.debug & DBG_IPC_VALUE)
 
 /* Forward reference for local definitions in command.c.  */
 struct server_local_s;
@@ -146,10 +200,16 @@ struct scd_local_s;
 struct server_control_s
 {
   /* Private data used to fire up the connection thread.  We use this
-     structure do avoid an extra allocation for just a few bytes. */
+     structure do avoid an extra allocation for only a few bytes while
+     spawning a new connection thread.  */
   struct {
     gnupg_fd_t fd;
   } thread_startup;
+
+  /* Flag indicating the connection is run in restricted mode.
+     A value of 1 if used for --extra-socket,
+     a value of 2 is used for --browser-socket.  */
+  int restricted;
 
   /* Private data of the server (command.c). */
   struct server_local_s *server_local;
@@ -157,10 +217,18 @@ struct server_control_s
   /* Private data of the SCdaemon (call-scd.c). */
   struct scd_local_s *scd_local;
 
+  /* Environment settings for the connection.  */
   session_env_t session_env;
   char *lc_ctype;
   char *lc_messages;
 
+  /* The current pinentry mode.  */
+  pinentry_mode_t pinentry_mode;
+
+  /* The TTL used for the --preset option of certain commands.  */
+  int cache_ttl_opt_preset;
+
+  /* Information on the currently used digest (for signing commands).  */
   struct {
     int algo;
     unsigned char value[MAX_DIGEST_LEN];
@@ -170,34 +238,51 @@ struct server_control_s
   unsigned char keygrip[20];
   int have_keygrip;
 
-  int use_auth_call; /* Hack to send the PKAUTH command instead of the
-                        PKSIGN command to the scdaemon.  */
-  int in_passwd;     /* Hack to inhibit enforced passphrase change
-                        during an explicit passwd command.  */
+  /* A flag to enable a hack to send the PKAUTH command instead of the
+     PKSIGN command to the scdaemon.  */
+  int use_auth_call;
+
+  /* A flag to inhibit enforced passphrase change during an explicit
+     passwd command.  */
+  int in_passwd;
+
+  /* The current S2K which might be different from the calibrated
+     count. */
+  unsigned long s2k_count;
 };
 
 
+/* Information pertaining to pinentry requests.  */
 struct pin_entry_info_s
 {
   int min_digits; /* min. number of digits required or 0 for freeform entry */
   int max_digits; /* max. number of allowed digits allowed*/
-  int max_tries;
-  int failed_tries;
+  int max_tries;  /* max. number of allowed tries.  */
+  int failed_tries; /* Number of tries so far failed.  */
   int with_qualitybar; /* Set if the quality bar should be displayed.  */
-  int (*check_cb)(struct pin_entry_info_s *); /* CB used to check the PIN */
+  int with_repeat;  /* Request repetition of the passphrase.  */
+  int repeat_okay;  /* Repetition worked. */
+  gpg_error_t (*check_cb)(struct pin_entry_info_s *); /* CB used to check
+                                                         the PIN */
   void *check_cb_arg;  /* optional argument which might be of use in the CB */
-  const char *cb_errtext; /* used by the cb to displaye a specific error */
-  size_t max_length; /* allocated length of the buffer */
-  char pin[1];
+  const char *cb_errtext; /* used by the cb to display a specific error */
+  size_t max_length;   /* Allocated length of the buffer PIN. */
+  char pin[1];         /* The buffer to hold the PIN or passphrase.
+                          It's actual allocated length is given by
+                          MAX_LENGTH (above).  */
 };
 
 
+/* Types of the private keys.  */
 enum
   {
-    PRIVATE_KEY_UNKNOWN = 0,
-    PRIVATE_KEY_CLEAR = 1,
-    PRIVATE_KEY_PROTECTED = 2,
-    PRIVATE_KEY_SHADOWED = 3
+    PRIVATE_KEY_UNKNOWN = 0,      /* Type of key is not known.  */
+    PRIVATE_KEY_CLEAR = 1,        /* The key is not protected.  */
+    PRIVATE_KEY_PROTECTED = 2,    /* The key is protected.  */
+    PRIVATE_KEY_SHADOWED = 3,     /* The key is a stub for a smartcard
+                                     based key.  */
+    PROTECTED_SHARED_SECRET = 4,  /* RFU.  */
+    PRIVATE_KEY_OPENPGP_NONE = 5  /* openpgp-native with protection "none". */
   };
 
 
@@ -208,31 +293,75 @@ typedef enum
     CACHE_MODE_ANY,        /* Any mode except ignore matches. */
     CACHE_MODE_NORMAL,     /* Normal cache (gpg-agent). */
     CACHE_MODE_USER,       /* GET_PASSPHRASE related cache. */
-    CACHE_MODE_SSH         /* SSH related cache. */
+    CACHE_MODE_SSH,        /* SSH related cache. */
+    CACHE_MODE_NONCE       /* This is a non-predictable nonce.  */
   }
 cache_mode_t;
+
+/* The TTL is seconds used for adding a new nonce mode cache item.  */
+#define CACHE_TTL_NONCE 120
+
+/* The TTL in seconds used by the --preset option of some commands.
+   This is the default value changeable by an OPTION command.  */
+#define CACHE_TTL_OPT_PRESET 900
 
 
 /* The type of a function to lookup a TTL by a keygrip.  */
 typedef int (*lookup_ttl_t)(const char *hexgrip);
 
 
+/* This is a special version of the usual _() gettext macro.  It
+   assumes a server connection control variable with the name "ctrl"
+   and uses that to translate a string according to the locale set for
+   the connection.  The macro LunderscoreIMPL is used by i18n to
+   actually define the inline function when needed.  */
+#ifdef ENABLE_NLS
+#define L_(a) agent_Lunderscore (ctrl, (a))
+#define LunderscorePROTO                                            \
+  static inline const char *agent_Lunderscore (ctrl_t ctrl,         \
+                                               const char *string)  \
+    GNUPG_GCC_ATTR_FORMAT_ARG(2);
+#define LunderscoreIMPL                                         \
+  static inline const char *                                    \
+  agent_Lunderscore (ctrl_t ctrl, const char *string)           \
+  {                                                             \
+    return ctrl? i18n_localegettext (ctrl->lc_messages, string) \
+      /*     */: gettext (string);                              \
+  }
+#else
+#define L_(a) (a)
+#endif
+
+
 /*-- gpg-agent.c --*/
-void agent_exit (int rc) JNLIB_GCC_A_NR; /* Also implemented in other tools */
+void agent_exit (int rc)
+                GPGRT_ATTR_NORETURN; /* Also implemented in other tools */
+void agent_set_progress_cb (void (*cb)(ctrl_t ctrl, const char *what,
+                                       int printchar, int current, int total),
+                            ctrl_t ctrl);
+gpg_error_t agent_copy_startup_env (ctrl_t ctrl);
 const char *get_agent_socket_name (void);
 const char *get_agent_ssh_socket_name (void);
 #ifdef HAVE_W32_SYSTEM
 void *get_agent_scd_notify_event (void);
 #endif
 void agent_sighup_action (void);
+int map_pk_openpgp_to_gcry (int openpgp_algo);
 
 /*-- command.c --*/
 gpg_error_t agent_inq_pinentry_launched (ctrl_t ctrl, unsigned long pid);
 gpg_error_t agent_write_status (ctrl_t ctrl, const char *keyword, ...)
-     GNUPG_GCC_A_SENTINEL(0);
+     GPGRT_ATTR_SENTINEL(0);
+gpg_error_t agent_print_status (ctrl_t ctrl, const char *keyword,
+                                const char *format, ...)
+     GPGRT_ATTR_PRINTF(3,4);
 void bump_key_eventcounter (void);
 void bump_card_eventcounter (void);
 void start_command_handler (ctrl_t, gnupg_fd_t, gnupg_fd_t);
+gpg_error_t pinentry_loopback (ctrl_t, const char *keyword,
+	                       unsigned char **buffer, size_t *size,
+			       size_t max_length);
+
 #ifdef HAVE_W32_SYSTEM
 int serve_mmapped_ssh_request (ctrl_t ctrl,
                                unsigned char *request, size_t maxreqlen);
@@ -255,32 +384,38 @@ void start_command_handler_ssh (ctrl_t, gnupg_fd_t);
 int agent_write_private_key (const unsigned char *grip,
                              const void *buffer, size_t length, int force);
 gpg_error_t agent_key_from_file (ctrl_t ctrl,
+                                 const char *cache_nonce,
                                  const char *desc_text,
                                  const unsigned char *grip,
                                  unsigned char **shadow_info,
                                  cache_mode_t cache_mode,
                                  lookup_ttl_t lookup_ttl,
-                                 gcry_sexp_t *result);
+                                 gcry_sexp_t *result,
+                                 char **r_passphrase);
 gpg_error_t agent_raw_key_from_file (ctrl_t ctrl, const unsigned char *grip,
                                      gcry_sexp_t *result);
 gpg_error_t agent_public_key_from_file (ctrl_t ctrl,
                                         const unsigned char *grip,
                                         gcry_sexp_t *result);
+int agent_is_dsa_key (gcry_sexp_t s_key);
+int agent_is_eddsa_key (gcry_sexp_t s_key);
 int agent_key_available (const unsigned char *grip);
 gpg_error_t agent_key_info_from_file (ctrl_t ctrl, const unsigned char *grip,
                                       int *r_keytype,
                                       unsigned char **r_shadow_info);
+gpg_error_t agent_delete_key (ctrl_t ctrl, const char *desc_text,
+                              const unsigned char *grip, int force);
 
 /*-- call-pinentry.c --*/
 void initialize_module_call_pinentry (void);
 void agent_query_dump_state (void);
 void agent_reset_query (ctrl_t ctrl);
 int pinentry_active_p (ctrl_t ctrl, int waitseconds);
-int agent_askpin (ctrl_t ctrl,
-                  const char *desc_text, const char *prompt_text,
-                  const char *inital_errtext,
-                  struct pin_entry_info_s *pininfo,
-                  const char *keyinfo, cache_mode_t cache_mode);
+gpg_error_t agent_askpin (ctrl_t ctrl,
+                          const char *desc_text, const char *prompt_text,
+                          const char *inital_errtext,
+                          struct pin_entry_info_s *pininfo,
+                          const char *keyinfo, cache_mode_t cache_mode);
 int agent_get_passphrase (ctrl_t ctrl, char **retpass,
                           const char *desc, const char *prompt,
                           const char *errtext, int with_qualitybar,
@@ -294,39 +429,51 @@ void agent_popup_message_stop (ctrl_t ctrl);
 int agent_clear_passphrase (ctrl_t ctrl,
 			    const char *keyinfo, cache_mode_t cache_mode);
 
-
 /*-- cache.c --*/
+void initialize_module_cache (void);
+void deinitialize_module_cache (void);
 void agent_flush_cache (void);
 int agent_put_cache (const char *key, cache_mode_t cache_mode,
                      const char *data, int ttl);
-const char *agent_get_cache (const char *key, cache_mode_t cache_mode,
-                             void **cache_id);
-void agent_unlock_cache_entry (void **cache_id);
+char *agent_get_cache (const char *key, cache_mode_t cache_mode);
+void agent_store_cache_hit (const char *key);
 
 
 /*-- pksign.c --*/
-int agent_pksign_do (ctrl_t ctrl, const char *desc_text,
+int agent_pksign_do (ctrl_t ctrl, const char *cache_nonce,
+                     const char *desc_text,
 		     gcry_sexp_t *signature_sexp,
-                     cache_mode_t cache_mode, lookup_ttl_t lookup_ttl);
-int agent_pksign (ctrl_t ctrl, const char *desc_text,
+                     cache_mode_t cache_mode, lookup_ttl_t lookup_ttl,
+                     const void *overridedata, size_t overridedatalen);
+int agent_pksign (ctrl_t ctrl, const char *cache_nonce,
+                  const char *desc_text,
                   membuf_t *outbuf, cache_mode_t cache_mode);
 
 /*-- pkdecrypt.c --*/
 int agent_pkdecrypt (ctrl_t ctrl, const char *desc_text,
                      const unsigned char *ciphertext, size_t ciphertextlen,
-                     membuf_t *outbuf);
+                     membuf_t *outbuf, int *r_padding);
 
 /*-- genkey.c --*/
-int check_passphrase_constraints (ctrl_t ctrl, const char *pw, int silent);
-int agent_genkey (ctrl_t ctrl,
-                  const char *keyparam, size_t keyparmlen, membuf_t *outbuf);
-int agent_protect_and_store (ctrl_t ctrl, gcry_sexp_t s_skey);
+int check_passphrase_constraints (ctrl_t ctrl, const char *pw,
+				  char **failed_constraint);
+gpg_error_t agent_ask_new_passphrase (ctrl_t ctrl, const char *prompt,
+                                      char **r_passphrase);
+int agent_genkey (ctrl_t ctrl, const char *cache_nonce,
+                  const char *keyparam, size_t keyparmlen,
+                  int no_protection, const char *override_passphrase,
+                  int preset, membuf_t *outbuf);
+gpg_error_t agent_protect_and_store (ctrl_t ctrl, gcry_sexp_t s_skey,
+                                     char **passphrase_addr);
 
 /*-- protect.c --*/
 unsigned long get_standard_s2k_count (void);
+unsigned char get_standard_s2k_count_rfc4880 (void);
 int agent_protect (const unsigned char *plainkey, const char *passphrase,
-                   unsigned char **result, size_t *resultlen);
-int agent_unprotect (const unsigned char *protectedkey, const char *passphrase,
+                   unsigned char **result, size_t *resultlen,
+		   unsigned long s2k_count);
+int agent_unprotect (ctrl_t ctrl,
+                     const unsigned char *protectedkey, const char *passphrase,
                      gnupg_isotime_t protected_at,
                      unsigned char **result, size_t *resultlen);
 int agent_private_key_type (const unsigned char *privatekey);
@@ -337,7 +484,12 @@ int agent_shadow_key (const unsigned char *pubkey,
 int agent_get_shadow_info (const unsigned char *shadowkey,
                            unsigned char const **shadow_info);
 gpg_error_t parse_shadow_info (const unsigned char *shadow_info,
-                               char **r_hexsn, char **r_idstr);
+                               char **r_hexsn, char **r_idstr, int *r_pinlen);
+gpg_error_t s2k_hash_passphrase (const char *passphrase, int hashalgo,
+                                 int s2kmode,
+                                 const unsigned char *s2ksalt,
+                                 unsigned int s2kcount,
+                                 unsigned char *key, size_t keylen);
 
 
 /*-- trustlist.c --*/
@@ -352,13 +504,16 @@ void agent_reload_trustlist (void);
 /*-- divert-scd.c --*/
 int divert_pksign (ctrl_t ctrl,
                    const unsigned char *digest, size_t digestlen, int algo,
-                   const unsigned char *shadow_info, unsigned char **r_sig);
+                   const unsigned char *shadow_info, unsigned char **r_sig,
+                   size_t *r_siglen);
 int divert_pkdecrypt (ctrl_t ctrl,
                       const unsigned char *cipher,
                       const unsigned char *shadow_info,
-                      char **r_buf, size_t *r_len);
+                      char **r_buf, size_t *r_len, int *r_padding);
 int divert_generic_cmd (ctrl_t ctrl,
                         const char *cmdline, void *assuan_context);
+int divert_writekey (ctrl_t ctrl, int force, const char *serialno,
+                     const char *id, const char *keydata, size_t keydatalen);
 
 
 /*-- call-scd.c --*/
@@ -380,6 +535,7 @@ int agent_card_pksign (ctrl_t ctrl,
                        const char *keyid,
                        int (*getpin_cb)(void *, const char *, char*, size_t),
                        void *getpin_cb_arg,
+                       int mdalgo,
                        const unsigned char *indata, size_t indatalen,
                        unsigned char **r_buf, size_t *r_buflen);
 int agent_card_pkdecrypt (ctrl_t ctrl,
@@ -387,10 +543,15 @@ int agent_card_pkdecrypt (ctrl_t ctrl,
                           int (*getpin_cb)(void *, const char *, char*,size_t),
                           void *getpin_cb_arg,
                           const unsigned char *indata, size_t indatalen,
-                          char **r_buf, size_t *r_buflen);
+                          char **r_buf, size_t *r_buflen, int *r_padding);
 int agent_card_readcert (ctrl_t ctrl,
                          const char *id, char **r_buf, size_t *r_buflen);
 int agent_card_readkey (ctrl_t ctrl, const char *id, unsigned char **r_buf);
+int agent_card_writekey (ctrl_t ctrl, int force, const char *serialno,
+                         const char *id, const char *keydata,
+                         size_t keydatalen,
+                         int (*getpin_cb)(void *, const char *, char*, size_t),
+                         void *getpin_cb_arg);
 gpg_error_t agent_card_getattr (ctrl_t ctrl, const char *name, char **result);
 int agent_card_scd (ctrl_t ctrl, const char *cmdline,
                     int (*getpin_cb)(void *, const char *, char*, size_t),
@@ -398,7 +559,15 @@ int agent_card_scd (ctrl_t ctrl, const char *cmdline,
 
 
 /*-- learncard.c --*/
-int agent_handle_learn (ctrl_t ctrl, void *assuan_context);
+int agent_handle_learn (ctrl_t ctrl, int send, void *assuan_context, int force);
 
+
+/*-- cvt-openpgp.c --*/
+gpg_error_t
+extract_private_key (gcry_sexp_t s_key, int req_private_key_data,
+                     const char **r_algoname, int *r_npkey, int *r_nskey,
+                     const char **r_format,
+                     gcry_mpi_t *mpi_array, int arraysize,
+                     gcry_sexp_t *r_curve, gcry_sexp_t *r_flags);
 
 #endif /*AGENT_H*/

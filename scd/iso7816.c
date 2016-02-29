@@ -64,7 +64,7 @@ map_sw (int sw)
   switch (sw)
     {
     case SW_EEPROM_FAILURE: ec = GPG_ERR_HARDWARE; break;
-    case SW_TERM_STATE:     ec = GPG_ERR_CARD; break;
+    case SW_TERM_STATE:     ec = GPG_ERR_OBJ_TERM_STATE; break;
     case SW_WRONG_LENGTH:   ec = GPG_ERR_INV_VALUE; break;
     case SW_SM_NOT_SUP:     ec = GPG_ERR_NOT_SUPPORTED; break;
     case SW_CC_NOT_SUP:     ec = GPG_ERR_NOT_SUPPORTED; break;
@@ -174,17 +174,17 @@ iso7816_select_path (int slot, const unsigned short *path, size_t pathlen,
   int sw, p0, p1;
   unsigned char buffer[100];
   int buflen;
-  
+
   if (result || resultlen)
     {
       *result = NULL;
       *resultlen = 0;
       return gpg_error (GPG_ERR_NOT_IMPLEMENTED);
     }
-  
+
   if (pathlen/2 >= sizeof buffer)
     return gpg_error (GPG_ERR_TOO_LARGE);
-  
+
   for (buflen = 0; pathlen; pathlen--, path++)
     {
       buffer[buflen++] = (*path >> 8);
@@ -231,7 +231,7 @@ iso7816_list_directory (int slot, int list_dirs,
    it maps the status word and does not return it in the result
    buffer.  */
 gpg_error_t
-iso7816_apdu_direct (int slot, const void *apdudata, size_t apdudatalen, 
+iso7816_apdu_direct (int slot, const void *apdudata, size_t apdudatalen,
                      int handle_more,
                      unsigned char **result, size_t *resultlen)
 {
@@ -291,7 +291,7 @@ iso7816_verify_kp (int slot, int chvno, pininfo_t *pininfo)
 }
 
 /* Perform a VERIFY command on SLOT using the card holder verification
-   vector CHVNO with a CHV of lenght CHVLEN.  Returns 0 on success. */
+   vector CHVNO with a CHV of length CHVLEN.  Returns 0 on success. */
 gpg_error_t
 iso7816_verify (int slot, int chvno, const char *chv, size_t chvlen)
 {
@@ -457,7 +457,7 @@ iso7816_manage_security_env (int slot, int p1, int p2,
   if (p1 < 0 || p1 > 255 || p2 < 0 || p2 > 255 )
     return gpg_error (GPG_ERR_INV_VALUE);
 
-  sw = apdu_send_simple (slot, 0, 0x00, CMD_MSE, p1, p2, 
+  sw = apdu_send_simple (slot, 0, 0x00, CMD_MSE, p1, p2,
                          data? datalen : -1, (const char*)data);
   return map_sw (sw);
 }
@@ -484,7 +484,7 @@ iso7816_compute_ds (int slot, int extended_mode,
   else if (le >= 0 && le < 256)
     le = 256;
 
-  sw = apdu_send_le (slot, extended_mode, 
+  sw = apdu_send_le (slot, extended_mode,
                      0x00, CMD_PSO, 0x9E, 0x9A,
                      datalen, (const char*)data,
                      le,
@@ -509,7 +509,7 @@ iso7816_compute_ds (int slot, int extended_mode,
    at RESULT with its length stored at RESULTLEN.  For LE see
    do_generate_keypair. */
 gpg_error_t
-iso7816_decipher (int slot, int extended_mode, 
+iso7816_decipher (int slot, int extended_mode,
                   const unsigned char *data, size_t datalen, int le,
                   int padind, unsigned char **result, size_t *resultlen)
 {
@@ -532,10 +532,10 @@ iso7816_decipher (int slot, int extended_mode,
       buf = xtrymalloc (datalen + 1);
       if (!buf)
         return gpg_error (gpg_err_code_from_errno (errno));
-      
+
       *buf = padind; /* Padding indicator. */
       memcpy (buf+1, data, datalen);
-      sw = apdu_send_le (slot, extended_mode, 
+      sw = apdu_send_le (slot, extended_mode,
                          0x00, CMD_PSO, 0x80, 0x86,
                          datalen+1, (char*)buf, le,
                          result, resultlen);
@@ -603,9 +603,9 @@ iso7816_internal_authenticate (int slot, int extended_mode,
    returned.  In that case a value of -1 uses a large default
    (e.g. 4096 bytes), a value larger 256 used that value.  */
 static gpg_error_t
-do_generate_keypair (int slot, int extended_mode, int readonly,
+do_generate_keypair (int slot, int extended_mode, int read_only,
                      const unsigned char *data, size_t datalen,
-                     int le, 
+                     int le,
                      unsigned char **result, size_t *resultlen)
 {
   int sw;
@@ -616,7 +616,7 @@ do_generate_keypair (int slot, int extended_mode, int readonly,
   *resultlen = 0;
 
   sw = apdu_send_le (slot, extended_mode,
-                     0x00, CMD_GENERATE_KEYPAIR, readonly? 0x81:0x80, 0,
+                     0x00, CMD_GENERATE_KEYPAIR, read_only? 0x81:0x80, 0,
                      datalen, (const char*)data,
                      le >= 0 && le < 256? 256:le,
                      result, resultlen);
@@ -636,7 +636,7 @@ do_generate_keypair (int slot, int extended_mode, int readonly,
 gpg_error_t
 iso7816_generate_keypair (int slot, int extended_mode,
                           const unsigned char *data, size_t datalen,
-                          int le, 
+                          int le,
                           unsigned char **result, size_t *resultlen)
 {
   return do_generate_keypair (slot, extended_mode, 0,
@@ -647,7 +647,7 @@ iso7816_generate_keypair (int slot, int extended_mode,
 gpg_error_t
 iso7816_read_public_key (int slot, int extended_mode,
                          const unsigned char *data, size_t datalen,
-                         int le, 
+                         int le,
                          unsigned char **result, size_t *resultlen)
 {
   return do_generate_keypair (slot, extended_mode, 1,
@@ -670,7 +670,7 @@ iso7816_get_challenge (int slot, int length, unsigned char *buffer)
     {
       result = NULL;
       n = length > 254? 254 : length;
-      sw = apdu_send_le (slot, 0, 
+      sw = apdu_send_le (slot, 0,
                          0x00, CMD_GET_CHALLENGE, 0, 0, -1, NULL, n,
                          &result, &resultlen);
       if (sw != SW_SUCCESS)
@@ -781,7 +781,7 @@ iso7816_read_binary (int slot, size_t offset, size_t nmax,
         nmax = 0;
     }
   while ((read_all && sw != SW_EOF_REACHED) || (!read_all && nmax));
-  
+
   return 0;
 }
 
@@ -814,7 +814,7 @@ iso7816_read_record (int slot, int recno, int reccount, int short_ef,
   buffer = NULL;
   bufferlen = 0;
   sw = apdu_send_le (slot, 0, 0x00, CMD_READ_RECORD,
-                     recno, 
+                     recno,
                      short_ef? short_ef : 0x04,
                      -1, NULL,
                      0, &buffer, &bufferlen);
@@ -830,7 +830,6 @@ iso7816_read_record (int slot, int recno, int reccount, int short_ef,
     }
   *result = buffer;
   *resultlen = bufferlen;
-  
+
   return 0;
 }
-

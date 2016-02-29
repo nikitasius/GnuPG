@@ -1,5 +1,5 @@
 /* certreqgen-ui.c - Simple user interface for certreqgen.c
- * Copyright (C) 2007 Free Software Foundation, Inc.
+ * Copyright (C) 2007, 2010, 2011 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <unistd.h> 
+#include <unistd.h>
 #include <time.h>
 #include <assert.h>
 
@@ -40,7 +40,7 @@ ask_mb_lines (membuf_t *mb, const char *prefix)
 {
   char *answer = NULL;
 
-  do 
+  do
     {
       xfree (answer);
       answer = tty_get ("> ");
@@ -88,14 +88,14 @@ store_mb_lines (membuf_t *mb, membuf_t *lines)
 
 /* Chech whether we have a key for the key with HEXGRIP.  Returns NULL
    if not or a string describing the type of the key (RSA, ELG, DSA,
-   etc..).  */ 
+   etc..).  */
 static const char *
 check_keygrip (ctrl_t ctrl, const char *hexgrip)
 {
   gpg_error_t err;
   ksba_sexp_t public;
   size_t publiclen;
-  int algo;
+  const char *algostr;
 
   if (hexgrip[0] == '&')
     hexgrip++;
@@ -105,17 +105,21 @@ check_keygrip (ctrl_t ctrl, const char *hexgrip)
     return NULL;
   publiclen = gcry_sexp_canon_len (public, 0, NULL, NULL);
 
-  get_pk_algo_from_canon_sexp (public, publiclen, &algo);
+  get_pk_algo_from_canon_sexp (public, publiclen, &algostr);
   xfree (public);
 
-  switch (algo)
-    {
-    case GCRY_PK_RSA: return "RSA";
-    case GCRY_PK_DSA: return "DSA";
-    case GCRY_PK_ELG: return "ELG";
-    case GCRY_PK_ECDSA: return "ECDSA";
-    default: return NULL;
-    }
+  if (!algostr)
+    return NULL;
+  else if (!strcmp (algostr, "rsa"))
+    return "RSA";
+  else if (!strcmp (algostr, "dsa"))
+    return "DSA";
+  else if (!strcmp (algostr, "elg"))
+    return "ELG";
+  else if (!strcmp (algostr, "ecdsa"))
+    return "ECDSA";
+  else
+    return NULL;
 }
 
 
@@ -125,7 +129,7 @@ check_keygrip (ctrl_t ctrl, const char *hexgrip)
    and thus is not suitable for the Windows port.  So here is the
    re-implementation.  */
 void
-gpgsm_gencertreq_tty (ctrl_t ctrl, FILE *output_fp)
+gpgsm_gencertreq_tty (ctrl_t ctrl, estream_t output_stream)
 {
   gpg_error_t err;
   char *answer;
@@ -143,8 +147,8 @@ gpgsm_gencertreq_tty (ctrl_t ctrl, FILE *output_fp)
   char *subject_name;
   membuf_t mb_email, mb_dns, mb_uri, mb_result;
   char *result = NULL;
-  int i;
   const char *s, *s2;
+  int selfsigned;
 
   answer = NULL;
   init_membuf (&mb_email, 100);
@@ -202,7 +206,7 @@ gpgsm_gencertreq_tty (ctrl_t ctrl, FILE *output_fp)
           answer = tty_get (_("Enter the keygrip: "));
           tty_kill_prompt ();
           trim_spaces (answer);
-          
+
           if (!*answer)
             goto again;
           else if (strlen (answer) != 40 &&
@@ -308,7 +312,7 @@ gpgsm_gencertreq_tty (ctrl_t ctrl, FILE *output_fp)
       else if ( (err = ksba_dn_teststr (answer, 0, &erroff, &errlen)) )
         {
           if (gpg_err_code (err) == GPG_ERR_UNKNOWN_NAME)
-            tty_printf (_("Invalid subject name label `%.*s'\n"),
+            tty_printf (_("Invalid subject name label '%.*s'\n"),
                         (int)errlen, answer+erroff);
           else
             {
@@ -317,7 +321,7 @@ gpgsm_gencertreq_tty (ctrl_t ctrl, FILE *output_fp)
                  adjust it do the length of your translation.  The
                  second string is merely passed to atoi so you can
                  drop everything after the number.  */
-              tty_printf (_("Invalid subject name `%s'\n"), answer);
+              tty_printf (_("Invalid subject name '%s'\n"), answer);
               tty_printf ("%*s^\n",
                           atoi (_("22 translator: see "
                                   "certreg-ui.c:gpgsm_gencertreq_tty"))
@@ -338,12 +342,17 @@ gpgsm_gencertreq_tty (ctrl_t ctrl, FILE *output_fp)
   /* DNS names.  */
   tty_printf (_("Enter DNS names"));
   tty_printf (_(" (optional; end with an empty line):\n"));
-  ask_mb_lines (&mb_email, "Name-DNS: ");
+  ask_mb_lines (&mb_dns, "Name-DNS: ");
 
   /* URIs.  */
   tty_printf (_("Enter URIs"));
   tty_printf (_(" (optional; end with an empty line):\n"));
-  ask_mb_lines (&mb_email, "Name-URI: ");
+  ask_mb_lines (&mb_uri, "Name-URI: ");
+
+
+  /* Want a self-signed certificate?  */
+  selfsigned = tty_get_answer_is_yes
+    (_("Create self-signed certificate? (y/N) "));
 
 
   /* Put it all together.  */
@@ -353,10 +362,12 @@ gpgsm_gencertreq_tty (ctrl_t ctrl, FILE *output_fp)
     snprintf (numbuf, sizeof numbuf, "%u", nbits);
     store_key_value_lf (&mb_result, "Key-Length: ", numbuf);
   }
-  store_key_value_lf (&mb_result, "Key-Usage: ", keyusage);
-  store_key_value_lf (&mb_result, "Name-DN: ", subject_name);
   if (keygrip)
     store_key_value_lf (&mb_result, "Key-Grip: ", keygrip);
+  store_key_value_lf (&mb_result, "Key-Usage: ", keyusage);
+  if (selfsigned)
+    store_key_value_lf (&mb_result, "Serial: ", "random");
+  store_key_value_lf (&mb_result, "Name-DN: ", subject_name);
   if (store_mb_lines (&mb_result, &mb_email))
     goto mem_error;
   if (store_mb_lines (&mb_result, &mb_dns))
@@ -368,14 +379,13 @@ gpgsm_gencertreq_tty (ctrl_t ctrl, FILE *output_fp)
   if (!result)
     goto mem_error;
 
-  tty_printf (_("Parameters to be used for the certificate request:\n"));
-  for (s=result; (s2 = strchr (s, '\n')); s = s2+1, i++)
+  tty_printf (_("These parameters are used:\n"));
+  for (s=result; (s2 = strchr (s, '\n')); s = s2+1)
     tty_printf ("    %.*s\n", (int)(s2-s), s);
   tty_printf ("\n");
 
-
-  if (!tty_get_answer_is_yes ("Really create request? (y/N) "))
-     goto leave;
+  if (!tty_get_answer_is_yes ("Proceed with creation? (y/N) "))
+    goto leave;
 
   /* Now create a parameter file and generate the key.  */
   fp = es_fopenmem (0, "w+");
@@ -386,16 +396,26 @@ gpgsm_gencertreq_tty (ctrl_t ctrl, FILE *output_fp)
     }
   es_fputs (result, fp);
   es_rewind (fp);
-  tty_printf (_("Now creating certificate request.  "
-                "This may take a while ...\n"));
+  if (selfsigned)
+    tty_printf ("%s", _("Now creating self-signed certificate.  "));
+  else
+    tty_printf ("%s", _("Now creating certificate request.  "));
+  tty_printf ("%s", _("This may take a while ...\n"));
+
   {
     int save_pem = ctrl->create_pem;
     ctrl->create_pem = 1; /* Force creation of PEM. */
-    err = gpgsm_genkey (ctrl, fp, output_fp);
+    err = gpgsm_genkey (ctrl, fp, output_stream);
     ctrl->create_pem = save_pem;
   }
   if (!err)
-    tty_printf (_("Ready.  You should now send this request to your CA.\n"));
+    {
+      if (selfsigned)
+        tty_printf (_("Ready.\n"));
+      else
+        tty_printf
+          (_("Ready.  You should now send this request to your CA.\n"));
+    }
 
 
   goto leave;

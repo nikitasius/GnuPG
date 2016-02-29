@@ -3,12 +3,22 @@
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -30,7 +40,7 @@
    considered a byte stream ending in a LF.
 
    If MAX_LENGTH is not NULL, it shall point to a value with the
-   maximum allowed allocation.  
+   maximum allowed allocation.
 
    Returns the length of the line. EOF is indicated by a line of
    length zero. A truncated line is indicated by setting the value at
@@ -45,7 +55,7 @@
    append a CR,LF,Nul
  */
 ssize_t
-read_line (FILE *fp, 
+read_line (FILE *fp,
            char **addr_of_buffer, size_t *length_of_buffer,
            size_t *max_length)
 {
@@ -94,16 +104,16 @@ read_line (FILE *fp,
           if (!*addr_of_buffer)
             {
               int save_errno = errno;
-              xfree (buffer); 
+              xfree (buffer);
               *length_of_buffer = 0;
               if (max_length)
                 *max_length = 0;
-              errno = save_errno;
+              gpg_err_set_errno (save_errno);
               return -1;
             }
           buffer = *addr_of_buffer;
           *length_of_buffer = length;
-          length -= 3; 
+          length -= 3;
           p = buffer + nbytes;
 	}
       *p++ = c;

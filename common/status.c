@@ -3,12 +3,22 @@
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -27,7 +37,7 @@
 
 /* Return the status string for code NO. */
 const char *
-get_status_string ( int no ) 
+get_status_string ( int no )
 {
   int idx = statusstr_msgidxof (no);
   if (idx == -1)
@@ -41,7 +51,7 @@ const char *
 get_inv_recpsgnr_code (gpg_error_t err)
 {
   const char *errstr;
-  
+
   switch (gpg_err_code (err))
     {
     case GPG_ERR_NO_PUBKEY:       errstr = "1"; break;

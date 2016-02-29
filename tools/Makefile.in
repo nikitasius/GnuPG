@@ -116,13 +116,14 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 DIST_COMMON = $(top_srcdir)/am/cmacros.am $(srcdir)/Makefile.in \
-	$(srcdir)/Makefile.am $(top_srcdir)/scripts/mkinstalldirs \
-	$(srcdir)/gpg-zip.in $(top_srcdir)/scripts/depcomp
+	$(srcdir)/Makefile.am $(top_srcdir)/build-aux/mkinstalldirs \
+	$(srcdir)/gpg-zip.in $(top_srcdir)/build-aux/depcomp
 @HAVE_DOSISH_SYSTEM_FALSE@am__append_1 = -DGNUPG_BINDIR="\"$(bindir)\""            \
 @HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_LIBEXECDIR="\"$(libexecdir)\""    \
 @HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_LIBDIR="\"$(libdir)/@PACKAGE@\""  \
 @HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_DATADIR="\"$(datadir)/@PACKAGE@\"" \
-@HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_SYSCONFDIR="\"$(sysconfdir)/@PACKAGE@\""
+@HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_SYSCONFDIR="\"$(sysconfdir)/@PACKAGE@\"" \
+@HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_LOCALSTATEDIR="\"$(localstatedir)\""
 
 
 # If a specific protect tool program has been defined, pass its name
@@ -133,50 +134,45 @@ DIST_COMMON = $(top_srcdir)/am/cmacros.am $(srcdir)/Makefile.in \
 @GNUPG_SCDAEMON_PGM_TRUE@am__append_4 = -DGNUPG_DEFAULT_SCDAEMON="\"@GNUPG_SCDAEMON_PGM@\""
 @GNUPG_DIRMNGR_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
 @GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
-@HAVE_W32_SYSTEM_TRUE@am__append_7 = gpg-connect-agent-w32info.o
+@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
+@HAVE_W32_SYSTEM_TRUE@am__append_8 = gpg-connect-agent-w32info.o
 bin_PROGRAMS = gpgconf$(EXEEXT) gpg-connect-agent$(EXEEXT) \
-	gpgkey2ssh$(EXEEXT) $(am__EXEEXT_1) $(am__EXEEXT_2) \
-	$(am__EXEEXT_3)
-@HAVE_W32_SYSTEM_FALSE@am__append_8 = watchgnupg gpgparsemail
+	$(am__EXEEXT_1) $(am__EXEEXT_2) $(am__EXEEXT_4)
+@HAVE_W32_SYSTEM_FALSE@am__append_9 = watchgnupg gpgparsemail
+@HAVE_W32CE_SYSTEM_FALSE@am__append_10 = ${gpgtar}
 @DISABLE_REGEX_FALSE@libexec_PROGRAMS = gpg-check-pattern$(EXEEXT)
-noinst_PROGRAMS = clean-sat$(EXEEXT) mk-tdata$(EXEEXT) \
-	make-dns-cert$(EXEEXT) gpgsplit$(EXEEXT)
+@HAVE_W32CE_SYSTEM_FALSE@noinst_PROGRAMS = clean-sat$(EXEEXT) \
+@HAVE_W32CE_SYSTEM_FALSE@	mk-tdata$(EXEEXT) \
+@HAVE_W32CE_SYSTEM_FALSE@	make-dns-cert$(EXEEXT) \
+@HAVE_W32CE_SYSTEM_FALSE@	gpgsplit$(EXEEXT)
 subdir = tools
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/gl/m4/absolute-header.m4 \
-	$(top_srcdir)/gl/m4/alloca.m4 $(top_srcdir)/gl/m4/allocsa.m4 \
-	$(top_srcdir)/gl/m4/eealloc.m4 \
-	$(top_srcdir)/gl/m4/gnulib-comp.m4 \
-	$(top_srcdir)/gl/m4/gnulib-tool.m4 \
-	$(top_srcdir)/gl/m4/mkdtemp.m4 $(top_srcdir)/gl/m4/setenv.m4 \
-	$(top_srcdir)/gl/m4/stdint.m4 $(top_srcdir)/gl/m4/strpbrk.m4 \
-	$(top_srcdir)/gl/m4/unistd_h.m4 $(top_srcdir)/m4/autobuild.m4 \
-	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/estream.m4 \
-	$(top_srcdir)/m4/gettext.m4 $(top_srcdir)/m4/gnupg-pth.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
+	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/m4/gpg-error.m4 $(top_srcdir)/m4/iconv.m4 \
 	$(top_srcdir)/m4/isc-posix.m4 $(top_srcdir)/m4/ksba.m4 \
 	$(top_srcdir)/m4/lcmessage.m4 $(top_srcdir)/m4/ldap.m4 \
 	$(top_srcdir)/m4/lib-ld.m4 $(top_srcdir)/m4/lib-link.m4 \
 	$(top_srcdir)/m4/lib-prefix.m4 $(top_srcdir)/m4/libassuan.m4 \
-	$(top_srcdir)/m4/libcurl.m4 $(top_srcdir)/m4/libgcrypt.m4 \
-	$(top_srcdir)/m4/longdouble.m4 $(top_srcdir)/m4/nls.m4 \
+	$(top_srcdir)/m4/libgcrypt.m4 $(top_srcdir)/m4/nls.m4 \
+	$(top_srcdir)/m4/npth.m4 $(top_srcdir)/m4/ntbtls.m4 \
 	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
-	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/size_max.m4 \
-	$(top_srcdir)/m4/socklen.m4 $(top_srcdir)/m4/sys_socket_h.m4 \
-	$(top_srcdir)/m4/tar-ustar.m4 $(top_srcdir)/m4/xsize.m4 \
+	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
 	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
-mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
+mkinstalldirs = $(SHELL) $(top_srcdir)/build-aux/mkinstalldirs
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES = gpg-zip
 CONFIG_CLEAN_VPATH_FILES =
 @BUILD_SYMCRYPTRUN_TRUE@am__EXEEXT_1 = symcryptrun$(EXEEXT)
-@BUILD_GPGTAR_TRUE@am__EXEEXT_2 = gpgtar$(EXEEXT)
-@HAVE_W32_SYSTEM_FALSE@am__EXEEXT_3 = watchgnupg$(EXEEXT) \
+@HAVE_W32_SYSTEM_FALSE@am__EXEEXT_2 = watchgnupg$(EXEEXT) \
 @HAVE_W32_SYSTEM_FALSE@	gpgparsemail$(EXEEXT)
+@BUILD_GPGTAR_TRUE@am__EXEEXT_3 = gpgtar$(EXEEXT)
+@HAVE_W32CE_SYSTEM_FALSE@am__EXEEXT_4 = $(am__EXEEXT_3)
 am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(libexecdir)" \
-	"$(DESTDIR)$(bindir)" "$(DESTDIR)$(sbindir)"
+	"$(DESTDIR)$(sbindir)"
 PROGRAMS = $(bin_PROGRAMS) $(libexec_PROGRAMS) $(noinst_PROGRAMS)
 clean_sat_SOURCES = clean-sat.c
 clean_sat_OBJECTS = clean-sat.$(OBJEXT)
@@ -186,6 +182,7 @@ am__gpg_check_pattern_SOURCES_DIST = gpg-check-pattern.c
 gpg_check_pattern_OBJECTS = $(am_gpg_check_pattern_OBJECTS)
 am__DEPENDENCIES_1 =
 @DISABLE_REGEX_FALSE@gpg_check_pattern_DEPENDENCIES = $(common_libs) \
+@DISABLE_REGEX_FALSE@	$(am__DEPENDENCIES_1) \
 @DISABLE_REGEX_FALSE@	$(am__DEPENDENCIES_1) \
 @DISABLE_REGEX_FALSE@	$(am__DEPENDENCIES_1) \
 @DISABLE_REGEX_FALSE@	$(am__DEPENDENCIES_1) \
@@ -204,15 +201,12 @@ gpg_connect_agent_DEPENDENCIES = ../common/libgpgrl.a $(common_libs) \
 am_gpgconf_OBJECTS = gpgconf.$(OBJEXT) gpgconf-comp.$(OBJEXT) \
 	no-libgcrypt.$(OBJEXT)
 gpgconf_OBJECTS = $(am_gpgconf_OBJECTS)
-gpgconf_DEPENDENCIES = $(common_libs) $(am__DEPENDENCIES_1) \
+@HAVE_W32CE_SYSTEM_TRUE@am__DEPENDENCIES_2 = $(am__DEPENDENCIES_1)
+gpgconf_DEPENDENCIES = $(maybe_commonpth_libs) $(am__DEPENDENCIES_2) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1)
-am_gpgkey2ssh_OBJECTS = gpgkey2ssh-gpgkey2ssh.$(OBJEXT)
-gpgkey2ssh_OBJECTS = $(am_gpgkey2ssh_OBJECTS)
-gpgkey2ssh_DEPENDENCIES = $(common_libs) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1)
-gpgkey2ssh_LINK = $(CCLD) $(gpgkey2ssh_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
+gpgconf_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(gpgconf_LDFLAGS) \
 	$(LDFLAGS) -o $@
 am_gpgparsemail_OBJECTS = gpgparsemail.$(OBJEXT) rfc822parse.$(OBJEXT)
 gpgparsemail_OBJECTS = $(am_gpgparsemail_OBJECTS)
@@ -221,12 +215,13 @@ gpgsplit_SOURCES = gpgsplit.c
 gpgsplit_OBJECTS = gpgsplit.$(OBJEXT)
 gpgsplit_DEPENDENCIES = $(common_libs) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1)
 am_gpgtar_OBJECTS = gpgtar-gpgtar.$(OBJEXT) \
 	gpgtar-gpgtar-create.$(OBJEXT) gpgtar-gpgtar-extract.$(OBJEXT) \
 	gpgtar-gpgtar-list.$(OBJEXT) gpgtar-no-libgcrypt.$(OBJEXT)
 gpgtar_OBJECTS = $(am_gpgtar_OBJECTS)
-gpgtar_DEPENDENCIES = $(common_libs) $(am__DEPENDENCIES_1) \
+gpgtar_DEPENDENCIES = $(libcommon) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
 gpgtar_LINK = $(CCLD) $(gpgtar_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
@@ -239,8 +234,11 @@ mk_tdata_OBJECTS = mk-tdata.$(OBJEXT)
 mk_tdata_LDADD = $(LDADD)
 am_symcryptrun_OBJECTS = symcryptrun.$(OBJEXT)
 symcryptrun_OBJECTS = $(am_symcryptrun_OBJECTS)
+@HAVE_W32CE_SYSTEM_FALSE@am__DEPENDENCIES_3 =  \
+@HAVE_W32CE_SYSTEM_FALSE@	../common/libsimple-pwquery.a
 symcryptrun_DEPENDENCIES = $(am__DEPENDENCIES_1) $(common_libs) \
-	$(pwquery_libs) $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_3) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1)
 am_watchgnupg_OBJECTS = watchgnupg.$(OBJEXT)
@@ -273,7 +271,7 @@ am__uninstall_files_from_dir = { \
     || { echo " ( cd '$$dir' && rm -f" $$files ")"; \
          $(am__cd) "$$dir" && rm -f $$files; }; \
   }
-SCRIPTS = $(bin_SCRIPTS) $(noinst_SCRIPTS) $(sbin_SCRIPTS)
+SCRIPTS = $(noinst_SCRIPTS) $(sbin_SCRIPTS)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -287,7 +285,7 @@ am__v_at_ = $(am__v_at_@AM_DEFAULT_V@)
 am__v_at_0 = @
 am__v_at_1 = 
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
-depcomp = $(SHELL) $(top_srcdir)/scripts/depcomp
+depcomp = $(SHELL) $(top_srcdir)/build-aux/depcomp
 am__depfiles_maybe = depfiles
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -308,14 +306,14 @@ am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = clean-sat.c $(gpg_check_pattern_SOURCES) \
 	$(gpg_connect_agent_SOURCES) $(gpgconf_SOURCES) \
-	$(gpgkey2ssh_SOURCES) $(gpgparsemail_SOURCES) gpgsplit.c \
-	$(gpgtar_SOURCES) make-dns-cert.c mk-tdata.c \
-	$(symcryptrun_SOURCES) $(watchgnupg_SOURCES)
+	$(gpgparsemail_SOURCES) gpgsplit.c $(gpgtar_SOURCES) \
+	make-dns-cert.c mk-tdata.c $(symcryptrun_SOURCES) \
+	$(watchgnupg_SOURCES)
 DIST_SOURCES = clean-sat.c $(am__gpg_check_pattern_SOURCES_DIST) \
 	$(gpg_connect_agent_SOURCES) $(gpgconf_SOURCES) \
-	$(gpgkey2ssh_SOURCES) $(gpgparsemail_SOURCES) gpgsplit.c \
-	$(gpgtar_SOURCES) make-dns-cert.c mk-tdata.c \
-	$(symcryptrun_SOURCES) $(watchgnupg_SOURCES)
+	$(gpgparsemail_SOURCES) gpgsplit.c $(gpgtar_SOURCES) \
+	make-dns-cert.c mk-tdata.c $(symcryptrun_SOURCES) \
+	$(watchgnupg_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -341,11 +339,7 @@ am__define_uniq_tagged_files = \
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
-ABSOLUTE_STDINT_H = @ABSOLUTE_STDINT_H@
 ACLOCAL = @ACLOCAL@
-ADNSLIBS = @ADNSLIBS@
-ALLOCA = @ALLOCA@
-ALLOCA_H = @ALLOCA_H@
 AMTAR = @AMTAR@
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
 AR = @AR@
@@ -353,16 +347,12 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
-BITSIZEOF_PTRDIFF_T = @BITSIZEOF_PTRDIFF_T@
-BITSIZEOF_SIG_ATOMIC_T = @BITSIZEOF_SIG_ATOMIC_T@
-BITSIZEOF_SIZE_T = @BITSIZEOF_SIZE_T@
-BITSIZEOF_WCHAR_T = @BITSIZEOF_WCHAR_T@
-BITSIZEOF_WINT_T = @BITSIZEOF_WINT_T@
 BUILD_FILEVERSION = @BUILD_FILEVERSION@
 BUILD_HOSTNAME = @BUILD_HOSTNAME@
 BUILD_INCLUDED_LIBINTL = @BUILD_INCLUDED_LIBINTL@
 BUILD_REVISION = @BUILD_REVISION@
 BUILD_TIMESTAMP = @BUILD_TIMESTAMP@
+BUILD_VERSION = @BUILD_VERSION@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CC_FOR_BUILD = @CC_FOR_BUILD@
@@ -378,39 +368,25 @@ ECHO_C = @ECHO_C@
 ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
+ENCFS = @ENCFS@
 EXEEXT = @EXEEXT@
-FAQPROG = @FAQPROG@
+FUSERMOUNT = @FUSERMOUNT@
 GETTEXT_MACRO_VERSION = @GETTEXT_MACRO_VERSION@
 GMSGFMT = @GMSGFMT@
 GMSGFMT_015 = @GMSGFMT_015@
 GNUPG_AGENT_PGM = @GNUPG_AGENT_PGM@
+GNUPG_DIRMNGR_LDAP_PGM = @GNUPG_DIRMNGR_LDAP_PGM@
 GNUPG_DIRMNGR_PGM = @GNUPG_DIRMNGR_PGM@
 GNUPG_PINENTRY_PGM = @GNUPG_PINENTRY_PGM@
 GNUPG_PROTECT_TOOL_PGM = @GNUPG_PROTECT_TOOL_PGM@
 GNUPG_SCDAEMON_PGM = @GNUPG_SCDAEMON_PGM@
-GPGKEYS_CURL = @GPGKEYS_CURL@
-GPGKEYS_FINGER = @GPGKEYS_FINGER@
-GPGKEYS_HKP = @GPGKEYS_HKP@
-GPGKEYS_KDNS = @GPGKEYS_KDNS@
 GPGKEYS_LDAP = @GPGKEYS_LDAP@
-GPGKEYS_MAILTO = @GPGKEYS_MAILTO@
 GPG_ERROR_CFLAGS = @GPG_ERROR_CFLAGS@
 GPG_ERROR_CONFIG = @GPG_ERROR_CONFIG@
 GPG_ERROR_LIBS = @GPG_ERROR_LIBS@
 GPG_ERROR_MT_CFLAGS = @GPG_ERROR_MT_CFLAGS@
 GPG_ERROR_MT_LIBS = @GPG_ERROR_MT_LIBS@
 GREP = @GREP@
-HAVE_INTTYPES_H = @HAVE_INTTYPES_H@
-HAVE_LONG_LONG_INT = @HAVE_LONG_LONG_INT@
-HAVE_SIGNED_SIG_ATOMIC_T = @HAVE_SIGNED_SIG_ATOMIC_T@
-HAVE_SIGNED_WCHAR_T = @HAVE_SIGNED_WCHAR_T@
-HAVE_SIGNED_WINT_T = @HAVE_SIGNED_WINT_T@
-HAVE_STDINT_H = @HAVE_STDINT_H@
-HAVE_SYS_BITYPES_H = @HAVE_SYS_BITYPES_H@
-HAVE_SYS_INTTYPES_H = @HAVE_SYS_INTTYPES_H@
-HAVE_SYS_TYPES_H = @HAVE_SYS_TYPES_H@
-HAVE_UNSIGNED_LONG_LONG_INT = @HAVE_UNSIGNED_LONG_LONG_INT@
-HAVE_WCHAR_H = @HAVE_WCHAR_H@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -421,19 +397,18 @@ INTL_MACOSX_LIBS = @INTL_MACOSX_LIBS@
 KSBA_CFLAGS = @KSBA_CFLAGS@
 KSBA_CONFIG = @KSBA_CONFIG@
 KSBA_LIBS = @KSBA_LIBS@
+LBER_LIBS = @LBER_LIBS@
 LDAPLIBS = @LDAPLIBS@
 LDAP_CPPFLAGS = @LDAP_CPPFLAGS@
 LDFLAGS = @LDFLAGS@
 LIBASSUAN_CFLAGS = @LIBASSUAN_CFLAGS@
 LIBASSUAN_CONFIG = @LIBASSUAN_CONFIG@
 LIBASSUAN_LIBS = @LIBASSUAN_LIBS@
-LIBCURL = @LIBCURL@
-LIBCURL_CPPFLAGS = @LIBCURL_CPPFLAGS@
 LIBGCRYPT_CFLAGS = @LIBGCRYPT_CFLAGS@
 LIBGCRYPT_CONFIG = @LIBGCRYPT_CONFIG@
 LIBGCRYPT_LIBS = @LIBGCRYPT_LIBS@
-LIBGNU_LIBDEPS = @LIBGNU_LIBDEPS@
-LIBGNU_LTLIBDEPS = @LIBGNU_LTLIBDEPS@
+LIBGNUTLS_CFLAGS = @LIBGNUTLS_CFLAGS@
+LIBGNUTLS_LIBS = @LIBGNUTLS_LIBS@
 LIBICONV = @LIBICONV@
 LIBINTL = @LIBINTL@
 LIBOBJS = @LIBOBJS@
@@ -452,6 +427,12 @@ MSGFMT = @MSGFMT@
 MSGFMT_015 = @MSGFMT_015@
 MSGMERGE = @MSGMERGE@
 NETLIBS = @NETLIBS@
+NPTH_CFLAGS = @NPTH_CFLAGS@
+NPTH_CONFIG = @NPTH_CONFIG@
+NPTH_LIBS = @NPTH_LIBS@
+NTBTLS_CFLAGS = @NTBTLS_CFLAGS@
+NTBTLS_CONFIG = @NTBTLS_CONFIG@
+NTBTLS_LIBS = @NTBTLS_LIBS@
 OBJEXT = @OBJEXT@
 PACKAGE = @PACKAGE@
 PACKAGE_BUGREPORT = @PACKAGE_BUGREPORT@
@@ -463,37 +444,30 @@ PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
 PERL = @PERL@
+PKG_CONFIG = @PKG_CONFIG@
+PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
+PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 POSUB = @POSUB@
-PTH_CFLAGS = @PTH_CFLAGS@
-PTH_CONFIG = @PTH_CONFIG@
-PTH_LIBS = @PTH_LIBS@
-PTRDIFF_T_SUFFIX = @PTRDIFF_T_SUFFIX@
 RANLIB = @RANLIB@
-SED = @SED@
 SENDMAIL = @SENDMAIL@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 SHRED = @SHRED@
-SIG_ATOMIC_T_SUFFIX = @SIG_ATOMIC_T_SUFFIX@
-SIZE_T_SUFFIX = @SIZE_T_SUFFIX@
-STDINT_H = @STDINT_H@
+SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
+SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
 SYSROOT = @SYSROOT@
 SYS_SOCKET_H = @SYS_SOCKET_H@
 TAR = @TAR@
-UNISTD_H = @UNISTD_H@
 USE_INCLUDED_LIBINTL = @USE_INCLUDED_LIBINTL@
 USE_NLS = @USE_NLS@
 VERSION = @VERSION@
 W32SOCKLIBS = @W32SOCKLIBS@
-WCHAR_T_SUFFIX = @WCHAR_T_SUFFIX@
 WINDRES = @WINDRES@
-WINT_T_SUFFIX = @WINT_T_SUFFIX@
 XGETTEXT = @XGETTEXT@
 XGETTEXT_015 = @XGETTEXT_015@
 XGETTEXT_EXTRA_OPTIONS = @XGETTEXT_EXTRA_OPTIONS@
 ZLIBS = @ZLIBS@
-_libcurl_config = @_libcurl_config@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
 abs_top_builddir = @abs_top_builddir@
@@ -545,69 +519,86 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 EXTRA_DIST = \
-	Manifest watchgnupg.c ChangeLog-2011 \
-	addgnupghome applygnupgdefaults gpgsm-gencert.sh \
+	Manifest watchgnupg.c \
+	addgnupghome applygnupgdefaults \
 	lspgpot mail-signed-keys convert-from-106 sockprox.c \
-	ccidmon.c gpg-connect-agent-w32info.rc
+	ccidmon.c ChangeLog-2011 gpg-connect-agent-w32info.rc
 
-AM_CPPFLAGS = -I$(top_srcdir)/gl -I$(top_srcdir)/intl \
-	-I$(top_srcdir)/common -DLOCALEDIR=\"$(localedir)\" \
+
+# NB: AM_CFLAGS may also be used by tools running on the build
+# platform to create source files.
+AM_CPPFLAGS = -I$(top_srcdir)/common -DLOCALEDIR=\"$(localedir)\" \
 	$(am__append_1) $(am__append_2) $(am__append_3) \
-	$(am__append_4) $(am__append_5) $(am__append_6)
-resource_objs = $(am__append_7)
+	$(am__append_4) $(am__append_5) $(am__append_6) \
+	$(am__append_7)
+@HAVE_W32CE_SYSTEM_FALSE@extra_sys_libs = 
+
+# Under Windows we use LockFileEx.  WindowsCE provides this only on
+# the WindowsMobile 6 platform and thus we need to use the coredll6
+# import library.  We also want to use a stacksize of 256k instead of
+# the 2MB which is the default with cegcc.  256k is the largest stack
+# we use with pth.
+@HAVE_W32CE_SYSTEM_TRUE@extra_sys_libs = -lcoredll6
+@HAVE_W32CE_SYSTEM_FALSE@extra_bin_ldflags = 
+@HAVE_W32CE_SYSTEM_TRUE@extra_bin_ldflags = -Wl,--stack=0x40000
+resource_objs = $(am__append_8)
 
 # Convenience macros
 libcommon = ../common/libcommon.a
 libcommonpth = ../common/libcommonpth.a
-AM_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS) $(LIBASSUAN_CFLAGS)
+libcommontls = ../common/libcommontls.a
+libcommontlsnpth = ../common/libcommontlsnpth.a
+AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS) $(LIBASSUAN_CFLAGS)
 sbin_SCRIPTS = addgnupghome applygnupgdefaults
-bin_SCRIPTS = gpgsm-gencert.sh
+
 # bin_SCRIPTS += gpg-zip
 @HAVE_USTAR_TRUE@noinst_SCRIPTS = gpg-zip
 @BUILD_SYMCRYPTRUN_FALSE@symcryptrun = 
 @BUILD_SYMCRYPTRUN_TRUE@symcryptrun = symcryptrun
 @BUILD_GPGTAR_FALSE@gpgtar = 
 @BUILD_GPGTAR_TRUE@gpgtar = gpgtar
-common_libs = $(libcommon) ../jnlib/libjnlib.a ../gl/libgnu.a
-pwquery_libs = ../common/libsimple-pwquery.a
+common_libs = $(libcommon)
+commonpth_libs = $(libcommonpth)
+@HAVE_W32CE_SYSTEM_FALSE@maybe_commonpth_libs = $(common_libs)
+
+# Some modules require PTH under W32CE.
+@HAVE_W32CE_SYSTEM_TRUE@maybe_commonpth_libs = $(commonpth_libs)
+@HAVE_W32CE_SYSTEM_FALSE@pwquery_libs = ../common/libsimple-pwquery.a
+@HAVE_W32CE_SYSTEM_TRUE@pwquery_libs = 
+@HAVE_W32CE_SYSTEM_TRUE@opt_libassuan_libs = $(LIBASSUAN_LIBS)
 gpgsplit_LDADD = $(common_libs) \
 	         $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
-		 $(ZLIBS) $(LIBINTL) $(LIBICONV)
+		 $(ZLIBS) $(LIBINTL) $(NETLIBS) $(LIBICONV)
 
 gpgconf_SOURCES = gpgconf.c gpgconf.h gpgconf-comp.c no-libgcrypt.c
 
-# jnlib/common sucks in gpg-error, will they, nil they (some compilers
+# common sucks in gpg-error, will they, nil they (some compilers
 # do not eliminate the supposed-to-be-unused-inline-functions).
-gpgconf_LDADD = $(common_libs) \
-                $(LIBINTL) $(GPG_ERROR_LIBS) $(LIBICONV) $(W32SOCKLIBS)
+gpgconf_LDADD = $(maybe_commonpth_libs) $(opt_libassuan_libs) \
+                $(LIBINTL) $(GPG_ERROR_LIBS) $(NETLIBS) \
+	        $(LIBICONV) $(W32SOCKLIBS)
 
+gpgconf_LDFLAGS = $(extra_bin_ldflags)
 gpgparsemail_SOURCES = gpgparsemail.c rfc822parse.c rfc822parse.h
 gpgparsemail_LDADD = 
 symcryptrun_SOURCES = symcryptrun.c
 symcryptrun_LDADD = $(LIBUTIL_LIBS) $(common_libs) $(pwquery_libs) \
                     $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(LIBINTL) \
-                    $(LIBICONV) $(W32SOCKLIBS)
+                    $(LIBICONV) $(NETLIBS) $(W32SOCKLIBS)
 
 watchgnupg_SOURCES = watchgnupg.c
 watchgnupg_LDADD = $(NETLIBS)
 gpg_connect_agent_SOURCES = gpg-connect-agent.c no-libgcrypt.c
 # FIXME: remove PTH_LIBS (why do we need them at all?)
 gpg_connect_agent_LDADD = ../common/libgpgrl.a $(common_libs) \
-	                  $(LIBASSUAN_LIBS) $(PTH_LIBS) $(GPG_ERROR_LIBS) \
+	                  $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) \
                           $(LIBREADLINE) $(LIBINTL) $(NETLIBS) $(LIBICONV) \
-	                  $(resource_objs)
-
-gpgkey2ssh_SOURCES = gpgkey2ssh.c
-gpgkey2ssh_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS)
-# common sucks in jnlib, via use of BUG() in an inline function, which
-# some compilers do not eliminate.
-gpgkey2ssh_LDADD = $(common_libs) \
-                   $(GPG_ERROR_LIBS) $(LIBGCRYPT_LIBS) $(LIBINTL) $(LIBICONV)
+                          $(resource_objs)
 
 @DISABLE_REGEX_FALSE@gpg_check_pattern_SOURCES = gpg-check-pattern.c
-@DISABLE_REGEX_FALSE@gpg_check_pattern_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS)
+@DISABLE_REGEX_FALSE@gpg_check_pattern_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS)
 @DISABLE_REGEX_FALSE@gpg_check_pattern_LDADD = $(common_libs) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
-@DISABLE_REGEX_FALSE@                          $(LIBINTL) $(LIBICONV) $(W32SOCKLIBS)
+@DISABLE_REGEX_FALSE@                          $(LIBINTL) $(NETLIBS) $(LIBICONV) $(W32SOCKLIBS)
 
 gpgtar_SOURCES = \
 	gpgtar.c gpgtar.h \
@@ -616,8 +607,8 @@ gpgtar_SOURCES = \
 	gpgtar-list.c \
 	no-libgcrypt.c
 
-gpgtar_CFLAGS = $(GPG_ERROR_CFLAGS) $(PTH_CFLAGS)
-gpgtar_LDADD = $(common_libs) $(GPG_ERROR_LIBS) \
+gpgtar_CFLAGS = $(GPG_ERROR_CFLAGS)
+gpgtar_LDADD = $(libcommon) $(GPG_ERROR_LIBS) \
                $(LIBINTL) $(NETLIBS) $(LIBICONV) $(W32SOCKLIBS)
 
 all: all-am
@@ -759,11 +750,7 @@ gpg-connect-agent$(EXEEXT): $(gpg_connect_agent_OBJECTS) $(gpg_connect_agent_DEP
 
 gpgconf$(EXEEXT): $(gpgconf_OBJECTS) $(gpgconf_DEPENDENCIES) $(EXTRA_gpgconf_DEPENDENCIES) 
 	@rm -f gpgconf$(EXEEXT)
-	$(AM_V_CCLD)$(LINK) $(gpgconf_OBJECTS) $(gpgconf_LDADD) $(LIBS)
-
-gpgkey2ssh$(EXEEXT): $(gpgkey2ssh_OBJECTS) $(gpgkey2ssh_DEPENDENCIES) $(EXTRA_gpgkey2ssh_DEPENDENCIES) 
-	@rm -f gpgkey2ssh$(EXEEXT)
-	$(AM_V_CCLD)$(gpgkey2ssh_LINK) $(gpgkey2ssh_OBJECTS) $(gpgkey2ssh_LDADD) $(LIBS)
+	$(AM_V_CCLD)$(gpgconf_LINK) $(gpgconf_OBJECTS) $(gpgconf_LDADD) $(LIBS)
 
 gpgparsemail$(EXEEXT): $(gpgparsemail_OBJECTS) $(gpgparsemail_DEPENDENCIES) $(EXTRA_gpgparsemail_DEPENDENCIES) 
 	@rm -f gpgparsemail$(EXEEXT)
@@ -792,41 +779,6 @@ symcryptrun$(EXEEXT): $(symcryptrun_OBJECTS) $(symcryptrun_DEPENDENCIES) $(EXTRA
 watchgnupg$(EXEEXT): $(watchgnupg_OBJECTS) $(watchgnupg_DEPENDENCIES) $(EXTRA_watchgnupg_DEPENDENCIES) 
 	@rm -f watchgnupg$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(watchgnupg_OBJECTS) $(watchgnupg_LDADD) $(LIBS)
-install-binSCRIPTS: $(bin_SCRIPTS)
-	@$(NORMAL_INSTALL)
-	@list='$(bin_SCRIPTS)'; test -n "$(bindir)" || list=; \
-	if test -n "$$list"; then \
-	  echo " $(MKDIR_P) '$(DESTDIR)$(bindir)'"; \
-	  $(MKDIR_P) "$(DESTDIR)$(bindir)" || exit 1; \
-	fi; \
-	for p in $$list; do \
-	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
-	  if test -f "$$d$$p"; then echo "$$d$$p"; echo "$$p"; else :; fi; \
-	done | \
-	sed -e 'p;s,.*/,,;n' \
-	    -e 'h;s|.*|.|' \
-	    -e 'p;x;s,.*/,,;$(transform)' | sed 'N;N;N;s,\n, ,g' | \
-	$(AWK) 'BEGIN { files["."] = ""; dirs["."] = 1; } \
-	  { d=$$3; if (dirs[d] != 1) { print "d", d; dirs[d] = 1 } \
-	    if ($$2 == $$4) { files[d] = files[d] " " $$1; \
-	      if (++n[d] == $(am__install_max)) { \
-		print "f", d, files[d]; n[d] = 0; files[d] = "" } } \
-	    else { print "f", d "/" $$4, $$1 } } \
-	  END { for (d in files) print "f", d, files[d] }' | \
-	while read type dir files; do \
-	     if test "$$dir" = .; then dir=; else dir=/$$dir; fi; \
-	     test -z "$$files" || { \
-	       echo " $(INSTALL_SCRIPT) $$files '$(DESTDIR)$(bindir)$$dir'"; \
-	       $(INSTALL_SCRIPT) $$files "$(DESTDIR)$(bindir)$$dir" || exit $$?; \
-	     } \
-	; done
-
-uninstall-binSCRIPTS:
-	@$(NORMAL_UNINSTALL)
-	@list='$(bin_SCRIPTS)'; test -n "$(bindir)" || exit 0; \
-	files=`for p in $$list; do echo "$$p"; done | \
-	       sed -e 's,.*/,,;$(transform)'`; \
-	dir='$(DESTDIR)$(bindir)'; $(am__uninstall_files_from_dir)
 install-sbinSCRIPTS: $(sbin_SCRIPTS)
 	@$(NORMAL_INSTALL)
 	@list='$(sbin_SCRIPTS)'; test -n "$(sbindir)" || list=; \
@@ -874,7 +826,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_check_pattern-gpg-check-pattern.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpgconf-comp.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpgconf.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpgkey2ssh-gpgkey2ssh.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpgparsemail.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpgsplit.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpgtar-gpgtar-create.Po@am__quote@
@@ -916,20 +867,6 @@ gpg_check_pattern-gpg-check-pattern.obj: gpg-check-pattern.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='gpg-check-pattern.c' object='gpg_check_pattern-gpg-check-pattern.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_check_pattern_CFLAGS) $(CFLAGS) -c -o gpg_check_pattern-gpg-check-pattern.obj `if test -f 'gpg-check-pattern.c'; then $(CYGPATH_W) 'gpg-check-pattern.c'; else $(CYGPATH_W) '$(srcdir)/gpg-check-pattern.c'; fi`
-
-gpgkey2ssh-gpgkey2ssh.o: gpgkey2ssh.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpgkey2ssh_CFLAGS) $(CFLAGS) -MT gpgkey2ssh-gpgkey2ssh.o -MD -MP -MF $(DEPDIR)/gpgkey2ssh-gpgkey2ssh.Tpo -c -o gpgkey2ssh-gpgkey2ssh.o `test -f 'gpgkey2ssh.c' || echo '$(srcdir)/'`gpgkey2ssh.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpgkey2ssh-gpgkey2ssh.Tpo $(DEPDIR)/gpgkey2ssh-gpgkey2ssh.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='gpgkey2ssh.c' object='gpgkey2ssh-gpgkey2ssh.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpgkey2ssh_CFLAGS) $(CFLAGS) -c -o gpgkey2ssh-gpgkey2ssh.o `test -f 'gpgkey2ssh.c' || echo '$(srcdir)/'`gpgkey2ssh.c
-
-gpgkey2ssh-gpgkey2ssh.obj: gpgkey2ssh.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpgkey2ssh_CFLAGS) $(CFLAGS) -MT gpgkey2ssh-gpgkey2ssh.obj -MD -MP -MF $(DEPDIR)/gpgkey2ssh-gpgkey2ssh.Tpo -c -o gpgkey2ssh-gpgkey2ssh.obj `if test -f 'gpgkey2ssh.c'; then $(CYGPATH_W) 'gpgkey2ssh.c'; else $(CYGPATH_W) '$(srcdir)/gpgkey2ssh.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpgkey2ssh-gpgkey2ssh.Tpo $(DEPDIR)/gpgkey2ssh-gpgkey2ssh.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='gpgkey2ssh.c' object='gpgkey2ssh-gpgkey2ssh.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpgkey2ssh_CFLAGS) $(CFLAGS) -c -o gpgkey2ssh-gpgkey2ssh.obj `if test -f 'gpgkey2ssh.c'; then $(CYGPATH_W) 'gpgkey2ssh.c'; else $(CYGPATH_W) '$(srcdir)/gpgkey2ssh.c'; fi`
 
 gpgtar-gpgtar.o: gpgtar.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpgtar_CFLAGS) $(CFLAGS) -MT gpgtar-gpgtar.o -MD -MP -MF $(DEPDIR)/gpgtar-gpgtar.Tpo -c -o gpgtar-gpgtar.o `test -f 'gpgtar.c' || echo '$(srcdir)/'`gpgtar.c
@@ -1087,7 +1024,7 @@ check-am: all-am
 check: check-am
 all-am: Makefile $(PROGRAMS) $(SCRIPTS)
 installdirs:
-	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(libexecdir)" "$(DESTDIR)$(bindir)" "$(DESTDIR)$(sbindir)"; do \
+	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(libexecdir)" "$(DESTDIR)$(sbindir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -1149,8 +1086,8 @@ install-dvi: install-dvi-am
 
 install-dvi-am:
 
-install-exec-am: install-binPROGRAMS install-binSCRIPTS \
-	install-libexecPROGRAMS install-sbinSCRIPTS
+install-exec-am: install-binPROGRAMS install-libexecPROGRAMS \
+	install-sbinSCRIPTS
 
 install-html: install-html-am
 
@@ -1189,8 +1126,8 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-binPROGRAMS uninstall-binSCRIPTS \
-	uninstall-libexecPROGRAMS uninstall-sbinSCRIPTS
+uninstall-am: uninstall-binPROGRAMS uninstall-libexecPROGRAMS \
+	uninstall-sbinSCRIPTS
 
 .MAKE: install-am install-strip
 
@@ -1199,17 +1136,16 @@ uninstall-am: uninstall-binPROGRAMS uninstall-binSCRIPTS \
 	clean-noinstPROGRAMS cscopelist-am ctags ctags-am distclean \
 	distclean-compile distclean-generic distclean-tags distdir dvi \
 	dvi-am html html-am info info-am install install-am \
-	install-binPROGRAMS install-binSCRIPTS install-data \
-	install-data-am install-dvi install-dvi-am install-exec \
-	install-exec-am install-html install-html-am install-info \
-	install-info-am install-libexecPROGRAMS install-man \
-	install-pdf install-pdf-am install-ps install-ps-am \
-	install-sbinSCRIPTS install-strip installcheck installcheck-am \
-	installdirs maintainer-clean maintainer-clean-generic \
-	mostlyclean mostlyclean-compile mostlyclean-generic pdf pdf-am \
-	ps ps-am tags tags-am uninstall uninstall-am \
-	uninstall-binPROGRAMS uninstall-binSCRIPTS \
-	uninstall-libexecPROGRAMS uninstall-sbinSCRIPTS
+	install-binPROGRAMS install-data install-data-am install-dvi \
+	install-dvi-am install-exec install-exec-am install-html \
+	install-html-am install-info install-info-am \
+	install-libexecPROGRAMS install-man install-pdf install-pdf-am \
+	install-ps install-ps-am install-sbinSCRIPTS install-strip \
+	installcheck installcheck-am installdirs maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-compile \
+	mostlyclean-generic pdf pdf-am ps ps-am tags tags-am uninstall \
+	uninstall-am uninstall-binPROGRAMS uninstall-libexecPROGRAMS \
+	uninstall-sbinSCRIPTS
 
 
 @HAVE_W32_SYSTEM_TRUE@.rc.o:

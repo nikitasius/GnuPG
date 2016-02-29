@@ -1,14 +1,24 @@
 /* b64dec.c - Simple Base64 decoder.
- * Copyright (C) 2008 Free Software Foundation, Inc.
+ * Copyright (C) 2008, 2011 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -29,7 +39,7 @@
 
 
 /* The reverse base-64 list used for base-64 decoding. */
-static unsigned char const asctobin[128] = 
+static unsigned char const asctobin[128] =
   {
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -49,7 +59,7 @@ static unsigned char const asctobin[128] =
     0x31, 0x32, 0x33, 0xff, 0xff, 0xff, 0xff, 0xff
   };
 
-enum decoder_states 
+enum decoder_states
   {
     s_init, s_idle, s_lfseen, s_begin,
     s_b64_0, s_b64_1, s_b64_2, s_b64_3,
@@ -62,7 +72,7 @@ enum decoder_states
    plain base64 decoding is done.  If it is the empty string the
    decoder will skip everything until a "-----BEGIN " line has been
    seen, decoding ends at a "----END " line.
-   
+
    Not yet implemented: If TITLE is either "PGP" or begins with "PGP "
    the PGP armor lines are skipped as well.  */
 gpg_error_t
@@ -72,16 +82,19 @@ b64dec_start (struct b64state *state, const char *title)
   if (title)
     {
       if (!strncmp (title, "PGP", 3) && (!title[3] || title[3] == ' '))
-        return gpg_error (GPG_ERR_NOT_IMPLEMENTED);
-
-      state->title = xtrystrdup (title);
-      if (!state->title)
-        return gpg_error_from_syserror ();
-      state->idx = s_init;
+        state->lasterr = gpg_error (GPG_ERR_NOT_IMPLEMENTED);
+      else
+        {
+          state->title = xtrystrdup (title);
+          if (!state->title)
+            state->lasterr = gpg_error_from_syserror ();
+          else
+            state->idx = s_init;
+        }
     }
   else
     state->idx = s_b64_0;
-  return 0;
+  return state->lasterr;
 }
 
 
@@ -93,13 +106,19 @@ b64dec_proc (struct b64state *state, void *buffer, size_t length,
 {
   enum decoder_states ds = state->idx;
   unsigned char val = state->radbuf[0];
-  int pos = state->quad_count; 
+  int pos = state->quad_count;
   char *d, *s;
+
+  if (state->lasterr)
+    return state->lasterr;
 
   if (state->stop_seen)
     {
       *r_nbytes = 0;
-      return gpg_error (GPG_ERR_EOF);
+      state->lasterr = gpg_error (GPG_ERR_EOF);
+      xfree (state->title);
+      state->title = NULL;
+      return state->lasterr;
     }
 
   for (s=d=buffer; length && !state->stop_seen; length--, s++)
@@ -134,7 +153,7 @@ b64dec_proc (struct b64state *state, void *buffer, size_t length,
           {
             int c;
 
-            if (*s == '-' && state->title) 
+            if (*s == '-' && state->title)
               {
                 /* Not a valid Base64 character: assume end
                    header.  */
@@ -149,7 +168,7 @@ b64dec_proc (struct b64state *state, void *buffer, size_t length,
               }
             else if (*s == '\n' || *s == ' ' || *s == '\r' || *s == '\t')
               ; /* Skip white spaces. */
-            else if ( (*s & 0x80) 
+            else if ( (*s & 0x80)
                       || (c = asctobin[*(unsigned char *)s]) == 255)
               {
                 /* Skip invalid encodings.  */
@@ -189,8 +208,8 @@ b64dec_proc (struct b64state *state, void *buffer, size_t length,
         case s_waitend:
           if ( *s == '\n')
             state->stop_seen = 1;
-          break; 
-        default: 
+          break;
+        default:
           BUG();
         }
     }
@@ -198,7 +217,7 @@ b64dec_proc (struct b64state *state, void *buffer, size_t length,
 
   state->idx = ds;
   state->radbuf[0] = val;
-  state->quad_count = pos; 
+  state->quad_count = pos;
   *r_nbytes = (d -(char*) buffer);
   return 0;
 }
@@ -210,8 +229,10 @@ b64dec_proc (struct b64state *state, void *buffer, size_t length,
 gpg_error_t
 b64dec_finish (struct b64state *state)
 {
+  if (state->lasterr)
+    return state->lasterr;
+
   xfree (state->title);
   state->title = NULL;
   return state->invalid_encoding? gpg_error(GPG_ERR_BAD_DATA): 0;
 }
-

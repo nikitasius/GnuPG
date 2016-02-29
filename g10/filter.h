@@ -21,7 +21,7 @@
 #define G10_FILTER_H
 
 #include "types.h"
-#include "cipher.h"
+#include "dek.h"
 
 typedef struct {
     gcry_md_hd_t md;      /* catch all */
@@ -39,8 +39,6 @@ typedef struct {
 
     /* these fields must be initialized to zero */
     int no_openpgp_data;    /* output flag: "No valid OpenPGP data found" */
-    int key_failed_code;    /* Error code from the first gpgkkeys_*
-                               "KEY <keyid> FAILED <err>" line.  */
 
     /* the following fields must be initialized to zero */
     int inp_checked;	    /* set if the input has been checked */
@@ -51,7 +49,6 @@ typedef struct {
     int faked;		    /* we are faking a literal data packet */
     int truncated;	    /* number of truncated lines */
     int qp_detected;
-    int pgp2mode;
     byte eol[3];            /* The end of line characters as a
 			       zero-terminated string.  Defaults
 			       (eol[0]=='\0') to whatever the local
@@ -154,7 +151,7 @@ int cipher_filter( void *opaque, int control,
 int text_filter( void *opaque, int control,
 		 iobuf_t chain, byte *buf, size_t *ret_len);
 int copy_clearsig_text (iobuf_t out, iobuf_t inp, gcry_md_hd_t md,
-                        int escape_dash, int escape_from, int pgp2mode);
+                        int escape_dash, int escape_from);
 
 /*-- progress.c --*/
 progress_filter_context_t *new_progress_context (void);

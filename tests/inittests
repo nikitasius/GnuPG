@@ -73,7 +73,7 @@ for i in ${private_keys}; do
 done
 
 # Create the configuration scripts
-# Note, due to an expired test certificate, we need to use
+# Note, die to an expired test certificate, we need to use
 # the faked system time option.
 cat > gpgsm.conf <<EOF
 no-secmem-warning

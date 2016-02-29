@@ -25,7 +25,7 @@
 #if GNUPG_MAJOR_VERSION == 1
 # ifdef ENABLE_AGENT_SUPPORT
 # include "assuan.h"
-# endif 
+# endif
 #else
 # include <ksba.h>
 #endif
@@ -33,6 +33,9 @@
 
 #define APP_CHANGE_FLAG_RESET    1
 #define APP_CHANGE_FLAG_NULLPIN  2
+
+/* Bit flags set by the decipher function into R_INFO.  */
+#define APP_DECIPHER_INFO_NOPAD  1  /* Padding has been removed.  */
 
 
 struct app_local_s;  /* Defined by all app-*.c.  */
@@ -44,13 +47,8 @@ struct app_ctx_s {
      operations the particular function pointer is set to NULL */
   unsigned int ref_count;
 
-  /* Flag indicating that a reset has been done for that application
-     and that this context is merely lingering and just should not be
-     reused.  */
-  int no_reuse;            
-
   /* Used reader slot. */
-  int slot;     
+  int slot;
 
   /* If this is used by GnuPG 1.4 we need to know the assuan context
      in case we need to divert the operation to an already running
@@ -93,10 +91,11 @@ struct app_ctx_s {
                  const void *indata, size_t indatalen,
                  unsigned char **outdata, size_t *outdatalen);
     gpg_error_t (*decipher) (app_t app, const char *keyidstr,
-                     gpg_error_t (*pincb)(void*, const char *, char **),
-                     void *pincb_arg,
-                     const void *indata, size_t indatalen,
-                     unsigned char **outdata, size_t *outdatalen);
+                             gpg_error_t (*pincb)(void*, const char *, char **),
+                             void *pincb_arg,
+                             const void *indata, size_t indatalen,
+                             unsigned char **outdata, size_t *outdatalen,
+                             unsigned int *r_info);
     gpg_error_t (*writecert) (app_t app, ctrl_t ctrl,
                               const char *certid,
                               gpg_error_t (*pincb)(void*,const char *,char **),
@@ -143,14 +142,15 @@ size_t app_help_read_length_of_cert (int slot, int fid, size_t *r_certoff);
 /*-- app.c --*/
 void app_dump_state (void);
 void application_notify_card_reset (int slot);
-gpg_error_t check_application_conflict (ctrl_t ctrl, const char *name);
+gpg_error_t check_application_conflict (ctrl_t ctrl, int slot,
+                                        const char *name);
 gpg_error_t select_application (ctrl_t ctrl, int slot, const char *name,
                                 app_t *r_app);
 char *get_supported_applications (void);
 void release_application (app_t app);
 gpg_error_t app_munge_serialno (app_t app);
 gpg_error_t app_get_serial_and_stamp (app_t app, char **serial, time_t *stamp);
-gpg_error_t app_write_learn_status (app_t app, ctrl_t ctrl, 
+gpg_error_t app_write_learn_status (app_t app, ctrl_t ctrl,
                                     unsigned int flags);
 gpg_error_t app_readcert (app_t app, const char *certid,
                   unsigned char **cert, size_t *certlen);
@@ -167,15 +167,16 @@ gpg_error_t app_sign (app_t app, const char *keyidstr, int hashalgo,
               const void *indata, size_t indatalen,
               unsigned char **outdata, size_t *outdatalen );
 gpg_error_t app_auth (app_t app, const char *keyidstr,
-              gpg_error_t (*pincb)(void*, const char *, char **),
-              void *pincb_arg,
-              const void *indata, size_t indatalen,
-              unsigned char **outdata, size_t *outdatalen);
+                      gpg_error_t (*pincb)(void*, const char *, char **),
+                      void *pincb_arg,
+                      const void *indata, size_t indatalen,
+                      unsigned char **outdata, size_t *outdatalen);
 gpg_error_t app_decipher (app_t app, const char *keyidstr,
-                  gpg_error_t (*pincb)(void*, const char *, char **),
-                  void *pincb_arg,
-                  const void *indata, size_t indatalen,
-                  unsigned char **outdata, size_t *outdatalen );
+                          gpg_error_t (*pincb)(void*, const char *, char **),
+                          void *pincb_arg,
+                          const void *indata, size_t indatalen,
+                          unsigned char **outdata, size_t *outdatalen,
+                          unsigned int *r_info);
 gpg_error_t app_writecert (app_t app, ctrl_t ctrl,
                            const char *certidstr,
                            gpg_error_t (*pincb)(void*, const char *, char **),
@@ -217,12 +218,12 @@ gpg_error_t app_select_p15 (app_t app);
 /*-- app-geldkarte.c --*/
 gpg_error_t app_select_geldkarte (app_t app);
 
+/*-- app-sc-hsm.c --*/
+gpg_error_t app_select_sc_hsm (app_t app);
+
 
 #endif
 
 
 
 #endif /*GNUPG_SCD_APP_COMMON_H*/
-
-
-

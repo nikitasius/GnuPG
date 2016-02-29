@@ -3,12 +3,22 @@
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -60,7 +70,7 @@ hex2bin (const char *string, void *buffer, size_t length)
 /* Convert STRING consisting of hex characters into its binary representation
    and store that at BUFFER.  BUFFER needs to be of LENGTH bytes.  The
    function check that the STRING will convert exactly to LENGTH
-   bytes. Colons inbetween the hex digits are allowed, if one colon
+   bytes. Colons between the hex digits are allowed, if one colon
    has been given a colon is expected very 2 characters. The string
    is delimited by either end of string or a white space character.
    The function returns -1 on error or the length of the parsed
@@ -106,23 +116,23 @@ do_bin2hex (const void *buffer, size_t length, char *stringbuf, int with_colon)
 {
   const unsigned char *s;
   char *p;
-  
+
   if (!stringbuf)
     {
       /* Not really correct for with_colon but we don't care about the
          one wasted byte. */
-      size_t n = with_colon? 3:2; 
-      size_t nbytes = n * length + 1; 
-      if (length &&  (nbytes-1) / n != length) 
+      size_t n = with_colon? 3:2;
+      size_t nbytes = n * length + 1;
+      if (length &&  (nbytes-1) / n != length)
         {
-          errno = ENOMEM;
+          gpg_err_set_errno (ENOMEM);
           return NULL;
         }
       stringbuf = xtrymalloc (nbytes);
       if (!stringbuf)
         return NULL;
     }
-  
+
   for (s = buffer, p = stringbuf; length; length--, s++)
     {
       if (with_colon && s != buffer)
@@ -165,21 +175,26 @@ bin2hexcolon (const void *buffer, size_t length, char *stringbuf)
 /* Convert HEXSTRING consisting of hex characters into string and
    store that at BUFFER.  HEXSTRING is either delimited by end of
    string or a white space character.  The function makes sure that
-   the resulting string in BUFFER is terminated by a Nul character.
-   BUFSIZE is the availabe length of BUFFER; if the converted result
-   plus a possible required Nul character does not fit into this
-   buffer, the function returns NULL and won't change the existing
-   conent of buffer.  In-place conversion is possible as long as
-   BUFFER points to HEXSTRING.
-   
-   If BUFFER is NULL and bufsize is 0 the function scans HEXSTRING but
-   does not store anything.  This may be used to find the end of
-   hexstring.
+   the resulting string in BUFFER is terminated by a Nul byte.  Note
+   that the retruned string may include embedded Nul bytes; the extra
+   Nul byte at the end is used to make sure tha the result can always
+   be used as a C-string.
 
-   On sucess the function returns a pointer to the next character
+   BUFSIZE is the available length of BUFFER; if the converted result
+   plus a possible required extra Nul character does not fit into this
+   buffer, the function returns NULL and won't change the existing
+   content of BUFFER.  In-place conversion is possible as long as
+   BUFFER points to HEXSTRING.
+
+   If BUFFER is NULL and BUFSIZE is 0 the function scans HEXSTRING but
+   does not store anything.  This may be used to find the end of
+   HEXSTRING.
+
+   On success the function returns a pointer to the next character
    after HEXSTRING (which is either end-of-string or a the next white
-   space).  If BUFLEN is not NULL the strlen of buffer is stored
-   there; this will even be done if BUFFER has been passed as NULL. */
+   space).  If BUFLEN is not NULL the number of valid vytes in BUFFER
+   is stored there (an extra Nul byte is not counted); this will even
+   be done if BUFFER has been passed as NULL. */
 const char *
 hex2str (const char *hexstring, char *buffer, size_t bufsize, size_t *buflen)
 {
@@ -193,7 +208,10 @@ hex2str (const char *hexstring, char *buffer, size_t bufsize, size_t *buflen)
   for (s=hexstring, count=0; hexdigitp (s) && hexdigitp (s+1); s += 2, count++)
     ;
   if (*s && (!isascii (*s) || !isspace (*s)) )
-    return NULL;   /* Not followed by Nul or white space.  */
+    {
+      gpg_err_set_errno (EINVAL);
+      return NULL;   /* Not followed by Nul or white space.  */
+    }
   /* We need to append a nul character.  However we don't want that if
      the hexstring already ends with "00".  */
   need_nul = ((s == hexstring) || !(s[-2] == '0' && s[-1] == '0'));
@@ -203,8 +221,11 @@ hex2str (const char *hexstring, char *buffer, size_t bufsize, size_t *buflen)
   if (buffer)
     {
       if (count > bufsize)
-        return NULL; /* Too long.  */
-      
+        {
+          gpg_err_set_errno (EINVAL);
+          return NULL; /* Too long.  */
+        }
+
       for (s=hexstring, idx=0; hexdigitp (s) && hexdigitp (s+1); s += 2)
         ((unsigned char*)buffer)[idx++] = xtoi_2 (s);
       if (need_nul)
@@ -212,7 +233,7 @@ hex2str (const char *hexstring, char *buffer, size_t bufsize, size_t *buflen)
     }
 
   if (buflen)
-    *buflen = count - 1;
+    *buflen = count - need_nul;
   return s;
 }
 
@@ -232,7 +253,6 @@ hex2str_alloc (const char *hexstring, size_t *r_count)
     {
       if (r_count)
         *r_count = 0;
-      errno = EINVAL;
       return NULL;
     }
   if (r_count)
@@ -244,6 +264,3 @@ hex2str_alloc (const char *hexstring, size_t *r_count)
     BUG ();
   return result;
 }
-
-
-

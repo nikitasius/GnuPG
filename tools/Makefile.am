@@ -17,24 +17,23 @@
 # along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 EXTRA_DIST = \
-	Manifest watchgnupg.c ChangeLog-2011 \
-	addgnupghome applygnupgdefaults gpgsm-gencert.sh \
+	Manifest watchgnupg.c \
+	addgnupghome applygnupgdefaults \
 	lspgpot mail-signed-keys convert-from-106 sockprox.c \
-	ccidmon.c gpg-connect-agent-w32info.rc
+	ccidmon.c ChangeLog-2011 gpg-connect-agent-w32info.rc
 
 
-AM_CPPFLAGS = -I$(top_srcdir)/gl -I$(top_srcdir)/intl -I$(top_srcdir)/common
+AM_CPPFLAGS = -I$(top_srcdir)/common
 include $(top_srcdir)/am/cmacros.am
 
 if HAVE_W32_SYSTEM
 resource_objs += gpg-connect-agent-w32info.o
 endif
 
-AM_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS) $(LIBASSUAN_CFLAGS)
+AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS) $(LIBASSUAN_CFLAGS)
 
 sbin_SCRIPTS = addgnupghome applygnupgdefaults
 
-bin_SCRIPTS = gpgsm-gencert.sh
 if HAVE_USTAR
 # bin_SCRIPTS += gpg-zip
 noinst_SCRIPTS = gpg-zip
@@ -52,31 +51,54 @@ else
   gpgtar =
 endif
 
-
-bin_PROGRAMS = gpgconf gpg-connect-agent gpgkey2ssh ${symcryptrun} ${gpgtar}
+bin_PROGRAMS = gpgconf gpg-connect-agent ${symcryptrun}
 if !HAVE_W32_SYSTEM
 bin_PROGRAMS += watchgnupg gpgparsemail
+endif
+if !HAVE_W32CE_SYSTEM
+bin_PROGRAMS += ${gpgtar}
 endif
 
 if !DISABLE_REGEX
 libexec_PROGRAMS = gpg-check-pattern
 endif
 
+if !HAVE_W32CE_SYSTEM
 noinst_PROGRAMS = clean-sat mk-tdata make-dns-cert gpgsplit
+endif
 
-common_libs = $(libcommon) ../jnlib/libjnlib.a ../gl/libgnu.a
+common_libs = $(libcommon)
+commonpth_libs = $(libcommonpth)
+
+# Some modules require PTH under W32CE.
+if HAVE_W32CE_SYSTEM
+maybe_commonpth_libs = $(commonpth_libs)
+else
+maybe_commonpth_libs = $(common_libs)
+endif
+
+if HAVE_W32CE_SYSTEM
+pwquery_libs =
+else
 pwquery_libs = ../common/libsimple-pwquery.a
+endif
+
+if HAVE_W32CE_SYSTEM
+opt_libassuan_libs = $(LIBASSUAN_LIBS)
+endif
 
 gpgsplit_LDADD = $(common_libs) \
 	         $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
-		 $(ZLIBS) $(LIBINTL) $(LIBICONV)
+		 $(ZLIBS) $(LIBINTL) $(NETLIBS) $(LIBICONV)
 
 gpgconf_SOURCES = gpgconf.c gpgconf.h gpgconf-comp.c no-libgcrypt.c
 
-# jnlib/common sucks in gpg-error, will they, nil they (some compilers
+# common sucks in gpg-error, will they, nil they (some compilers
 # do not eliminate the supposed-to-be-unused-inline-functions).
-gpgconf_LDADD = $(common_libs) \
-                $(LIBINTL) $(GPG_ERROR_LIBS) $(LIBICONV) $(W32SOCKLIBS)
+gpgconf_LDADD = $(maybe_commonpth_libs) $(opt_libassuan_libs) \
+                $(LIBINTL) $(GPG_ERROR_LIBS) $(NETLIBS) \
+	        $(LIBICONV) $(W32SOCKLIBS)
+gpgconf_LDFLAGS = $(extra_bin_ldflags)
 
 gpgparsemail_SOURCES = gpgparsemail.c rfc822parse.c rfc822parse.h
 gpgparsemail_LDADD =
@@ -84,7 +106,7 @@ gpgparsemail_LDADD =
 symcryptrun_SOURCES = symcryptrun.c
 symcryptrun_LDADD = $(LIBUTIL_LIBS) $(common_libs) $(pwquery_libs) \
                     $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(LIBINTL) \
-                    $(LIBICONV) $(W32SOCKLIBS)
+                    $(LIBICONV) $(NETLIBS) $(W32SOCKLIBS)
 
 watchgnupg_SOURCES = watchgnupg.c
 watchgnupg_LDADD = $(NETLIBS)
@@ -92,23 +114,16 @@ watchgnupg_LDADD = $(NETLIBS)
 gpg_connect_agent_SOURCES = gpg-connect-agent.c no-libgcrypt.c
 # FIXME: remove PTH_LIBS (why do we need them at all?)
 gpg_connect_agent_LDADD = ../common/libgpgrl.a $(common_libs) \
-	                  $(LIBASSUAN_LIBS) $(PTH_LIBS) $(GPG_ERROR_LIBS) \
+	                  $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) \
                           $(LIBREADLINE) $(LIBINTL) $(NETLIBS) $(LIBICONV) \
-	                  $(resource_objs)
-
-gpgkey2ssh_SOURCES = gpgkey2ssh.c
-gpgkey2ssh_CFLAGS =  $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS)
-# common sucks in jnlib, via use of BUG() in an inline function, which
-# some compilers do not eliminate.
-gpgkey2ssh_LDADD = $(common_libs) \
-                   $(GPG_ERROR_LIBS) $(LIBGCRYPT_LIBS) $(LIBINTL) $(LIBICONV)
+                          $(resource_objs)
 
 
 if !DISABLE_REGEX
 gpg_check_pattern_SOURCES = gpg-check-pattern.c
-gpg_check_pattern_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS)
+gpg_check_pattern_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS)
 gpg_check_pattern_LDADD = $(common_libs) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
-                          $(LIBINTL) $(LIBICONV) $(W32SOCKLIBS)
+                          $(LIBINTL) $(NETLIBS) $(LIBICONV) $(W32SOCKLIBS)
 endif
 
 gpgtar_SOURCES = \
@@ -117,11 +132,11 @@ gpgtar_SOURCES = \
 	gpgtar-extract.c \
 	gpgtar-list.c \
 	no-libgcrypt.c
-gpgtar_CFLAGS = $(GPG_ERROR_CFLAGS) $(PTH_CFLAGS)
-gpgtar_LDADD = $(common_libs) $(GPG_ERROR_LIBS) \
+gpgtar_CFLAGS = $(GPG_ERROR_CFLAGS)
+gpgtar_LDADD = $(libcommon) $(GPG_ERROR_LIBS) \
                $(LIBINTL) $(NETLIBS) $(LIBICONV) $(W32SOCKLIBS)
+
 
 # Make sure that all libs are build before we use them.  This is
 # important for things like make -j2.
 $(PROGRAMS): $(common_libs) $(pwquery_libs) ../common/libgpgrl.a
-

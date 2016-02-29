@@ -1,23 +1,33 @@
 /* localename.c - Determine the current selected locale.
-   Copyright (C) 1995-1999, 2000-2003, 2007, 
-                 2008 Free Software Foundation, Inc.
-
-   This program is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Lesser General Public License
-   as published by the Free Software Foundation; either version 2.1,
-   or (at your option) any later version.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
-
-   You should have received a copy of the GNU Lesser General Public
-   License along with this program; if not, see <http://www.gnu.org/licenses/>.
-*/
+ * Copyright (C) 1995-1999, 2000-2003, 2007,
+ *               2008 Free Software Foundation, Inc.
+ *
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
+ *
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program; if not, see <http://www.gnu.org/licenses/>.
+ */
 /* Written by Ulrich Drepper <drepper@gnu.org>, 1995.  */
 /* Win32 code written by Tor Lillqvist <tml@iki.fi>.  */
-/* Modified for GpgOL use by Werner Koch <wk@gnupg.org>, 2005.  */ 
+/* Modified for GpgOL use by Werner Koch <wk@gnupg.org>, 2005.  */
 /* Modified for GnuPG use by Werner Koch <wk@gnupg.org>, 2007 */
 
 #ifdef HAVE_CONFIG_H
@@ -29,8 +39,9 @@
 #ifdef HAVE_LOCALE_H
 #include <locale.h>
 #endif
+#include <gpg-error.h> /* We need gettext_localename for W32. */
 
-#include "../jnlib/w32help.h"
+#include "../common/w32help.h"
 
 /* XPG3 defines the result of 'setlocale (category, NULL)' as:
    "Directs 'setlocale()' to query 'category' and return the current
@@ -43,8 +54,8 @@
 #endif
 
 /* Use a dummy value for LC_MESSAGES in case it is not defined.  This
-   works becuase we always test for HAVE_LC_MESSAGES and the core
-   fucntion takes the category as a string as well.  */
+   works because we always test for HAVE_LC_MESSAGES and the core
+   function takes the category as a string as well.  */
 #ifndef HAVE_LC_MESSAGES
 #define LC_MESSAGES 0
 #endif
@@ -67,7 +78,7 @@ do_nl_locale_name (int category, const char *categoryname)
 # if defined HAVE_SETLOCALE && defined HAVE_LC_MESSAGES && defined HAVE_LOCALE_NULL
   (void)categoryname;
   retval = setlocale (category, NULL);
-# else 
+# else
   /* Setting of LC_ALL overwrites all other.  */
   retval = getenv ("LC_ALL");
   if (retval == NULL || retval[0] == '\0')
@@ -101,7 +112,7 @@ gnupg_messages_locale_name (void)
   const char *s;
 
 #ifdef HAVE_W32_SYSTEM
-  /* We use the localname function from ../jnlib/w32-gettext.c. */
+  /* We use the localename function libgpg-error.  */
   s = gettext_localename ();
 #else
   s = do_nl_locale_name (LC_MESSAGES, "LC_MESSAGES");
@@ -113,4 +124,3 @@ gnupg_messages_locale_name (void)
 
   return s;
 }
-

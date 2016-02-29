@@ -73,33 +73,32 @@ struct
 #define DBG_CACHE_VALUE   64	/* debug the caching */
 #define DBG_MEMSTAT_VALUE 128	/* show memory statistics */
 #define DBG_HASHING_VALUE 512	/* debug hashing operations */
-#define DBG_ASSUAN_VALUE 1024   
+#define DBG_IPC_VALUE     1024
 #define DBG_CARD_IO_VALUE 2048
+#define DBG_READER_VALUE  4096  /* Trace reader related functions.  */
 
 #define DBG_COMMAND (opt.debug & DBG_COMMAND_VALUE)
 #define DBG_CRYPTO  (opt.debug & DBG_CRYPTO_VALUE)
 #define DBG_MEMORY  (opt.debug & DBG_MEMORY_VALUE)
 #define DBG_CACHE   (opt.debug & DBG_CACHE_VALUE)
 #define DBG_HASHING (opt.debug & DBG_HASHING_VALUE)
-#define DBG_ASSUAN  (opt.debug & DBG_ASSUAN_VALUE)
+#define DBG_IPC     (opt.debug & DBG_IPC_VALUE)
 #define DBG_CARD_IO (opt.debug & DBG_CARD_IO_VALUE)
+#define DBG_READER  (opt.debug & DBG_READER_VALUE)
 
 struct server_local_s;
 struct app_ctx_s;
 
-struct server_control_s 
+struct server_control_s
 {
   /* Private data used to fire up the connection thread.  We use this
      structure do avoid an extra allocation for just a few bytes. */
   struct {
     gnupg_fd_t fd;
   } thread_startup;
-  
+
   /* Local data of the server; used only in command.c. */
   struct server_local_s *server_local;
-
-  /* Slot of the open reader or -1 if not open. */
-  int reader_slot; 
 
   /* The application context used with this connection or NULL if none
      associated.  Note that this is shared with the other connections:
@@ -108,11 +107,11 @@ struct server_control_s
   struct app_ctx_s *app_ctx;
 
   /* Helper to store the value we are going to sign */
-  struct 
+  struct
   {
-    unsigned char *value;  
+    unsigned char *value;
     int valuelen;
-  } in_data;  
+  } in_data;
 };
 
 typedef struct app_ctx_s *app_t;
@@ -125,7 +124,7 @@ const char *scd_get_socket_name (void);
 void initialize_module_command (void);
 int  scd_command_handler (ctrl_t, int);
 void send_status_info (ctrl_t ctrl, const char *keyword, ...)
-     GNUPG_GCC_A_SENTINEL(1);
+     GPGRT_ATTR_SENTINEL(1);
 void send_status_direct (ctrl_t ctrl, const char *keyword, const char *args);
 void scd_update_reader_status_file (void);
 

@@ -1,6 +1,6 @@
 /* openfile.c
- * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004,
- *               2005 Free Software Foundation, Inc.
+ * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2009,
+ *               2010 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -43,20 +43,23 @@
 #define SKELEXT EXTSEP_S "skel"
 #endif
 
+#ifdef HAVE_W32_SYSTEM
+#define NAME_OF_DEV_NULL "nul"
+#else
+#define NAME_OF_DEV_NULL "/dev/null"
+#endif
+
+
 #if defined (HAVE_DRIVE_LETTERS) || defined (__riscos__)
 #define CMP_FILENAME(a,b) ascii_strcasecmp( (a), (b) )
 #else
 #define CMP_FILENAME(a,b) strcmp( (a), (b) )
 #endif
 
-#ifdef MKDIR_TAKES_ONE_ARG
-#undef mkdir
-#define mkdir(a,b) mkdir(a)
-#endif
 
 /* FIXME:  Implement opt.interactive. */
 
-/****************
+/*
  * Check whether FNAME exists and ask if it's okay to overwrite an
  * existing one.
  * Returns: True: it's okay to overwrite or the file does not exist
@@ -65,66 +68,61 @@
 int
 overwrite_filep( const char *fname )
 {
-    if( iobuf_is_pipe_filename (fname) )
-	return 1; /* Writing to stdout is always okay */
+  if ( iobuf_is_pipe_filename (fname) )
+    return 1; /* Writing to stdout is always okay.  */
 
-    if( access( fname, F_OK ) )
-	return 1; /* does not exist */
+  if ( access( fname, F_OK ) )
+    return 1; /* Does not exist.  */
 
-#ifndef HAVE_DOSISH_SYSTEM
-    if ( !strcmp ( fname, "/dev/null" ) )
-        return 1; /* does not do any harm */
-#endif
-#ifdef HAVE_W32_SYSTEM
-    if ( !strcmp ( fname, "nul" ) )
-        return 1;
-#endif
+  if ( !compare_filenames (fname, NAME_OF_DEV_NULL) )
+    return 1; /* Does not do any harm.  */
 
-    /* fixme: add some backup stuff in case of overwrite */
-    if( opt.answer_yes )
-	return 1;
-    if( opt.answer_no || opt.batch )
-	return 0;  /* do not overwrite */
+  if (opt.answer_yes)
+    return 1;
+  if (opt.answer_no || opt.batch)
+    return 0;  /* Do not overwrite.  */
 
-    tty_printf(_("File `%s' exists. "), fname);
-    if( cpr_enabled () )
-        tty_printf ("\n");
-    if( cpr_get_answer_is_yes("openfile.overwrite.okay",
-			       _("Overwrite? (y/N) ")) )
-	return 1;
-    return 0;
+  tty_printf (_("File '%s' exists. "), fname);
+  if (cpr_enabled ())
+    tty_printf ("\n");
+  if (cpr_get_answer_is_yes ("openfile.overwrite.okay",
+                             _("Overwrite? (y/N) ")) )
+    return 1;
+  return 0;
 }
 
 
-/****************
+/*
  * Strip known extensions from iname and return a newly allocated
  * filename.  Return NULL if we can't do that.
  */
 char *
-make_outfile_name( const char *iname )
+make_outfile_name (const char *iname)
 {
-    size_t n;
+  size_t n;
 
-    if ( iobuf_is_pipe_filename (iname) )
-	return xstrdup("-");
+  if (iobuf_is_pipe_filename (iname))
+    return xstrdup ("-");
 
-    n = strlen(iname);
-    if( n > 4 && (    !CMP_FILENAME(iname+n-4, EXTSEP_S "gpg")
-		   || !CMP_FILENAME(iname+n-4, EXTSEP_S "pgp")
-		   || !CMP_FILENAME(iname+n-4, EXTSEP_S "sig")
-		   || !CMP_FILENAME(iname+n-4, EXTSEP_S "asc") ) ) {
-	char *buf = xstrdup( iname );
-	buf[n-4] = 0;
-	return buf;
+  n = strlen (iname);
+  if (n > 4 && (!CMP_FILENAME(iname+n-4, EXTSEP_S GPGEXT_GPG)
+                || !CMP_FILENAME(iname+n-4, EXTSEP_S "pgp")
+                || !CMP_FILENAME(iname+n-4, EXTSEP_S "sig")
+                || !CMP_FILENAME(iname+n-4, EXTSEP_S "asc")))
+    {
+      char *buf = xstrdup (iname);
+      buf[n-4] = 0;
+      return buf;
     }
-    else if( n > 5 && !CMP_FILENAME(iname+n-5, EXTSEP_S "sign") ) {
-	char *buf = xstrdup( iname );
-	buf[n-5] = 0;
-	return buf;
+  else if (n > 5 && !CMP_FILENAME(iname+n-5, EXTSEP_S "sign"))
+    {
+      char *buf = xstrdup (iname);
+      buf[n-5] = 0;
+      return buf;
     }
 
-    log_info(_("%s: unknown suffix\n"), iname );
-    return NULL;
+  log_info (_("%s: unknown suffix\n"), iname);
+  return NULL;
 }
 
 
@@ -172,116 +170,141 @@ ask_outfile_name( const char *name, size_t namelen )
 }
 
 
-/****************
+/*
  * Make an output filename for the inputfile INAME.
  * Returns an IOBUF and an errorcode
  * Mode 0 = use ".gpg"
  *	1 = use ".asc"
  *	2 = use ".sig"
+ *      3 = use ".rev"
+ *
+ * If INP_FD is not -1 the function simply creates an IOBUF for that
+ * file descriptor and ignore INAME and MODE.  Note that INP_FD won't
+ * be closed if the returned IOBUF is closed.  With RESTRICTEDPERM a
+ * file will be created with mode 700 if possible.
  */
 int
-open_outfile( const char *iname, int mode, IOBUF *a )
+open_outfile (int inp_fd, const char *iname, int mode, int restrictedperm,
+              iobuf_t *a)
 {
   int rc = 0;
 
   *a = NULL;
-  if( iobuf_is_pipe_filename (iname) && !opt.outfile ) {
-    *a = iobuf_create(NULL);
-    if( !*a ) {
-      rc = gpg_error_from_syserror ();
-      log_error(_("can't open `%s': %s\n"), "[stdout]", strerror(errno) );
-    }
-    else if( opt.verbose )
-      log_info(_("writing to stdout\n"));
-  }
-  else {
-    char *buf = NULL;
-    const char *name;
+  if (inp_fd != -1)
+    {
+      char xname[64];
 
-    if ( opt.dry_run )
-      {
-#ifdef HAVE_W32_SYSTEM
-        name = "nul";
-#else
-        name = "/dev/null";
-#endif
-      }
-    else if( opt.outfile )
-      name = opt.outfile;
-    else {
+      *a = iobuf_fdopen_nc (inp_fd, "wb");
+      if (!*a)
+        {
+          rc = gpg_error_from_syserror ();
+          snprintf (xname, sizeof xname, "[fd %d]", inp_fd);
+          log_error (_("can't open '%s': %s\n"), xname, gpg_strerror (rc));
+        }
+      else if (opt.verbose)
+        {
+          snprintf (xname, sizeof xname, "[fd %d]", inp_fd);
+          log_info (_("writing to '%s'\n"), xname);
+        }
+    }
+  else if (iobuf_is_pipe_filename (iname) && !opt.outfile)
+    {
+      *a = iobuf_create (NULL, 0);
+      if ( !*a )
+        {
+          rc = gpg_error_from_syserror ();
+          log_error (_("can't open '%s': %s\n"), "[stdout]", strerror(errno) );
+        }
+      else if ( opt.verbose )
+        log_info (_("writing to stdout\n"));
+    }
+  else
+    {
+      char *buf = NULL;
+      const char *name;
+
+      if (opt.dry_run)
+        name = NAME_OF_DEV_NULL;
+      else if (opt.outfile)
+        name = opt.outfile;
+      else
+        {
 #ifdef USE_ONLY_8DOT3
-      if (opt.mangle_dos_filenames)
-        {
-          /* It is quite common DOS system to have only one dot in a
-           * a filename So if we have something like this, we simple
-           * replace the suffix execpt in cases where the suffix is
-           * larger than 3 characters and not the same as.
-           * We should really map the filenames to 8.3 but this tends to
-           * be more complicated and is probaly a duty of the filesystem
-           */
-          char *dot;
-          const char *newsfx = mode==1 ? ".asc" :
-                               mode==2 ? ".sig" : ".gpg";
-
-          buf = xmalloc(strlen(iname)+4+1);
-          strcpy(buf,iname);
-          dot = strchr(buf, '.' );
-          if ( dot && dot > buf && dot[1] && strlen(dot) <= 4
-				  && CMP_FILENAME(newsfx, dot) )
+          if (opt.mangle_dos_filenames)
             {
-              strcpy(dot, newsfx );
+              /* It is quite common for DOS systems to have only one
+                 dot in a filename.  If we have something like this,
+                 we simple replace the suffix except in cases where
+                 the suffix is larger than 3 characters and not the
+                 same as the new one.  We don't map the filenames to
+                 8.3 because this is a duty of the file system.  */
+              char *dot;
+              const char *newsfx;
+
+              newsfx = (mode==1 ? ".asc" :
+                        mode==2 ? ".sig" :
+                        mode==3 ? ".rev" : ".gpg");
+
+              buf = xmalloc (strlen(iname)+4+1);
+              strcpy (buf, iname);
+              dot = strchr (buf, '.' );
+              if ( dot && dot > buf && dot[1] && strlen(dot) <= 4
+                   && CMP_FILENAME (newsfx, dot) )
+                strcpy (dot, newsfx);
+              else if (dot && !dot[1]) /* Do not duplicate a dot.  */
+                strcpy (dot, newsfx+1);
+              else
+                strcat (buf, newsfx);
             }
-          else if ( dot && !dot[1] ) /* don't duplicate a dot */
-            strcpy( dot, newsfx+1 );
-          else
-            strcat ( buf, newsfx );
-        }
-      if (!buf)
+          if (!buf)
 #endif /* USE_ONLY_8DOT3 */
-        {
-          buf = xmalloc(strlen(iname)+4+1);
-          strcpy(stpcpy(buf,iname), mode==1 ? EXTSEP_S "asc" :
-		                   mode==2 ? EXTSEP_S "sig" : EXTSEP_S "gpg");
+            {
+              buf = xstrconcat (iname,
+                                (mode==1 ? EXTSEP_S "asc" :
+                                 mode==2 ? EXTSEP_S "sig" :
+                                 mode==3 ? EXTSEP_S "rev" :
+                                 /*     */ EXTSEP_S GPGEXT_GPG),
+                                NULL);
+            }
+          name = buf;
         }
-      name = buf;
+
+      rc = 0;
+      while ( !overwrite_filep (name) )
+        {
+          char *tmp = ask_outfile_name (NULL, 0);
+          if ( !tmp || !*tmp )
+            {
+              xfree (tmp);
+              rc = gpg_error (GPG_ERR_EEXIST);
+              break;
+            }
+          xfree (buf);
+          name = buf = tmp;
+        }
+
+      if ( !rc )
+        {
+          if (is_secured_filename (name) )
+            {
+              *a = NULL;
+              gpg_err_set_errno (EPERM);
+            }
+          else
+            *a = iobuf_create (name, restrictedperm);
+          if (!*a)
+            {
+              rc = gpg_error_from_syserror ();
+              log_error(_("can't create '%s': %s\n"), name, strerror(errno) );
+            }
+          else if( opt.verbose )
+            log_info (_("writing to '%s'\n"), name );
+        }
+      xfree(buf);
     }
-
-    rc = 0;
-    while( !overwrite_filep (name) )
-      {
-        char *tmp = ask_outfile_name (NULL, 0);
-        if ( !tmp || !*tmp )
-          {
-            xfree (tmp);
-            rc = gpg_error (GPG_ERR_EEXIST);
-            break;
-          }
-        xfree (buf);
-        name = buf = tmp;
-      }
-
-    if( !rc )
-      {
-        if (is_secured_filename (name) )
-          {
-            *a = NULL;
-            errno = EPERM;
-          }
-        else
-          *a = iobuf_create( name );
-        if( !*a )
-          {
-            rc = gpg_error_from_syserror ();
-            log_error(_("can't create `%s': %s\n"), name, strerror(errno) );
-          }
-        else if( opt.verbose )
-          log_info(_("writing to `%s'\n"), name );
-      }
-    xfree(buf);
-  }
 
   if (*a)
-    iobuf_ioctl (*a,3,1,NULL); /* disable fd caching */
+    iobuf_ioctl (*a, IOBUF_IOCTL_NO_CACHE, 1, NULL);
 
   return rc;
 }
@@ -320,7 +343,7 @@ get_matching_datafile (const char *sigfilename)
 }
 
 
-/****************
+/*
  * Try to open a file without the extension ".sig" or ".asc"
  * Return NULL if such a file is not available.
  */
@@ -352,81 +375,89 @@ open_sigfile (const char *sigfilename, progress_filter_context_t *pfx)
 
 
 /****************
- * Copy the option file skeleton to the given directory.
+ * Copy the option file skeleton for NAME to the given directory.
+ * Returns true if the new option file has any option.
  */
-static void
-copy_options_file( const char *destdir )
+static int
+copy_options_file (const char *destdir, const char *name)
 {
-    const char *datadir = gnupg_datadir ();
-    char *fname;
-    FILE *src, *dst;
-    int linefeeds=0;
-    int c;
-    mode_t oldmask;
-    int esc = 0;
-    int any_option = 0;
+  const char *datadir = gnupg_datadir ();
+  char *fname;
+  FILE *src, *dst;
+  int linefeeds=0;
+  int c;
+  mode_t oldmask;
+  int esc = 0;
+  int any_option = 0;
 
-    if( opt.dry_run )
-	return;
+  if (opt.dry_run)
+    return 0;
 
-    fname = xmalloc( strlen(datadir) + strlen(destdir) + 15 );
-    strcpy(stpcpy(fname, datadir), DIRSEP_S "gpg-conf" SKELEXT );
-    src = fopen( fname, "r" );
-    if (src && is_secured_file (fileno (src)))
-      {
-        fclose (src);
-        src = NULL;
-        errno = EPERM;
-      }
-    if( !src ) {
-	log_info (_("can't open `%s': %s\n"), fname, strerror(errno) );
-	xfree(fname);
-	return;
+  fname = xstrconcat (datadir, DIRSEP_S, name, "-conf", SKELEXT, NULL);
+  src = fopen (fname, "r");
+  if (src && is_secured_file (fileno (src)))
+    {
+      fclose (src);
+      src = NULL;
+      gpg_err_set_errno (EPERM);
     }
-    strcpy(stpcpy(fname, destdir), DIRSEP_S "gpg" EXTSEP_S "conf" );
-    oldmask=umask(077);
-    if ( is_secured_filename (fname) )
-      {
-        dst = NULL;
-        errno = EPERM;
-      }
-    else
-      dst = fopen( fname, "w" );
-    umask(oldmask);
-    if( !dst ) {
-	log_info (_("can't create `%s': %s\n"), fname, strerror(errno) );
-	fclose( src );
-	xfree(fname);
-	return;
+  if (!src)
+    {
+      log_info (_("can't open '%s': %s\n"), fname, strerror(errno));
+      xfree(fname);
+      return 0;
+    }
+  xfree (fname);
+  fname = xstrconcat (destdir, DIRSEP_S, name, EXTSEP_S, "conf", NULL);
+
+  oldmask = umask (077);
+  if (is_secured_filename (fname))
+    {
+      dst = NULL;
+      gpg_err_set_errno (EPERM);
+    }
+  else
+    dst = fopen( fname, "w" );
+  umask (oldmask);
+
+  if (!dst)
+    {
+      log_info (_("can't create '%s': %s\n"), fname, strerror(errno) );
+      fclose (src);
+      xfree (fname);
+      return 0;
     }
 
-    while( (c=getc(src)) != EOF ) {
-	if( linefeeds < 3 ) {
-	    if( c == '\n' )
-		linefeeds++;
+  while ((c = getc (src)) != EOF)
+    {
+      if (linefeeds < 3)
+        {
+          if (c == '\n')
+            linefeeds++;
 	}
-	else {
-	    putc( c, dst );
-            if (c== '\n')
-                esc = 1;
-            else if (esc == 1) {
-                if (c == ' ' || c == '\t')
-                    ;
-                else if (c == '#')
-                    esc = 2;
-                else
-                    any_option = 1;
+      else
+        {
+          putc (c, dst);
+          if (c== '\n')
+            esc = 1;
+          else if (esc == 1)
+            {
+              if (c == ' ' || c == '\t')
+                ;
+              else if (c == '#')
+                esc = 2;
+              else
+                any_option = 1;
             }
         }
     }
-    fclose( dst );
-    fclose( src );
-    log_info(_("new configuration file `%s' created\n"), fname );
-    if (any_option)
-        log_info (_("WARNING: options in `%s'"
-                    " are not yet active during this run\n"),
-                  fname);
-    xfree(fname);
+
+  fclose (dst);
+  fclose (src);
+
+  log_info (_("new configuration file '%s' created\n"), fname);
+  xfree (fname);
+  return any_option;
 }
 
 
@@ -454,12 +485,40 @@ try_make_homedir (const char *fname)
 #endif
       )
     {
-      if ( mkdir (fname, S_IRUSR|S_IWUSR|S_IXUSR) )
-        log_fatal ( _("can't create directory `%s': %s\n"),
+      if (gnupg_mkdir (fname, "-rwx"))
+        log_fatal ( _("can't create directory '%s': %s\n"),
                     fname, strerror(errno) );
       else if (!opt.quiet )
-        log_info ( _("directory `%s' created\n"), fname );
-      copy_options_file( fname );
+        log_info ( _("directory '%s' created\n"), fname );
 
+      /* Note that we also copy a dirmngr.conf file here.  This is
+         because gpg is likely the first invoked tool and thus creates
+         the directory.  */
+      copy_options_file (fname, DIRMNGR_NAME);
+      if (copy_options_file (fname, GPG_NAME))
+        log_info (_("WARNING: options in '%s'"
+                    " are not yet active during this run\n"),
+                  fname);
     }
+}
+
+
+/* Get and if needed create a string with the directory used to store
+   openpgp revocations.  */
+char *
+get_openpgp_revocdir (const char *home)
+{
+  char *fname;
+  struct stat statbuf;
+
+  fname = make_filename (home, GNUPG_OPENPGP_REVOC_DIR, NULL);
+  if (stat (fname, &statbuf) && errno == ENOENT)
+    {
+      if (gnupg_mkdir (fname, "-rwx"))
+        log_error (_("can't create directory '%s': %s\n"),
+                   fname, strerror (errno) );
+      else if (!opt.quiet)
+        log_info (_("directory '%s' created\n"), fname);
+    }
+  return fname;
 }

@@ -1,5 +1,6 @@
 /* gpg-connect-agent.c - Tool to connect to the agent.
- *	Copyright (C) 2005, 2007, 2008 Free Software Foundation, Inc.
+ * Copyright (C) 2005, 2007, 2008, 2010 Free Software Foundation, Inc.
+ * Copyright (C) 2014 Werner Koch
  *
  * This file is part of GnuPG.
  *
@@ -37,6 +38,7 @@
 #ifdef HAVE_W32_SYSTEM
 #  include "../common/exechelp.h"
 #endif
+#include "../common/init.h"
 
 
 #define CONTROL_D ('D' - 'A' + 1)
@@ -49,15 +51,21 @@ enum cmd_and_opt_values
     oQuiet      = 'q',
     oVerbose	= 'v',
     oRawSocket  = 'S',
+    oTcpSocket  = 'T',
     oExec       = 'E',
     oRun        = 'r',
     oSubst      = 's',
 
     oNoVerbose	= 500,
     oHomedir,
+    oAgentProgram,
+    oDirmngrProgram,
     oHex,
     oDecode,
-    oNoExtConnect
+    oNoExtConnect,
+    oDirmngr,
+    oUIServer,
+    oNoAutostart,
 
   };
 
@@ -65,23 +73,30 @@ enum cmd_and_opt_values
 /* The list of commands and options. */
 static ARGPARSE_OPTS opts[] = {
   ARGPARSE_group (301, N_("@\nOptions:\n ")),
-    
+
   ARGPARSE_s_n (oVerbose, "verbose", N_("verbose")),
   ARGPARSE_s_n (oQuiet, "quiet",     N_("quiet")),
   ARGPARSE_s_n (oHex,   "hex",       N_("print data out hex encoded")),
   ARGPARSE_s_n (oDecode,"decode",    N_("decode received data lines")),
-  ARGPARSE_s_s (oRawSocket, "raw-socket", 
+  ARGPARSE_s_n (oDirmngr,"dirmngr",  N_("connect to the dirmngr")),
+  ARGPARSE_s_n (oUIServer, "uiserver", "@"),
+  ARGPARSE_s_s (oRawSocket, "raw-socket",
                 N_("|NAME|connect to Assuan socket NAME")),
-  ARGPARSE_s_n (oExec, "exec", 
+  ARGPARSE_s_s (oTcpSocket, "tcp-socket",
+                N_("|ADDR|connect to Assuan server at ADDR")),
+  ARGPARSE_s_n (oExec, "exec",
                 N_("run the Assuan server given on the command line")),
   ARGPARSE_s_n (oNoExtConnect, "no-ext-connect",
                 N_("do not use extended connect mode")),
-  ARGPARSE_s_s (oRun,  "run", 
+  ARGPARSE_s_s (oRun,  "run",
                 N_("|FILE|run commands from FILE on startup")),
-  ARGPARSE_s_n (oSubst, "subst",     N_("run /subst on startup")), 
+  ARGPARSE_s_n (oSubst, "subst",     N_("run /subst on startup")),
 
+  ARGPARSE_s_n (oNoAutostart, "no-autostart", "@"),
   ARGPARSE_s_n (oNoVerbose, "no-verbose", "@"),
-  ARGPARSE_s_s (oHomedir, "homedir", "@" ),   
+  ARGPARSE_s_s (oHomedir, "homedir", "@" ),
+  ARGPARSE_s_s (oAgentProgram, "agent-program", "@"),
+  ARGPARSE_s_s (oDirmngrProgram, "dirmngr-program", "@"),
 
   ARGPARSE_end ()
 };
@@ -92,10 +107,16 @@ struct
 {
   int verbose;		/* Verbosity level.  */
   int quiet;		/* Be extra quiet.  */
+  int autostart;        /* Start the server if not running.  */
   const char *homedir;  /* Configuration directory name */
+  const char *agent_program;  /* Value of --agent-program.  */
+  const char *dirmngr_program;  /* Value of --dirmngr-program.  */
   int hex;              /* Print data lines in hex format. */
   int decode;           /* Decode received data lines.  */
+  int use_dirmngr;      /* Use the dirmngr and not gpg-agent.  */
+  int use_uiserver;     /* Use the standard UI server.  */
   const char *raw_socket; /* Name of socket to connect in raw mode. */
+  const char *tcp_socket; /* Name of server to connect in tcp mode. */
   int exec;             /* Run the pgm given on the command line. */
   unsigned int connect_flags;    /* Flags used for connecting. */
   int enable_varsubst;  /* Set if variable substitution is enabled.  */
@@ -174,17 +195,17 @@ my_strusage( int level )
 
   switch (level)
     {
-    case 11: p = "gpg-connect-agent (GnuPG)";
+    case 11: p = "@GPG@-connect-agent (@GNUPG@)";
       break;
     case 13: p = VERSION; break;
     case 17: p = PRINTABLE_OS_NAME; break;
     case 19: p = _("Please report bugs to <@EMAIL@>.\n"); break;
 
     case 1:
-    case 40: p = _("Usage: gpg-connect-agent [options] (-h for help)");
+    case 40: p = _("Usage: @GPG@-connect-agent [options] (-h for help)");
       break;
     case 41:
-      p = _("Syntax: gpg-connect-agent [options]\n"
+      p = _("Syntax: @GPG@-connect-agent [options]\n"
             "Connect to a running agent and send commands\n");
       break;
     case 31: p = "\nHome: "; break;
@@ -194,25 +215,6 @@ my_strusage( int level )
     default: p = NULL; break;
     }
   return p;
-}
-
-
-static char *
-gnu_getcwd (void)
-{
-  char *buffer;
-  size_t size = 100;
-
-  for (;;)
-    {
-      buffer = xmalloc (size+1);
-      if (getcwd (buffer, size) == buffer)
-        return buffer;
-      xfree (buffer);
-      if (errno != ERANGE)
-        return NULL;
-      size *= 2;
-    }
 }
 
 
@@ -234,22 +236,22 @@ unescape_string (const char *string)
         {
           switch (*s)
             {
-            case 'b':  
-            case 't':  
-            case 'v':  
-            case 'n':  
-            case 'f':  
-            case 'r':  
-            case '"':  
-            case '\'': 
+            case 'b':
+            case 't':
+            case 'v':
+            case 'n':
+            case 'f':
+            case 'r':
+            case '"':
+            case '\'':
             case '\\': n++; break;
-            case 'x': 
+            case 'x':
               if (s[1] && s[2] && hexdigitp (s+1) && hexdigitp (s+2))
                 n++;
               break;
 
             default:
-              if (s[1] && s[2] 
+              if (s[1] && s[2]
                   && octdigitp (s) && octdigitp (s+1) && octdigitp (s+2))
                 n++;
               break;
@@ -260,7 +262,7 @@ unescape_string (const char *string)
         esc = 1;
       else
         n++;
-    } 
+    }
 
   buffer = xmalloc (n+1);
   d = (unsigned char*)buffer;
@@ -279,7 +281,7 @@ unescape_string (const char *string)
             case '"':  *d++ = '\"'; break;
             case '\'': *d++ = '\''; break;
             case '\\': *d++ = '\\'; break;
-            case 'x': 
+            case 'x':
               if (s[1] && s[2] && hexdigitp (s+1) && hexdigitp (s+2))
                 {
                   s++;
@@ -289,7 +291,7 @@ unescape_string (const char *string)
               break;
 
             default:
-              if (s[1] && s[2] 
+              if (s[1] && s[2]
                   && octdigitp (s) && octdigitp (s+1) && octdigitp (s+2))
                 {
                   *d++ = (atoi_1 (s)*64) + (atoi_1 (s+1)*8) + atoi_1 (s+2);
@@ -303,7 +305,7 @@ unescape_string (const char *string)
         esc = 1;
       else
         *d++ = *s;
-    } 
+    }
   *d = 0;
   return buffer;
 }
@@ -322,7 +324,7 @@ unpercent_string (const char *string, int with_plus)
   for (s=(const unsigned char *)string; *s; s++)
     {
       if (*s == '%' && s[1] && s[2])
-        { 
+        {
           s++;
           n++;
           s++;
@@ -338,7 +340,7 @@ unpercent_string (const char *string, int with_plus)
   for (s=(const unsigned char *)string; *s; s++)
     {
       if (*s == '%' && s[1] && s[2])
-        { 
+        {
           s++;
           *p++ = xtoi_2 (s);
           s++;
@@ -375,7 +377,7 @@ set_var (const char *name, const char *value)
   xfree (var->value);
   var->value = value? xstrdup (value) : NULL;
   return var->value;
-}    
+}
 
 
 static void
@@ -443,12 +445,12 @@ arithmetic_op (int operator, const char *operands)
         case '+': result += value; break;
         case '-': result -= value; break;
         case '*': result *= value; break;
-        case '/': 
+        case '/':
           if (!value)
             return NULL;
           result /= value;
           break;
-        case '%': 
+        case '%':
           if (!value)
             return NULL;
           result %= value;
@@ -457,7 +459,7 @@ arithmetic_op (int operator, const char *operands)
         case '|': result = result || value; break;
         case '&': result = result && value; break;
         default:
-          log_error ("unknown arithmetic operator `%c'\n", operator);
+          log_error ("unknown arithmetic operator '%c'\n", operator);
           return NULL;
         }
     }
@@ -468,10 +470,10 @@ arithmetic_op (int operator, const char *operands)
 
 
 /* Extended version of get_var.  This returns a malloced string and
-   understand the function syntax: "func args". 
+   understand the function syntax: "func args".
 
    Defined functions are
-   
+
      get - Return a value described by the next argument:
            cwd        - The current working directory.
            homedir    - The gnupg homedir.
@@ -513,7 +515,7 @@ arithmetic_op (int operator, const char *operands)
 
 
    Example: get_var_ext ("get sysconfdir") -> "/etc/gnupg"
-    
+
   */
 static char *
 get_var_ext (const char *name)
@@ -548,7 +550,7 @@ get_var_ext (const char *name)
         s++;
       if (!strcmp (s, "cwd"))
         {
-          result = gnu_getcwd ();
+          result = gnupg_getcwd ();
           if (!result)
             log_error ("getcwd failed: %s\n", strerror (errno));
         }
@@ -568,7 +570,7 @@ get_var_ext (const char *name)
         result = xasprintf ("%d", (int)server_pid);
       else
         {
-          log_error ("invalid argument `%s' for variable function `get'\n", s);
+          log_error ("invalid argument '%s' for variable function 'get'\n", s);
           log_info  ("valid are: cwd, "
                      "{home,bin,lib,libexec,data}dir, serverpid\n");
           result = NULL;
@@ -618,7 +620,7 @@ get_var_ext (const char *name)
     {
       s++;
       intvalue = (int)strtol (s, NULL, 0);
-      result = xasprintf ("%s <%s>", 
+      result = xasprintf ("%s <%s>",
                           gpg_strerror (intvalue), gpg_strsource (intvalue));
     }
   else if ( (s - name) == 1 && strchr ("+-*/%!|&", *name))
@@ -627,10 +629,10 @@ get_var_ext (const char *name)
     }
   else
     {
-      log_error ("unknown variable function `%.*s'\n", (int)(s-name), name);
+      log_error ("unknown variable function '%.*s'\n", (int)(s-name), name);
       result = NULL;
     }
-    
+
   xfree (free_me);
   recursion_count--;
   return result;
@@ -655,7 +657,7 @@ substitute_line (char *buffer)
       p = strchr (line, '$');
       if (!p)
         return result; /* No more variables.  */
-      
+
       if (p[1] == '$') /* Escaped dollar sign. */
         {
           memmove (p, p+1, strlen (p+1)+1);
@@ -739,7 +741,7 @@ static char *
 substitute_line_copy (const char *buffer)
 {
   char *result, *p;
-  
+
   p = xstrdup (buffer?buffer:"");
   result = substitute_line (p);
   if (!result)
@@ -765,7 +767,7 @@ assign_variable (char *line, int syslet)
     p++;
 
   if (!*p)
-    set_var (name, NULL); /* Remove variable.  */ 
+    set_var (name, NULL); /* Remove variable.  */
   else if (syslet)
     {
       free_me = opt.enable_varsubst? substitute_line_copy (p) : NULL;
@@ -779,7 +781,7 @@ assign_variable (char *line, int syslet)
       xfree (tmp);
       xfree (free_me);
     }
-  else 
+  else
     {
       tmp = opt.enable_varsubst? substitute_line_copy (p) : NULL;
       if (tmp)
@@ -845,11 +847,11 @@ show_definq (void)
 
   for (d=definq_list; d; d = d->next)
     if (d->name)
-      printf ("%-20s %c %s\n", 
+      printf ("%-20s %c %s\n",
               d->name, d->is_var? 'v' : d->is_prog? 'p':'f', d->file);
   for (d=definq_list; d; d = d->next)
     if (!d->name)
-      printf ("%-20s %c %s\n", "*", 
+      printf ("%-20s %c %s\n", "*",
               d->is_var? 'v': d->is_prog? 'p':'f', d->file);
 }
 
@@ -859,14 +861,14 @@ static void
 clear_definq (void)
 {
   while (definq_list)
-    { 
+    {
       definq_t tmp = definq_list->next;
       xfree (definq_list->name);
       xfree (definq_list);
       definq_list = tmp;
     }
   definq_list_tail = &definq_list;
-}      
+}
 
 
 static void
@@ -901,14 +903,14 @@ do_sendfd (assuan_context_t ctx, char *line)
   fp = fopen (name, mode);
   if (!fp)
     {
-      log_error ("can't open `%s' in \"%s\" mode: %s\n",
+      log_error ("can't open '%s' in \"%s\" mode: %s\n",
                  name, mode, strerror (errno));
       return;
     }
   fd = fileno (fp);
 
   if (opt.verbose)
-    log_error ("file `%s' opened in \"%s\" mode, fd=%d\n",
+    log_error ("file '%s' opened in \"%s\" mode, fd=%d\n",
                name, mode, fd);
 
   rc = assuan_sendfd (ctx, INT2FD (fd) );
@@ -977,7 +979,7 @@ do_open (char *line)
   fp = fopen (name, mode);
   if (!fp)
     {
-      log_error ("can't open `%s' in \"%s\" mode: %s\n",
+      log_error ("can't open '%s' in \"%s\" mode: %s\n",
                  name, mode, strerror (errno));
       return;
     }
@@ -985,12 +987,15 @@ do_open (char *line)
   if (fd >= 0 && fd < DIM (open_fd_table))
     {
       open_fd_table[fd].inuse = 1;
-#ifdef HAVE_W32_SYSTEM
+#ifdef HAVE_W32CE_SYSTEM
+# warning fixme: implement our pipe emulation.
+#endif
+#if defined(HAVE_W32_SYSTEM) && !defined(HAVE_W32CE_SYSTEM)
       {
         HANDLE prochandle, handle, newhandle;
 
         handle = (void*)_get_osfhandle (fd);
-     
+
         prochandle = OpenProcess (PROCESS_DUP_HANDLE, FALSE, server_pid);
         if (!prochandle)
           {
@@ -1012,12 +1017,12 @@ do_open (char *line)
         open_fd_table[fd].handle = newhandle;
       }
       if (opt.verbose)
-        log_info ("file `%s' opened in \"%s\" mode, fd=%d  (libc=%d)\n",
+        log_info ("file '%s' opened in \"%s\" mode, fd=%d  (libc=%d)\n",
                    name, mode, (int)open_fd_table[fd].handle, fd);
       set_int_var (varname, (int)open_fd_table[fd].handle);
-#else  
+#else
       if (opt.verbose)
-        log_info ("file `%s' opened in \"%s\" mode, fd=%d\n",
+        log_info ("file '%s' opened in \"%s\" mode, fd=%d\n",
                    name, mode, fd);
       set_int_var (varname, fd);
 #endif
@@ -1102,14 +1107,14 @@ do_serverpid (assuan_context_t ctx)
   int rc;
   membuf_t mb;
   char *buffer;
-  
+
   init_membuf (&mb, 100);
   rc = assuan_transact (ctx, "GETINFO pid", getinfo_pid_cb, &mb,
                         NULL, NULL, NULL, NULL);
   put_membuf (&mb, "", 1);
   buffer = get_membuf (&mb, NULL);
   if (rc || !buffer)
-    log_error ("command \"%s\" failed: %s\n", 
+    log_error ("command \"%s\" failed: %s\n",
                "GETINFO pid", gpg_strerror (rc));
   else
     {
@@ -1118,6 +1123,22 @@ do_serverpid (assuan_context_t ctx)
         log_info ("server's PID is %lu\n", (unsigned long)server_pid);
     }
   xfree (buffer);
+}
+
+
+/* Return true if the command is either "HELP" or "SCD HELP".  */
+static int
+help_cmd_p (const char *line)
+{
+  if (!ascii_strncasecmp (line, "SCD", 3)
+      && (spacep (line+3) || !line[3]))
+    {
+      for (line += 3; spacep (line); line++)
+        ;
+    }
+
+  return (!ascii_strncasecmp (line, "HELP", 4)
+          && (spacep (line+4) || !line[4]));
 }
 
 
@@ -1141,25 +1162,27 @@ main (int argc, char **argv)
     loopline_t head;
     loopline_t *tail;
     loopline_t current;
-    unsigned int nestlevel; 
+    unsigned int nestlevel;
     int oneshot;
     char *condition;
   } loopstack[20];
   int        loopidx;
   char **cmdline_commands = NULL;
 
+  early_system_init ();
   gnupg_rl_initialize ();
   set_strusage (my_strusage);
   log_set_prefix ("gpg-connect-agent", 1);
 
   /* Make sure that our subsystems are ready.  */
   i18n_init();
-  init_common_subsystems ();
+  init_common_subsystems (&argc, &argv);
 
   assuan_set_gpg_err_source (0);
 
 
   opt.homedir = default_homedir ();
+  opt.autostart = 1;
   opt.connect_flags = 1;
 
   /* Parse the command line. */
@@ -1174,13 +1197,19 @@ main (int argc, char **argv)
         case oVerbose:   opt.verbose++; break;
         case oNoVerbose: opt.verbose = 0; break;
         case oHomedir:   opt.homedir = pargs.r.ret_str; break;
+        case oAgentProgram: opt.agent_program = pargs.r.ret_str;  break;
+        case oDirmngrProgram: opt.dirmngr_program = pargs.r.ret_str;  break;
+        case oNoAutostart:    opt.autostart = 0; break;
         case oHex:       opt.hex = 1; break;
         case oDecode:    opt.decode = 1; break;
+        case oDirmngr:   opt.use_dirmngr = 1; break;
+        case oUIServer:  opt.use_uiserver = 1; break;
         case oRawSocket: opt.raw_socket = pargs.r.ret_str; break;
+        case oTcpSocket: opt.tcp_socket = pargs.r.ret_str; break;
         case oExec:      opt.exec = 1; break;
         case oNoExtConnect: opt.connect_flags &= ~(1); break;
         case oRun:       opt_run = pargs.r.ret_str; break;
-        case oSubst: 
+        case oSubst:
           opt.enable_varsubst = 1;
           opt.trim_leading_spaces = 1;
           break;
@@ -1192,7 +1221,25 @@ main (int argc, char **argv)
   if (log_get_errorcount (0))
     exit (2);
 
-  use_tty = (isatty ( fileno (stdin)) && isatty (fileno (stdout)));
+  /* --uiserver is a shortcut for a specific raw socket.  This comes
+       in particular handy on Windows. */
+  if (opt.use_uiserver)
+    {
+      opt.raw_socket = make_absfilename (opt.homedir, "S.uiserver", NULL);
+    }
+
+  /* Print a warning if an argument looks like an option.  */
+  if (!opt.quiet && !(pargs.flags & ARGPARSE_FLAG_STOP_SEEN))
+    {
+      int i;
+
+      for (i=0; i < argc; i++)
+        if (argv[i][0] == '-' && argv[i][1] == '-')
+          log_info (_("Note: '%s' is not considered an option\n"), argv[i]);
+    }
+
+
+  use_tty = (gnupg_isatty (fileno (stdin)) && gnupg_isatty (fileno (stdout)));
 
   if (opt.exec)
     {
@@ -1207,12 +1254,27 @@ main (int argc, char **argv)
     cmdline_commands = argv;
 
   if (opt.exec && opt.raw_socket)
-    log_info (_("option \"%s\" ignored due to \"%s\"\n"),
-              "--raw-socket", "--exec");
+    {
+      opt.raw_socket = NULL;
+      log_info (_("option \"%s\" ignored due to \"%s\"\n"),
+                "--raw-socket", "--exec");
+    }
+  if (opt.exec && opt.tcp_socket)
+    {
+      opt.tcp_socket = NULL;
+      log_info (_("option \"%s\" ignored due to \"%s\"\n"),
+                "--tcp-socket", "--exec");
+    }
+  if (opt.tcp_socket && opt.raw_socket)
+    {
+      opt.tcp_socket = NULL;
+      log_info (_("option \"%s\" ignored due to \"%s\"\n"),
+                "--tcp-socket", "--raw-socket");
+    }
 
   if (opt_run && !(script_fp = fopen (opt_run, "r")))
     {
-      log_error ("cannot open run file `%s': %s\n",
+      log_error ("cannot open run file '%s': %s\n",
                  opt_run, strerror (errno));
       exit (1);
     }
@@ -1220,11 +1282,11 @@ main (int argc, char **argv)
 
   if (opt.exec)
     {
-      int no_close[3];
+      assuan_fd_t no_close[3];
 
-      no_close[0] = assuan_fd_from_posix_fd (fileno (stderr));
+      no_close[0] = assuan_fd_from_posix_fd (es_fileno (es_stderr));
       no_close[1] = assuan_fd_from_posix_fd (log_get_fd ());
-      no_close[2] = -1;
+      no_close[2] = ASSUAN_INVALID_FD;
 
       rc = assuan_new (&ctx);
       if (rc)
@@ -1244,7 +1306,7 @@ main (int argc, char **argv)
         }
 
       if (opt.verbose)
-        log_info ("server `%s' started\n", *argv);
+        log_info ("server '%s' started\n", *argv);
 
     }
   else if (opt.raw_socket)
@@ -1261,13 +1323,39 @@ main (int argc, char **argv)
 	 (opt.connect_flags & 1) ? ASSUAN_SOCKET_CONNECT_FDPASSING : 0);
       if (rc)
         {
-          log_error ("can't connect to socket `%s': %s\n",
+          log_error ("can't connect to socket '%s': %s\n",
                      opt.raw_socket, gpg_strerror (rc));
           exit (1);
         }
 
       if (opt.verbose)
-        log_info ("connection to socket `%s' established\n", opt.raw_socket);
+        log_info ("connection to socket '%s' established\n", opt.raw_socket);
+    }
+  else if (opt.tcp_socket)
+    {
+      char *url;
+
+      url = xstrconcat ("assuan://", opt.tcp_socket, NULL);
+
+      rc = assuan_new (&ctx);
+      if (rc)
+	{
+          log_error ("assuan_new failed: %s\n", gpg_strerror (rc));
+	  exit (1);
+	}
+
+      rc = assuan_socket_connect (ctx, opt.tcp_socket, 0, 0);
+      if (rc)
+        {
+          log_error ("can't connect to server '%s': %s\n",
+                     opt.tcp_socket, gpg_strerror (rc));
+          exit (1);
+        }
+
+      if (opt.verbose)
+        log_info ("connection to socket '%s' established\n", url);
+
+      xfree (url);
     }
   else
     ctx = start_agent ();
@@ -1281,7 +1369,7 @@ main (int argc, char **argv)
         log_info (_("receiving line failed: %s\n"), gpg_strerror (rc) );
     }
 
- 
+
   for (loopidx=0; loopidx < DIM (loopstack); loopidx++)
     loopstack[loopidx].collecting = 0;
   loopidx = -1;
@@ -1338,7 +1426,7 @@ main (int argc, char **argv)
               linesize = 0;
               keep_line = 1;
             }
-          n = read_line (script_fp? script_fp:stdin, 
+          n = read_line (script_fp? script_fp:stdin,
                          &line, &linesize, &maxlength);
         }
       if (n < 0)
@@ -1364,7 +1452,7 @@ main (int argc, char **argv)
                 log_info ("end of script\n");
               continue;
             }
-          break; 
+          break;
         }
       if (!maxlength)
         {
@@ -1375,11 +1463,11 @@ main (int argc, char **argv)
         log_info (_("line shortened due to embedded Nul character\n"));
       if (line[n-1] == '\n')
         line[n-1] = 0;
-      
+
       if (opt.trim_leading_spaces)
         {
           const char *s = line;
-          
+
           while (spacep (s))
             s++;
           if (s != line)
@@ -1405,7 +1493,7 @@ main (int argc, char **argv)
             loopstack[loopidx+1].nestlevel--;
           else if (!strncmp (line, "/while", 6) && (!line[6]||spacep(line+6)))
             loopstack[loopidx+1].nestlevel++;
-          
+
           if (loopstack[loopidx+1].nestlevel)
             continue;
           /* We reached the corresponding /end.  */
@@ -1488,7 +1576,7 @@ main (int argc, char **argv)
                 {
                   current_datasink = fopen (fname, "wb");
                   if (!current_datasink)
-                    log_error ("can't open `%s': %s\n", 
+                    log_error ("can't open '%s': %s\n",
                                fname, strerror (errno));
                 }
               xfree (tmpline);
@@ -1608,11 +1696,11 @@ main (int argc, char **argv)
                 }
               else if (!(script_fp = fopen (p, "r")))
                 {
-                  log_error ("cannot open run file `%s': %s\n",
+                  log_error ("cannot open run file '%s': %s\n",
                              p, strerror (errno));
                 }
               else if (opt.verbose)
-                log_info ("running commands from `%s'\n", p);
+                log_info ("running commands from '%s'\n", p);
             }
           else if (!strcmp (cmd, "while"))
             {
@@ -1673,7 +1761,14 @@ main (int argc, char **argv)
                     }
                   tmpline = substitute_line (tmpcond);
                   value = tmpline? tmpline : tmpcond;
-                  condition = strtol (value, NULL, 0);
+                  /* "true" or "yes" are commonly used to mean TRUE;
+                     all other strings will evaluate to FALSE due to
+                     the strtoul.  */
+                  if (!ascii_strcasecmp (value, "true")
+                      || !ascii_strcasecmp (value, "yes"))
+                    condition = 1;
+                  else
+                    condition = strtol (value, NULL, 0);
                   xfree (tmpline);
                   xfree (tmpcond);
 
@@ -1725,7 +1820,7 @@ main (int argc, char **argv)
 "/cleardef              Delete all definitions.\n"
 "/sendfd FILE MODE      Open FILE and pass descriptor to server.\n"
 "/recvfd                Receive FD from server and print.\n"
-"/open VAR FILE MODE    Open FILE and assign the file descriptor to VAR.\n" 
+"/open VAR FILE MODE    Open FILE and assign the file descriptor to VAR.\n"
 "/close FD              Close file with descriptor FD.\n"
 "/showopen              Show descriptors of all open files.\n"
 "/serverpid             Retrieve the pid of the server.\n"
@@ -1740,8 +1835,8 @@ main (int argc, char **argv)
 "/help                  Print this help.");
             }
           else
-            log_error (_("unknown command `%s'\n"), cmd );
-      
+            log_error (_("unknown command '%s'\n"), cmd );
+
           continue;
         }
 
@@ -1764,9 +1859,7 @@ main (int argc, char **argv)
       if (*line == '#' || !*line)
         continue; /* Don't expect a response for a comment line. */
 
-      rc = read_and_print_response (ctx, (!ascii_strncasecmp (line, "HELP", 4)
-                                          && (spacep (line+4) || !line[4])),
-                                    &cmderr);
+      rc = read_and_print_response (ctx, help_cmd_p (line), &cmderr);
       if (rc)
         log_info (_("receiving line failed: %s\n"), gpg_strerror (rc) );
       if ((rc || cmderr) && script_fp)
@@ -1775,7 +1868,7 @@ main (int argc, char **argv)
           fclose (script_fp);
           script_fp = NULL;
         }
-          
+
 
       /* FIXME: If the last command was BYE or the server died for
 	 some other reason, we won't notice until we get the next
@@ -1786,8 +1879,8 @@ main (int argc, char **argv)
 
   if (opt.verbose)
     log_info ("closing connection to agent\n");
-  
-  return 0; 
+
+  return 0;
 }
 
 
@@ -1828,14 +1921,17 @@ handle_inquire (assuan_context_t ctx, char *line)
   if (!d)
     {
       if (opt.verbose)
-        log_info ("no handler for inquiry `%s' found\n", name);
+        log_info ("no handler for inquiry '%s' found\n", name);
       return 0;
     }
 
   if (d->is_var)
     {
       char *tmpvalue = get_var_ext (d->file);
-      rc = assuan_send_data (ctx, tmpvalue, strlen (tmpvalue));
+      if (tmpvalue)
+        rc = assuan_send_data (ctx, tmpvalue, strlen (tmpvalue));
+      else
+        rc = assuan_send_data (ctx, "", 0);
       xfree (tmpvalue);
       if (rc)
         log_error ("sending data back failed: %s\n", gpg_strerror (rc) );
@@ -1844,21 +1940,25 @@ handle_inquire (assuan_context_t ctx, char *line)
     {
       if (d->is_prog)
         {
+#ifdef HAVE_W32CE_SYSTEM
+          fp = NULL;
+#else
           fp = popen (d->file, "r");
+#endif
           if (!fp)
-            log_error ("error executing `%s': %s\n",
+            log_error ("error executing '%s': %s\n",
                        d->file, strerror (errno));
           else if (opt.verbose)
-            log_error ("handling inquiry `%s' by running `%s'\n", 
+            log_error ("handling inquiry '%s' by running '%s'\n",
                        name, d->file);
         }
       else
         {
           fp = fopen (d->file, "rb");
           if (!fp)
-            log_error ("error opening `%s': %s\n", d->file, strerror (errno));
+            log_error ("error opening '%s': %s\n", d->file, strerror (errno));
           else if (opt.verbose)
-            log_error ("handling inquiry `%s' by returning content of `%s'\n",
+            log_error ("handling inquiry '%s' by returning content of '%s'\n",
                        name, d->file);
         }
       if (!fp)
@@ -1874,7 +1974,7 @@ handle_inquire (assuan_context_t ctx, char *line)
             }
         }
       if (ferror (fp))
-        log_error ("error reading from `%s': %s\n", d->file, strerror (errno));
+        log_error ("error reading from '%s': %s\n", d->file, strerror (errno));
     }
 
   rc = assuan_send_data (ctx, NULL, 0);
@@ -1885,8 +1985,10 @@ handle_inquire (assuan_context_t ctx, char *line)
     ;
   else if (d->is_prog)
     {
+#ifndef HAVE_W32CE_SYSTEM
       if (pclose (fp))
-        log_error ("error running `%s': %s\n", d->file, strerror (errno));
+        log_error ("error running '%s': %s\n", d->file, strerror (errno));
+#endif
     }
   else
     fclose (fp);
@@ -1910,7 +2012,7 @@ read_and_print_response (assuan_context_t ctx, int withhash, int *r_goterr)
   *r_goterr = 0;
   for (;;)
     {
-      do 
+      do
         {
           rc = assuan_read_line (ctx, &line, &linelen);
           if (rc)
@@ -1921,7 +2023,7 @@ read_and_print_response (assuan_context_t ctx, int withhash, int *r_goterr)
               fwrite (line, linelen, 1, stdout);
               putchar ('\n');
             }
-        }    
+        }
       while (*line == '#' || !linelen);
 
       if (linelen >= 1
@@ -1935,7 +2037,7 @@ read_and_print_response (assuan_context_t ctx, int withhash, int *r_goterr)
               for (j=2, s=(unsigned char*)line+2; j < linelen; j++, s++ )
                 {
                   if (*s == '%' && j+2 < linelen)
-                    { 
+                    {
                       s++; j++;
                       c = xtoi_2 ( s );
                       s++; j++;
@@ -1990,7 +2092,7 @@ read_and_print_response (assuan_context_t ctx, int withhash, int *r_goterr)
                       need_d = 0;
                     }
                   if (*s == '%' && j+2 < linelen)
-                    { 
+                    {
                       s++; j++;
                       c = xtoi_2 ( s );
                       s++; j++;
@@ -2009,7 +2111,7 @@ read_and_print_response (assuan_context_t ctx, int withhash, int *r_goterr)
               putchar ('\n');
             }
         }
-      else 
+      else
         {
           if (need_lf)
             {
@@ -2019,7 +2121,7 @@ read_and_print_response (assuan_context_t ctx, int withhash, int *r_goterr)
             }
 
           if (linelen >= 1
-              && line[0] == 'S' 
+              && line[0] == 'S'
               && (line[1] == '\0' || line[1] == ' '))
             {
               if (!current_datasink || current_datasink != stdout)
@@ -2027,7 +2129,7 @@ read_and_print_response (assuan_context_t ctx, int withhash, int *r_goterr)
                   fwrite (line, linelen, 1, stdout);
                   putchar ('\n');
                 }
-            }  
+            }
           else if (linelen >= 2
                    && line[0] == 'O' && line[1] == 'K'
                    && (line[2] == '\0' || line[2] == ' '))
@@ -2057,11 +2159,11 @@ read_and_print_response (assuan_context_t ctx, int withhash, int *r_goterr)
                 }
               *r_goterr = 1;
               return 0;
-            }  
+            }
           else if (linelen >= 7
                    && line[0] == 'I' && line[1] == 'N' && line[2] == 'Q'
                    && line[3] == 'U' && line[4] == 'I' && line[5] == 'R'
-                   && line[6] == 'E' 
+                   && line[6] == 'E'
                    && (line[7] == '\0' || line[7] == ' '))
             {
               if (!current_datasink || current_datasink != stdout)
@@ -2096,132 +2198,53 @@ read_and_print_response (assuan_context_t ctx, int withhash, int *r_goterr)
 static assuan_context_t
 start_agent (void)
 {
-  int rc = 0;
-  char *infostr, *p;
+  gpg_error_t err;
   assuan_context_t ctx;
   session_env_t session_env;
-
-  infostr = getenv ("GPG_AGENT_INFO");
-  if (!infostr || !*infostr)
-    {
-      char *sockname;
-
-      rc = assuan_new (&ctx);
-      if (rc)
-	{
-          log_error ("assuan_new failed: %s\n", gpg_strerror (rc));
-	  exit (1);
-	}
-
-      /* Check whether we can connect at the standard socket.  */
-      sockname = make_filename (opt.homedir, "S.gpg-agent", NULL);
-      rc = assuan_socket_connect (ctx, sockname, 0, 0);
-
-#ifdef HAVE_W32_SYSTEM
-      /* If we failed to connect under Windows, we fire up the agent.  */
-      if (gpg_err_code (rc) == GPG_ERR_ASS_CONNECT_FAILED)
-        {
-          const char *agent_program;
-          const char *argv[3];
-          int save_rc = rc;
-          
-          if (opt.verbose)
-            log_info (_("no running gpg-agent - starting one\n"));
-          agent_program = gnupg_module_name (GNUPG_MODULE_NAME_AGENT);
-          
-          argv[0] = "--daemon";
-          argv[1] = "--use-standard-socket"; 
-          argv[2] = NULL;  
-
-          rc = gnupg_spawn_process_detached (agent_program, argv, NULL);
-          if (rc)
-            log_debug ("failed to start agent `%s': %s\n",
-                       agent_program, gpg_strerror (rc));
-          else
-            {
-              /* Give the agent some time to prepare itself. */
-              gnupg_sleep (3);
-              /* Now try again to connect the agent.  */
-	      rc = assuan_new (&ctx);
-	      if (rc)
-		{
-		  log_error ("assuan_new failed: %s\n", gpg_strerror (rc));
-		  exit (1);
-		}
-
-              rc = assuan_socket_connect (ctx, sockname, 0, 0);
-            }
-          if (rc)
-            rc = save_rc;
-        }
-#endif /*HAVE_W32_SYSTEM*/
-      xfree (sockname);
-    }
-  else
-    {
-      int prot;
-      int pid;
-
-      infostr = xstrdup (infostr);
-      if ( !(p = strchr (infostr, PATHSEP_C)) || p == infostr)
-        {
-          log_error (_("malformed GPG_AGENT_INFO environment variable\n"));
-          xfree (infostr);
-          exit (1);
-        }
-      *p++ = 0;
-      pid = atoi (p);
-      while (*p && *p != PATHSEP_C)
-        p++;
-      prot = *p? atoi (p+1) : 0;
-      if (prot != 1)
-        {
-          log_error (_("gpg-agent protocol version %d is not supported\n"),
-                     prot);
-          xfree (infostr);
-          exit (1);
-        }
-
-      rc = assuan_new (&ctx);
-      if (rc)
-	{
-          log_error ("assuan_new failed: %s\n", gpg_strerror (rc));
-	  exit (1);
-	}
-
-      rc = assuan_socket_connect (ctx, infostr, pid, 0);
-      xfree (infostr);
-    }
-
-  if (rc)
-    {
-      log_error ("can't connect to the agent: %s\n", gpg_strerror (rc));
-      exit (1);
-    }
-
-  if (opt.verbose)
-    log_info ("connection to agent established\n");
-
-  rc = assuan_transact (ctx, "RESET", NULL, NULL, NULL, NULL, NULL, NULL);
-  if (rc)
-    {
-      log_error (_("error sending %s command: %s\n"), "RESET", 
-                 gpg_strerror (rc));
-      exit (1);
-    }
 
   session_env = session_env_new ();
   if (!session_env)
     log_fatal ("error allocating session environment block: %s\n",
                strerror (errno));
+  if (opt.use_dirmngr)
+    err = start_new_dirmngr (&ctx,
+                             GPG_ERR_SOURCE_DEFAULT,
+                             opt.homedir,
+                             opt.dirmngr_program,
+                             opt.autostart,
+                             !opt.quiet, 0,
+                             NULL, NULL);
+  else
+    err = start_new_gpg_agent (&ctx,
+                               GPG_ERR_SOURCE_DEFAULT,
+                               opt.homedir,
+                               opt.agent_program,
+                               NULL, NULL,
+                               session_env,
+                               opt.autostart,
+                               !opt.quiet, 0,
+                               NULL, NULL);
 
-  rc = send_pinentry_environment (ctx, GPG_ERR_SOURCE_DEFAULT,
-                                  NULL, NULL, session_env);
   session_env_release (session_env);
-  if (rc)
+  if (err)
     {
-      log_error (_("error sending standard options: %s\n"), gpg_strerror (rc));
-      exit (1);
+      if (!opt.autostart
+          && (gpg_err_code (err)
+              == opt.use_dirmngr? GPG_ERR_NO_DIRMNGR : GPG_ERR_NO_AGENT))
+        {
+          /* In the no-autostart case we don't make gpg-connect-agent
+             fail on a missing server.  */
+          log_info (opt.use_dirmngr?
+                    _("no dirmngr running in this session\n"):
+                    _("no gpg-agent running in this session\n"));
+          exit (0);
+        }
+      else
+        {
+          log_error (_("error sending standard options: %s\n"),
+                     gpg_strerror (err));
+          exit (1);
+        }
     }
 
   return ctx;

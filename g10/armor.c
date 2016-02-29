@@ -1,4 +1,4 @@
-/* armor.c - Armor filter
+/* armor.c - Armor flter
  * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
  *               2007 Free Software Foundation, Inc.
  *
@@ -274,7 +274,7 @@ parse_hash_header( const char *line )
 	return 0; /* too short or too long */
     if( memcmp( line, "Hash:", 5 ) )
 	return 0; /* invalid header */
-    s = line+5;
+
     for(s=line+5;;s=s2) {
 	for(; *s && (*s==' ' || *s == '\t'); s++ )
 	    ;
@@ -286,8 +286,6 @@ parse_hash_header( const char *line )
 	    found |= 1;
 	else if( !strncmp( s, "SHA1", s2-s ) )
 	    found |= 2;
-	else if( !strncmp( s, "MD5", s2-s ) )
-	    found |= 4;
 	else if( !strncmp( s, "SHA224", s2-s ) )
 	    found |= 8;
 	else if( !strncmp( s, "SHA256", s2-s ) )
@@ -381,32 +379,6 @@ is_armor_header( byte *line, unsigned len )
 }
 
 
-/* Helper to parse a "KEY <keyid> FAILED <code>" line and return the
-   error code.  LINEPTR points right behind "KEY ".  */
-int
-parse_key_failed_line (const void *lineptr, unsigned int len)
-{
-  const byte *line = lineptr;
-  int code = 0;
-
-  for (; len && !spacep (line); len--, line++)
-    ;
-  for (; len && spacep (line); len--, line++)
-    ;
-  if (len > 7 && !memcmp (line, "FAILED ", 7))
-    {
-      line += 7;
-      len -= 7;
-      for (; len && digitp (line); len--, line++)
-        {
-          code *= 10;
-          code += atoi_1 (line);
-        }
-    }
-
-  return code;
-}
-
 
 /****************
  * Parse a header lines
@@ -441,9 +413,9 @@ parse_header_line( armor_filter_context_t *afx, byte *line, unsigned int len )
     if( !p || (RFC2440 && p[1]!=' ')
 	|| (!RFC2440 && p[1]!=' ' && p[1]!='\n' && p[1]!='\r'))
       {
-	log_error(_("invalid armor header: "));
-	print_string( stderr, line, len, 0 );
-	putc('\n', stderr);
+	log_error (_("invalid armor header: "));
+	es_write_sanitized (log_get_stream (), line, len, NULL, NULL);
+	log_printf ("\n");
 	return -1;
       }
 
@@ -453,8 +425,8 @@ parse_header_line( armor_filter_context_t *afx, byte *line, unsigned int len )
 
     if( opt.verbose ) {
 	log_info(_("armor header: "));
-	print_string( stderr, line, len, 0 );
-	putc('\n', stderr);
+	es_write_sanitized (log_get_stream (), line, len, NULL, NULL);
+	log_printf ("\n");
     }
 
     if( afx->in_cleartext )
@@ -479,8 +451,8 @@ parse_header_line( armor_filter_context_t *afx, byte *line, unsigned int len )
 	   signed data section is "Hash". */
 
 	log_info(_("unknown armor header: "));
-	print_string( stderr, line, len, 0 );
-	putc('\n', stderr);
+	es_write_sanitized (log_get_stream (), line, len, NULL, NULL);
+	log_printf ("\n");
       }
 
     return 1;
@@ -527,14 +499,6 @@ check_input( armor_filter_context_t *afx, IOBUF a )
     /* find the armor header */
     while(len) {
 	i = is_armor_header( line, len );
-        if (i == -1 && afx->only_keyblocks
-            && !afx->key_failed_code
-            && len > 4 && !memcmp (line, "KEY ", 4))
-          {
-            /* This is probably input from a keyserver helper and we
-               have not yet seen an error line.  */
-            afx->key_failed_code = parse_key_failed_line (line+4, len-4);
-          }
 	if( i >= 0 && !(afx->only_keyblocks && i != 1 && i != 5 && i != 6 )) {
 	    hdr_line = i;
 	    if( hdr_line == BEGIN_SIGNED_MSG_IDX ) {
@@ -570,7 +534,7 @@ check_input( armor_filter_context_t *afx, IOBUF a )
 	i = parse_header_line( afx, line, len );
 	if( i <= 0 ) {
 	    if (i && RFC2440)
-		rc = G10ERR_INVALID_ARMOR;
+		rc = GPG_ERR_INV_ARMOR;
 	    break;
 	}
     }
@@ -675,8 +639,9 @@ fake_packet( armor_filter_context_t *afx, IOBUF a,
 		    if( type != BEGIN_SIGNATURE )
 		      {
 			log_info(_("unexpected armor: "));
-			print_string( stderr, p, n, 0 );
-			putc('\n', stderr);
+			es_write_sanitized (log_get_stream (), p, n,
+                                            NULL, NULL);
+			log_printf ("\n");
 		      }
 
 		    lastline = 1;
@@ -686,9 +651,9 @@ fake_packet( armor_filter_context_t *afx, IOBUF a,
 	    else if(!afx->not_dash_escaped)
 	      {
 		/* Bad dash-escaping. */
-		log_info(_("invalid dash escaped line: "));
-		print_string( stderr, p, n, 0 );
-		putc('\n', stderr);
+		log_info (_("invalid dash escaped line: "));
+		es_write_sanitized (log_get_stream (), p, n, NULL, NULL);
+		log_printf ("\n");
 	      }
 	  }
 
@@ -697,10 +662,9 @@ fake_packet( armor_filter_context_t *afx, IOBUF a,
 	  {
 	    int crlf = n > 1 && p[n-2] == '\r' && p[n-1]=='\n';
 
-	    /* PGP2 does not treat a tab as white space character */
 	    afx->buffer_len=
 	      trim_trailing_chars( &p[afx->buffer_pos], n-afx->buffer_pos,
-				   afx->pgp2mode ? " \r\n" : " \t\r\n");
+				   " \t\r\n");
 	    afx->buffer_len+=afx->buffer_pos;
 	    /* the buffer is always allocated with enough space to append
 	     * the removed [CR], LF and a Nul
@@ -951,11 +915,11 @@ radix64_read( armor_filter_context_t *afx, IOBUF a, size_t *retn,
 		    rc = 0;
 		else if( rc == 2 ) {
 		    log_error(_("premature eof (in trailer)\n"));
-		    rc = G10ERR_INVALID_ARMOR;
+		    rc = GPG_ERR_INVALID_ARMOR;
 		}
 		else {
 		    log_error(_("error in trailer line\n"));
-		    rc = G10ERR_INVALID_ARMOR;
+		    rc = GPG_ERR_INVALID_ARMOR;
 		}
 #endif
 	    }
@@ -1042,14 +1006,9 @@ armor_filter( void *opaque, int control,
 		/* the buffer is at least 15+n*15 bytes long, so it
 		 * is easy to construct the packets */
 
-		hashes &= 1|2|4|8|16|32|64;
+		hashes &= 1|2|8|16|32|64;
 		if( !hashes ) {
-		    hashes |= 4;  /* default to MD 5 */
-		    /* This is non-ideal since PGP 5-8 have the same
-		       end-of-line bugs as PGP 2. However, we only
-		       enable pgp2mode if there is no Hash: header. */
-		    if( opt.pgp2_workarounds )
-			afx->pgp2mode = 1;
+		    hashes |= 2;  /* Default to SHA-1. */
 		}
 		n=0;
                 /* First a gpg control packet... */
@@ -1062,8 +1021,6 @@ armor_filter( void *opaque, int control,
                     buf[n++] = DIGEST_ALGO_RMD160;
                 if( hashes & 2 )
                     buf[n++] = DIGEST_ALGO_SHA1;
-                if( hashes & 4 )
-                    buf[n++] = DIGEST_ALGO_MD5;
                 if( hashes & 8 )
                     buf[n++] = DIGEST_ALGO_SHA224;
                 if( hashes & 16 )
@@ -1112,7 +1069,7 @@ armor_filter( void *opaque, int control,
 	    iobuf_writestr(a,afx->eol);
 	    if (opt.emit_version)
 	      {
-		iobuf_writestr (a, "Version: GnuPG v");
+		iobuf_writestr (a, "Version: "GNUPG_NAME" v");
                 for (s=VERSION; *s && *s != '.'; s++)
                   iobuf_writebyte (a, *s);
                 if (opt.emit_version > 1 && *s)
@@ -1229,21 +1186,20 @@ armor_filter( void *opaque, int control,
 	    crc = afx->crc;
 	    idx = afx->idx;
 	    idx2 = afx->idx2;
-	    for(i=0; i < idx; i++ )
-		radbuf[i] = afx->radbuf[i];
 	    if( idx ) {
-		c = bintoasc[(*radbuf>>2)&077];
+		c = bintoasc[(afx->radbuf[0]>>2)&077];
 		iobuf_put(a, c);
 		if( idx == 1 ) {
-		    c = bintoasc[((*radbuf << 4) & 060) & 077];
+		    c = bintoasc[((afx->radbuf[0] << 4) & 060) & 077];
 		    iobuf_put(a, c);
 		    iobuf_put(a, '=');
 		    iobuf_put(a, '=');
 		}
 		else { /* 2 */
-		    c = bintoasc[(((*radbuf<<4)&060)|((radbuf[1]>>4)&017))&077];
+		    c = bintoasc[(((afx->radbuf[0]<<4)&060)
+                                  |((afx->radbuf[1]>>4)&017))&077];
 		    iobuf_put(a, c);
-		    c = bintoasc[((radbuf[1] << 2) & 074) & 077];
+		    c = bintoasc[((afx->radbuf[1] << 2) & 074) & 077];
 		    iobuf_put(a, c);
 		    iobuf_put(a, '=');
 		}
@@ -1295,7 +1251,7 @@ armor_filter( void *opaque, int control,
         release_armor_context (afx);
     }
     else if( control == IOBUFCTRL_DESC )
-	*(char**)buf = "armor_filter";
+        mem2str (buf, "armor_filter", *ret_len);
     return rc;
 }
 

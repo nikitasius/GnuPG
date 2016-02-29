@@ -26,17 +26,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <assert.h>
-#ifdef HAVE_W32_SYSTEM
-# include <fcntl.h> /* for setmode() */
-#endif /*HAVE_W32_SYSTEM*/
 
 #include "i18n.h"
+#include "../common/exectool.h"
 #include "../common/sysutils.h"
 #include "gpgtar.h"
-
-#ifndef GPG_ERR_LIMIT_REACHED
-#define GPG_ERR_LIMIT_REACHED 183
-#endif
 
 
 static gpg_error_t
@@ -58,12 +52,15 @@ extract_regular (estream_t stream, const char *dirname,
     }
   else
     err = 0;
-  
-  outfp = es_fopen (fname, "wb");
+
+  if (opt.dry_run)
+    outfp = es_fopenmem (0, "wb");
+  else
+    outfp = es_fopen (fname, "wb");
   if (!outfp)
     {
       err = gpg_error_from_syserror ();
-      log_error ("error creating `%s': %s\n", fname, gpg_strerror (err));
+      log_error ("error creating '%s': %s\n", fname, gpg_strerror (err));
       goto leave;
     }
 
@@ -82,7 +79,7 @@ extract_regular (estream_t stream, const char *dirname,
       if (nwritten != nbytes)
         {
           err = gpg_error_from_syserror ();
-          log_error ("error writing `%s': %s\n", fname, gpg_strerror (err));
+          log_error ("error writing '%s': %s\n", fname, gpg_strerror (err));
           goto leave;
         }
     }
@@ -90,12 +87,12 @@ extract_regular (estream_t stream, const char *dirname,
 
  leave:
   if (!err && opt.verbose)
-    log_info ("extracted `%s'\n", fname);
+    log_info ("extracted '%s'\n", fname);
   es_fclose (outfp);
   if (err && fname && outfp)
     {
-      if (remove (fname))
-        log_error ("error removing incomplete file `%s': %s\n",
+      if (gnupg_remove (fname))
+        log_error ("error removing incomplete file '%s': %s\n",
                    fname, gpg_strerror (gpg_error_from_syserror ()));
     }
   xfree (fname);
@@ -109,7 +106,7 @@ extract_directory (const char *dirname, tar_header_t hdr)
   gpg_error_t err;
   char *fname;
   size_t prefixlen;
-  
+
   prefixlen = strlen (dirname) + 1;
   fname = strconcat (dirname, "/", hdr->name, NULL);
   if (!fname)
@@ -126,7 +123,7 @@ extract_directory (const char *dirname, tar_header_t hdr)
 
  /* Note that we don't need to care about EEXIST because we always
      extract into a new hierarchy.  */
-  if (gnupg_mkdir (fname, "-rwx------"))
+  if (! opt.dry_run && gnupg_mkdir (fname, "-rwx------"))
     {
       err = gpg_error_from_syserror ();
       if (gpg_err_code (err) == GPG_ERR_ENOENT)
@@ -135,7 +132,7 @@ extract_directory (const char *dirname, tar_header_t hdr)
              original error code in case of a failure.  */
           char *p;
           int rc = 0;
-          
+
           for (p = fname+prefixlen; (p = strchr (p, '/')); p++)
             {
               *p = 0;
@@ -148,13 +145,13 @@ extract_directory (const char *dirname, tar_header_t hdr)
             err = 0;
         }
       if (err)
-        log_error ("error creating directory `%s': %s\n",
+        log_error ("error creating directory '%s': %s\n",
                    fname, gpg_strerror (err));
     }
 
  leave:
   if (!err && opt.verbose)
-    log_info ("created   `%s/'\n", fname);
+    log_info ("created   '%s/'\n", fname);
   xfree (fname);
   return err;
 }
@@ -170,19 +167,19 @@ extract (estream_t stream, const char *dirname, tar_header_t hdr)
 #ifdef HAVE_DOSISH_SYSTEM
   if (strchr (hdr->name, '\\'))
     {
-      log_error ("filename `%s' contains a backslash - "
+      log_error ("filename '%s' contains a backslash - "
                  "can't extract on this system\n", hdr->name);
       return gpg_error (GPG_ERR_INV_NAME);
     }
 #endif /*HAVE_DOSISH_SYSTEM*/
 
   if (!n
-      || strstr (hdr->name, "//") 
-      || strstr (hdr->name, "/../") 
+      || strstr (hdr->name, "//")
+      || strstr (hdr->name, "/../")
       || !strncmp (hdr->name, "../", 3)
       || (n >= 3 && !strcmp (hdr->name+n-3, "/.." )))
     {
-      log_error ("filename `%s' as suspicious parts - not extracting\n",
+      log_error ("filename '%s' as suspicious parts - not extracting\n",
                  hdr->name);
       return gpg_error (GPG_ERR_INV_NAME);
     }
@@ -195,7 +192,7 @@ extract (estream_t stream, const char *dirname, tar_header_t hdr)
     {
       char record[RECORDSIZE];
 
-      log_info ("unsupported file type %d for `%s' - skipped\n",
+      log_info ("unsupported file type %d for '%s' - skipped\n",
                 (int)hdr->typeflag, hdr->name);
       for (err = 0, n=0; !err && n < hdr->nrecords; n++)
         err = read_record (stream, record);
@@ -219,7 +216,7 @@ create_directory (const char *dirprefix)
 
   /* Remove common suffixes.  */
   n = strlen (dirprefix);
-  if (n > 4 && (!compare_filenames    (dirprefix + n - 4, EXTSEP_S "gpg")
+  if (n > 4 && (!compare_filenames    (dirprefix + n - 4, EXTSEP_S GPGEXT_GPG)
                 || !compare_filenames (dirprefix + n - 4, EXTSEP_S "pgp")
                 || !compare_filenames (dirprefix + n - 4, EXTSEP_S "asc")
                 || !compare_filenames (dirprefix + n - 4, EXTSEP_S "pem")
@@ -271,11 +268,12 @@ create_directory (const char *dirprefix)
 
 
 
-void
-gpgtar_extract (const char *filename)
+gpg_error_t
+gpgtar_extract (const char *filename, int decrypt)
 {
   gpg_error_t err;
   estream_t stream;
+  estream_t cipher_stream = NULL;
   tar_header_t header = NULL;
   const char *dirprefix = NULL;
   char *dirname = NULL;
@@ -283,61 +281,104 @@ gpgtar_extract (const char *filename)
   if (filename)
     {
       if (!strcmp (filename, "-"))
-        stream = es_stdin;
+        stream = es_stdout;
       else
         stream = es_fopen (filename, "rb");
       if (!stream)
         {
           err = gpg_error_from_syserror ();
-          log_error ("error opening `%s': %s\n", filename, gpg_strerror (err));
-          return;
+          log_error ("error opening '%s': %s\n", filename, gpg_strerror (err));
+          return err;
         }
     }
   else
     stream = es_stdin;
 
-#ifdef HAVE_DOSISH_SYSTEM
   if (stream == es_stdin)
-    setmode (es_fileno (es_stdin), O_BINARY);
-#endif
+    es_set_binary (es_stdin);
 
-  if (filename && stream != es_stdin)
+  if (decrypt)
     {
-      dirprefix = strrchr (filename, '/');
-      if (dirprefix)
-        dirprefix++;
-      else
-        dirprefix = filename;
+      int i;
+      strlist_t arg;
+      const char **argv;
+
+      cipher_stream = stream;
+      stream = es_fopenmem (0, "rwb");
+      if (! stream)
+        {
+          err = gpg_error_from_syserror ();
+          goto leave;
+        }
+
+      argv = xtrycalloc (strlist_length (opt.gpg_arguments) + 2,
+                         sizeof *argv);
+      if (argv == NULL)
+        {
+          err = gpg_error_from_syserror ();
+          goto leave;
+        }
+      i = 0;
+      argv[i++] = "--decrypt";
+      for (arg = opt.gpg_arguments; arg; arg = arg->next)
+        argv[i++] = arg->d;
+      argv[i++] = NULL;
+      assert (i == strlist_length (opt.gpg_arguments) + 2);
+
+      err = gnupg_exec_tool_stream (opt.gpg_program, argv,
+                                    cipher_stream, stream);
+      xfree (argv);
+      if (err)
+        goto leave;
+
+      err = es_fseek (stream, 0, SEEK_SET);
+      if (err)
+        goto leave;
     }
-  else if (opt.filename)
-    {
-      dirprefix = strrchr (opt.filename, '/');
-      if (dirprefix)
-        dirprefix++;
-      else
-        dirprefix = opt.filename;
-    }
 
-  if (!dirprefix || !*dirprefix)
-    dirprefix = "GPGARCH";
-
-  dirname = create_directory (dirprefix);
-  if (!dirname)
+  if (opt.directory)
+    dirname = xtrystrdup (opt.directory);
+  else
     {
-      err = gpg_error (GPG_ERR_GENERAL);
-      goto leave;
+      if (filename)
+        {
+          dirprefix = strrchr (filename, '/');
+          if (dirprefix)
+            dirprefix++;
+          else
+            dirprefix = filename;
+        }
+      else if (opt.filename)
+        {
+          dirprefix = strrchr (opt.filename, '/');
+          if (dirprefix)
+            dirprefix++;
+          else
+            dirprefix = opt.filename;
+        }
+
+      if (!dirprefix || !*dirprefix)
+        dirprefix = "GPGARCH";
+
+      dirname = create_directory (dirprefix);
+      if (!dirname)
+        {
+          err = gpg_error (GPG_ERR_GENERAL);
+          goto leave;
+        }
     }
 
   if (opt.verbose)
-    log_info ("extracting to `%s/'\n", dirname);
+    log_info ("extracting to '%s/'\n", dirname);
 
   for (;;)
     {
-      header = gpgtar_read_header (stream);
-      if (!header)
+      err = gpgtar_read_header (stream, &header);
+      if (err || header == NULL)
         goto leave;
-     
-      if (extract (stream, dirname, header))
+
+      err = extract (stream, dirname, header);
+      if (err)
         goto leave;
       xfree (header);
       header = NULL;
@@ -349,5 +390,7 @@ gpgtar_extract (const char *filename)
   xfree (dirname);
   if (stream != es_stdin)
     es_fclose (stream);
-  return;
+  if (stream != cipher_stream)
+    es_fclose (cipher_stream);
+  return err;
 }

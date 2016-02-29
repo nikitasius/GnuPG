@@ -15,7 +15,7 @@
 @SET_MAKE@
 
 # Makefile for common gnupg modules
-# Copyright (C) 2001, 2003, 2007 Free Software Foundation, Inc.
+# Copyright (C) 2001, 2003, 2007, 2010 Free Software Foundation, Inc.
 #
 # This file is part of GnuPG.
 #
@@ -115,55 +115,57 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
-noinst_PROGRAMS = $(am__EXEEXT_1) $(am__EXEEXT_2)
-TESTS = $(am__EXEEXT_1)
+@HAVE_W32CE_SYSTEM_FALSE@am__append_1 = libsimple-pwquery.a
+noinst_PROGRAMS = $(am__EXEEXT_3) $(am__EXEEXT_4)
+TESTS = $(am__EXEEXT_3)
 DIST_COMMON = $(top_srcdir)/am/cmacros.am $(srcdir)/Makefile.in \
-	$(srcdir)/Makefile.am $(top_srcdir)/scripts/mkinstalldirs \
-	$(srcdir)/w32info-rc.h.in $(top_srcdir)/scripts/depcomp README
-@HAVE_DOSISH_SYSTEM_FALSE@am__append_1 = -DGNUPG_BINDIR="\"$(bindir)\""            \
+	$(srcdir)/Makefile.am $(top_srcdir)/build-aux/mkinstalldirs \
+	$(srcdir)/w32info-rc.h.in $(top_srcdir)/build-aux/depcomp \
+	README
+@HAVE_DOSISH_SYSTEM_FALSE@am__append_2 = -DGNUPG_BINDIR="\"$(bindir)\""            \
 @HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_LIBEXECDIR="\"$(libexecdir)\""    \
 @HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_LIBDIR="\"$(libdir)/@PACKAGE@\""  \
 @HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_DATADIR="\"$(datadir)/@PACKAGE@\"" \
-@HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_SYSCONFDIR="\"$(sysconfdir)/@PACKAGE@\""
+@HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_SYSCONFDIR="\"$(sysconfdir)/@PACKAGE@\"" \
+@HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_LOCALSTATEDIR="\"$(localstatedir)\""
 
 
 # If a specific protect tool program has been defined, pass its name
 # to cc.  Note that these macros should not be used directly but via
 # the gnupg_module_name function.
-@GNUPG_AGENT_PGM_TRUE@am__append_2 = -DGNUPG_DEFAULT_AGENT="\"@GNUPG_AGENT_PGM@\""
-@GNUPG_PINENTRY_PGM_TRUE@am__append_3 = -DGNUPG_DEFAULT_PINENTRY="\"@GNUPG_PINENTRY_PGM@\""
-@GNUPG_SCDAEMON_PGM_TRUE@am__append_4 = -DGNUPG_DEFAULT_SCDAEMON="\"@GNUPG_SCDAEMON_PGM@\""
-@GNUPG_DIRMNGR_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
-@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
-@USE_DNS_SRV_TRUE@am__append_7 = srv.c
-@USE_DNS_SRV_TRUE@am__append_8 = srv.c
+@GNUPG_AGENT_PGM_TRUE@am__append_3 = -DGNUPG_DEFAULT_AGENT="\"@GNUPG_AGENT_PGM@\""
+@GNUPG_PINENTRY_PGM_TRUE@am__append_4 = -DGNUPG_DEFAULT_PINENTRY="\"@GNUPG_PINENTRY_PGM@\""
+@GNUPG_SCDAEMON_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_SCDAEMON="\"@GNUPG_SCDAEMON_PGM@\""
+@GNUPG_DIRMNGR_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
+@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
+@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_8 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
+@HAVE_W32_SYSTEM_TRUE@am__append_9 = w32-reg.c w32-afunix.c w32-afunix.h
+
+# To make the code easier to read we have split home some code into
+# separate source files.
+@HAVE_W32CE_SYSTEM_TRUE@@HAVE_W32_SYSTEM_TRUE@am__append_10 = exechelp-w32ce.c
+@HAVE_W32CE_SYSTEM_FALSE@@HAVE_W32_SYSTEM_TRUE@am__append_11 = exechelp-w32.c
+@HAVE_W32_SYSTEM_FALSE@am__append_12 = exechelp-posix.c
+@HAVE_W32CE_SYSTEM_FALSE@am__append_13 = t-exechelp
+@HAVE_W32_SYSTEM_TRUE@am__append_14 = t-w32-reg
 subdir = common
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/gl/m4/absolute-header.m4 \
-	$(top_srcdir)/gl/m4/alloca.m4 $(top_srcdir)/gl/m4/allocsa.m4 \
-	$(top_srcdir)/gl/m4/eealloc.m4 \
-	$(top_srcdir)/gl/m4/gnulib-comp.m4 \
-	$(top_srcdir)/gl/m4/gnulib-tool.m4 \
-	$(top_srcdir)/gl/m4/mkdtemp.m4 $(top_srcdir)/gl/m4/setenv.m4 \
-	$(top_srcdir)/gl/m4/stdint.m4 $(top_srcdir)/gl/m4/strpbrk.m4 \
-	$(top_srcdir)/gl/m4/unistd_h.m4 $(top_srcdir)/m4/autobuild.m4 \
-	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/estream.m4 \
-	$(top_srcdir)/m4/gettext.m4 $(top_srcdir)/m4/gnupg-pth.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
+	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/m4/gpg-error.m4 $(top_srcdir)/m4/iconv.m4 \
 	$(top_srcdir)/m4/isc-posix.m4 $(top_srcdir)/m4/ksba.m4 \
 	$(top_srcdir)/m4/lcmessage.m4 $(top_srcdir)/m4/ldap.m4 \
 	$(top_srcdir)/m4/lib-ld.m4 $(top_srcdir)/m4/lib-link.m4 \
 	$(top_srcdir)/m4/lib-prefix.m4 $(top_srcdir)/m4/libassuan.m4 \
-	$(top_srcdir)/m4/libcurl.m4 $(top_srcdir)/m4/libgcrypt.m4 \
-	$(top_srcdir)/m4/longdouble.m4 $(top_srcdir)/m4/nls.m4 \
+	$(top_srcdir)/m4/libgcrypt.m4 $(top_srcdir)/m4/nls.m4 \
+	$(top_srcdir)/m4/npth.m4 $(top_srcdir)/m4/ntbtls.m4 \
 	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
-	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/size_max.m4 \
-	$(top_srcdir)/m4/socklen.m4 $(top_srcdir)/m4/sys_socket_h.m4 \
-	$(top_srcdir)/m4/tar-ustar.m4 $(top_srcdir)/m4/xsize.m4 \
+	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
 	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
-mkinstalldirs = $(SHELL) $(top_srcdir)/scripts/mkinstalldirs
+mkinstalldirs = $(SHELL) $(top_srcdir)/build-aux/mkinstalldirs
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES = w32info-rc.h
 CONFIG_CLEAN_VPATH_FILES =
@@ -175,56 +177,95 @@ am__v_AR_0 = @echo "  AR      " $@;
 am__v_AR_1 = 
 libcommon_a_AR = $(AR) $(ARFLAGS)
 libcommon_a_LIBADD =
-am__libcommon_a_SOURCES_DIST = common-defs.h util.h i18n.c i18n.h \
-	status.c status.h openpgpdefs.h gc-opt-flags.h keyserver.h \
-	sexp-parse.h tlv.c tlv.h init.c init.h sexputil.c sysutils.c \
-	sysutils.h homedir.c gettime.c yesno.c b64enc.c b64dec.c \
-	zb32.c convert.c percent.c miscellaneous.c xasprintf.c \
-	xreadline.c membuf.c membuf.h iobuf.c iobuf.h ttyio.c ttyio.h \
-	asshelp.c asshelp.h exechelp.c exechelp.h signal.c estream.c \
-	estream.h estream-printf.c estream-printf.h audit.c audit.h \
-	srv.h dns-cert.c dns-cert.h pka.c pka.h http.c http.h \
-	localename.c session-env.c session-env.h ssh-utils.c \
-	ssh-utils.h helpfile.c get-passphrase.c get-passphrase.h srv.c
-am__objects_1 = libcommon_a-i18n.$(OBJEXT) \
-	libcommon_a-status.$(OBJEXT) libcommon_a-tlv.$(OBJEXT) \
-	libcommon_a-init.$(OBJEXT) libcommon_a-sexputil.$(OBJEXT) \
-	libcommon_a-sysutils.$(OBJEXT) libcommon_a-homedir.$(OBJEXT) \
-	libcommon_a-gettime.$(OBJEXT) libcommon_a-yesno.$(OBJEXT) \
-	libcommon_a-b64enc.$(OBJEXT) libcommon_a-b64dec.$(OBJEXT) \
-	libcommon_a-zb32.$(OBJEXT) libcommon_a-convert.$(OBJEXT) \
-	libcommon_a-percent.$(OBJEXT) \
+am__libcommon_a_SOURCES_DIST = common-defs.h util.h fwddecl.h i18n.c \
+	i18n.h types.h host2net.h dynload.h w32help.h mapstrings.c \
+	stringhelp.c stringhelp.h strlist.c strlist.h utf8conv.c \
+	utf8conv.h argparse.c argparse.h logging.c logging.h dotlock.c \
+	dotlock.h mischelp.c mischelp.h status.c status.h shareddefs.h \
+	openpgpdefs.h gc-opt-flags.h keyserver.h sexp-parse.h tlv.c \
+	tlv.h init.c init.h sexputil.c sysutils.c sysutils.h homedir.c \
+	gettime.c gettime.h yesno.c b64enc.c b64dec.c zb32.c zb32.h \
+	convert.c percent.c mbox-util.c mbox-util.h miscellaneous.c \
+	xasprintf.c xreadline.c membuf.c membuf.h iobuf.c iobuf.h \
+	ttyio.c ttyio.h asshelp.c asshelp2.c asshelp.h exechelp.h \
+	signal.c audit.c audit.h localename.c session-env.c \
+	session-env.h userids.c userids.h openpgp-oid.c ssh-utils.c \
+	ssh-utils.h agent-opt.c helpfile.c mkdir_p.c mkdir_p.h \
+	call-gpg.c call-gpg.h exectool.c exectool.h w32-reg.c \
+	w32-afunix.c w32-afunix.h exechelp-w32ce.c exechelp-w32.c \
+	exechelp-posix.c get-passphrase.c get-passphrase.h
+@HAVE_W32_SYSTEM_TRUE@am__objects_1 = libcommon_a-w32-reg.$(OBJEXT) \
+@HAVE_W32_SYSTEM_TRUE@	libcommon_a-w32-afunix.$(OBJEXT)
+@HAVE_W32CE_SYSTEM_TRUE@@HAVE_W32_SYSTEM_TRUE@am__objects_2 = libcommon_a-exechelp-w32ce.$(OBJEXT)
+@HAVE_W32CE_SYSTEM_FALSE@@HAVE_W32_SYSTEM_TRUE@am__objects_3 = libcommon_a-exechelp-w32.$(OBJEXT)
+@HAVE_W32_SYSTEM_FALSE@am__objects_4 =  \
+@HAVE_W32_SYSTEM_FALSE@	libcommon_a-exechelp-posix.$(OBJEXT)
+am__objects_5 = libcommon_a-i18n.$(OBJEXT) \
+	libcommon_a-mapstrings.$(OBJEXT) \
+	libcommon_a-stringhelp.$(OBJEXT) libcommon_a-strlist.$(OBJEXT) \
+	libcommon_a-utf8conv.$(OBJEXT) libcommon_a-argparse.$(OBJEXT) \
+	libcommon_a-logging.$(OBJEXT) libcommon_a-dotlock.$(OBJEXT) \
+	libcommon_a-mischelp.$(OBJEXT) libcommon_a-status.$(OBJEXT) \
+	libcommon_a-tlv.$(OBJEXT) libcommon_a-init.$(OBJEXT) \
+	libcommon_a-sexputil.$(OBJEXT) libcommon_a-sysutils.$(OBJEXT) \
+	libcommon_a-homedir.$(OBJEXT) libcommon_a-gettime.$(OBJEXT) \
+	libcommon_a-yesno.$(OBJEXT) libcommon_a-b64enc.$(OBJEXT) \
+	libcommon_a-b64dec.$(OBJEXT) libcommon_a-zb32.$(OBJEXT) \
+	libcommon_a-convert.$(OBJEXT) libcommon_a-percent.$(OBJEXT) \
+	libcommon_a-mbox-util.$(OBJEXT) \
 	libcommon_a-miscellaneous.$(OBJEXT) \
 	libcommon_a-xasprintf.$(OBJEXT) \
 	libcommon_a-xreadline.$(OBJEXT) libcommon_a-membuf.$(OBJEXT) \
 	libcommon_a-iobuf.$(OBJEXT) libcommon_a-ttyio.$(OBJEXT) \
-	libcommon_a-asshelp.$(OBJEXT) libcommon_a-exechelp.$(OBJEXT) \
-	libcommon_a-signal.$(OBJEXT) libcommon_a-estream.$(OBJEXT) \
-	libcommon_a-estream-printf.$(OBJEXT) \
-	libcommon_a-audit.$(OBJEXT) libcommon_a-dns-cert.$(OBJEXT) \
-	libcommon_a-pka.$(OBJEXT) libcommon_a-http.$(OBJEXT) \
+	libcommon_a-asshelp.$(OBJEXT) libcommon_a-asshelp2.$(OBJEXT) \
+	libcommon_a-signal.$(OBJEXT) libcommon_a-audit.$(OBJEXT) \
 	libcommon_a-localename.$(OBJEXT) \
 	libcommon_a-session-env.$(OBJEXT) \
-	libcommon_a-ssh-utils.$(OBJEXT) libcommon_a-helpfile.$(OBJEXT)
-am__objects_2 = libcommon_a-get-passphrase.$(OBJEXT)
-@USE_DNS_SRV_TRUE@am__objects_3 = libcommon_a-srv.$(OBJEXT)
-am_libcommon_a_OBJECTS = $(am__objects_1) $(am__objects_2) \
-	$(am__objects_3)
+	libcommon_a-userids.$(OBJEXT) \
+	libcommon_a-openpgp-oid.$(OBJEXT) \
+	libcommon_a-ssh-utils.$(OBJEXT) \
+	libcommon_a-agent-opt.$(OBJEXT) libcommon_a-helpfile.$(OBJEXT) \
+	libcommon_a-mkdir_p.$(OBJEXT) libcommon_a-strlist.$(OBJEXT) \
+	libcommon_a-call-gpg.$(OBJEXT) libcommon_a-exectool.$(OBJEXT) \
+	$(am__objects_1) $(am__objects_2) $(am__objects_3) \
+	$(am__objects_4)
+am__objects_6 = libcommon_a-get-passphrase.$(OBJEXT)
+am_libcommon_a_OBJECTS = $(am__objects_5) $(am__objects_6)
 libcommon_a_OBJECTS = $(am_libcommon_a_OBJECTS)
 libcommonpth_a_AR = $(AR) $(ARFLAGS)
 libcommonpth_a_LIBADD =
-am__libcommonpth_a_SOURCES_DIST = common-defs.h util.h i18n.c i18n.h \
-	status.c status.h openpgpdefs.h gc-opt-flags.h keyserver.h \
+am__libcommonpth_a_SOURCES_DIST = common-defs.h util.h fwddecl.h \
+	i18n.c i18n.h types.h host2net.h dynload.h w32help.h \
+	mapstrings.c stringhelp.c stringhelp.h strlist.c strlist.h \
+	utf8conv.c utf8conv.h argparse.c argparse.h logging.c \
+	logging.h dotlock.c dotlock.h mischelp.c mischelp.h status.c \
+	status.h shareddefs.h openpgpdefs.h gc-opt-flags.h keyserver.h \
 	sexp-parse.h tlv.c tlv.h init.c init.h sexputil.c sysutils.c \
-	sysutils.h homedir.c gettime.c yesno.c b64enc.c b64dec.c \
-	zb32.c convert.c percent.c miscellaneous.c xasprintf.c \
-	xreadline.c membuf.c membuf.h iobuf.c iobuf.h ttyio.c ttyio.h \
-	asshelp.c asshelp.h exechelp.c exechelp.h signal.c estream.c \
-	estream.h estream-printf.c estream-printf.h audit.c audit.h \
-	srv.h dns-cert.c dns-cert.h pka.c pka.h http.c http.h \
-	localename.c session-env.c session-env.h ssh-utils.c \
-	ssh-utils.h helpfile.c srv.c
-am__objects_4 = libcommonpth_a-i18n.$(OBJEXT) \
+	sysutils.h homedir.c gettime.c gettime.h yesno.c b64enc.c \
+	b64dec.c zb32.c zb32.h convert.c percent.c mbox-util.c \
+	mbox-util.h miscellaneous.c xasprintf.c xreadline.c membuf.c \
+	membuf.h iobuf.c iobuf.h ttyio.c ttyio.h asshelp.c asshelp2.c \
+	asshelp.h exechelp.h signal.c audit.c audit.h localename.c \
+	session-env.c session-env.h userids.c userids.h openpgp-oid.c \
+	ssh-utils.c ssh-utils.h agent-opt.c helpfile.c mkdir_p.c \
+	mkdir_p.h call-gpg.c call-gpg.h exectool.c exectool.h \
+	w32-reg.c w32-afunix.c w32-afunix.h exechelp-w32ce.c \
+	exechelp-w32.c exechelp-posix.c
+@HAVE_W32_SYSTEM_TRUE@am__objects_7 =  \
+@HAVE_W32_SYSTEM_TRUE@	libcommonpth_a-w32-reg.$(OBJEXT) \
+@HAVE_W32_SYSTEM_TRUE@	libcommonpth_a-w32-afunix.$(OBJEXT)
+@HAVE_W32CE_SYSTEM_TRUE@@HAVE_W32_SYSTEM_TRUE@am__objects_8 = libcommonpth_a-exechelp-w32ce.$(OBJEXT)
+@HAVE_W32CE_SYSTEM_FALSE@@HAVE_W32_SYSTEM_TRUE@am__objects_9 = libcommonpth_a-exechelp-w32.$(OBJEXT)
+@HAVE_W32_SYSTEM_FALSE@am__objects_10 = libcommonpth_a-exechelp-posix.$(OBJEXT)
+am__objects_11 = libcommonpth_a-i18n.$(OBJEXT) \
+	libcommonpth_a-mapstrings.$(OBJEXT) \
+	libcommonpth_a-stringhelp.$(OBJEXT) \
+	libcommonpth_a-strlist.$(OBJEXT) \
+	libcommonpth_a-utf8conv.$(OBJEXT) \
+	libcommonpth_a-argparse.$(OBJEXT) \
+	libcommonpth_a-logging.$(OBJEXT) \
+	libcommonpth_a-dotlock.$(OBJEXT) \
+	libcommonpth_a-mischelp.$(OBJEXT) \
 	libcommonpth_a-status.$(OBJEXT) libcommonpth_a-tlv.$(OBJEXT) \
 	libcommonpth_a-init.$(OBJEXT) \
 	libcommonpth_a-sexputil.$(OBJEXT) \
@@ -235,25 +276,28 @@ am__objects_4 = libcommonpth_a-i18n.$(OBJEXT) \
 	libcommonpth_a-b64dec.$(OBJEXT) libcommonpth_a-zb32.$(OBJEXT) \
 	libcommonpth_a-convert.$(OBJEXT) \
 	libcommonpth_a-percent.$(OBJEXT) \
+	libcommonpth_a-mbox-util.$(OBJEXT) \
 	libcommonpth_a-miscellaneous.$(OBJEXT) \
 	libcommonpth_a-xasprintf.$(OBJEXT) \
 	libcommonpth_a-xreadline.$(OBJEXT) \
 	libcommonpth_a-membuf.$(OBJEXT) libcommonpth_a-iobuf.$(OBJEXT) \
 	libcommonpth_a-ttyio.$(OBJEXT) \
 	libcommonpth_a-asshelp.$(OBJEXT) \
-	libcommonpth_a-exechelp.$(OBJEXT) \
-	libcommonpth_a-signal.$(OBJEXT) \
-	libcommonpth_a-estream.$(OBJEXT) \
-	libcommonpth_a-estream-printf.$(OBJEXT) \
-	libcommonpth_a-audit.$(OBJEXT) \
-	libcommonpth_a-dns-cert.$(OBJEXT) libcommonpth_a-pka.$(OBJEXT) \
-	libcommonpth_a-http.$(OBJEXT) \
+	libcommonpth_a-asshelp2.$(OBJEXT) \
+	libcommonpth_a-signal.$(OBJEXT) libcommonpth_a-audit.$(OBJEXT) \
 	libcommonpth_a-localename.$(OBJEXT) \
 	libcommonpth_a-session-env.$(OBJEXT) \
+	libcommonpth_a-userids.$(OBJEXT) \
+	libcommonpth_a-openpgp-oid.$(OBJEXT) \
 	libcommonpth_a-ssh-utils.$(OBJEXT) \
-	libcommonpth_a-helpfile.$(OBJEXT)
-@USE_DNS_SRV_TRUE@am__objects_5 = libcommonpth_a-srv.$(OBJEXT)
-am_libcommonpth_a_OBJECTS = $(am__objects_4) $(am__objects_5)
+	libcommonpth_a-agent-opt.$(OBJEXT) \
+	libcommonpth_a-helpfile.$(OBJEXT) \
+	libcommonpth_a-mkdir_p.$(OBJEXT) \
+	libcommonpth_a-strlist.$(OBJEXT) \
+	libcommonpth_a-call-gpg.$(OBJEXT) \
+	libcommonpth_a-exectool.$(OBJEXT) $(am__objects_7) \
+	$(am__objects_8) $(am__objects_9) $(am__objects_10)
+am_libcommonpth_a_OBJECTS = $(am__objects_11)
 libcommonpth_a_OBJECTS = $(am_libcommonpth_a_OBJECTS)
 libgpgrl_a_AR = $(AR) $(ARFLAGS)
 libgpgrl_a_LIBADD =
@@ -261,20 +305,27 @@ am_libgpgrl_a_OBJECTS = gpgrlhelp.$(OBJEXT)
 libgpgrl_a_OBJECTS = $(am_libgpgrl_a_OBJECTS)
 libsimple_pwquery_a_AR = $(AR) $(ARFLAGS)
 libsimple_pwquery_a_LIBADD =
-am_libsimple_pwquery_a_OBJECTS =  \
-	libsimple_pwquery_a-simple-pwquery.$(OBJEXT) \
-	libsimple_pwquery_a-asshelp.$(OBJEXT)
+am__libsimple_pwquery_a_SOURCES_DIST = simple-pwquery.c \
+	simple-pwquery.h asshelp.c asshelp.h
+@HAVE_W32CE_SYSTEM_FALSE@am_libsimple_pwquery_a_OBJECTS = libsimple_pwquery_a-simple-pwquery.$(OBJEXT) \
+@HAVE_W32CE_SYSTEM_FALSE@	libsimple_pwquery_a-asshelp.$(OBJEXT)
 libsimple_pwquery_a_OBJECTS = $(am_libsimple_pwquery_a_OBJECTS)
-am__EXEEXT_1 = t-convert$(EXEEXT) t-percent$(EXEEXT) \
-	t-gettime$(EXEEXT) t-sysutils$(EXEEXT) t-sexputil$(EXEEXT) \
-	t-exechelp$(EXEEXT) t-session-env$(EXEEXT) \
-	t-ssh-utils$(EXEEXT)
-am__EXEEXT_2 = t-helpfile$(EXEEXT) t-b64$(EXEEXT)
+@HAVE_W32CE_SYSTEM_FALSE@am__EXEEXT_1 = t-exechelp$(EXEEXT)
+@HAVE_W32_SYSTEM_TRUE@am__EXEEXT_2 = t-w32-reg$(EXEEXT)
+am__EXEEXT_3 = t-stringhelp$(EXEEXT) t-timestuff$(EXEEXT) \
+	t-convert$(EXEEXT) t-percent$(EXEEXT) t-gettime$(EXEEXT) \
+	t-sysutils$(EXEEXT) t-sexputil$(EXEEXT) t-session-env$(EXEEXT) \
+	t-openpgp-oid$(EXEEXT) t-ssh-utils$(EXEEXT) \
+	t-mapstrings$(EXEEXT) t-zb32$(EXEEXT) t-mbox-util$(EXEEXT) \
+	t-iobuf$(EXEEXT) t-strlist$(EXEEXT) $(am__EXEEXT_1) \
+	$(am__EXEEXT_2)
+@MAINTAINER_MODE_TRUE@am__EXEEXT_4 = t-helpfile$(EXEEXT) \
+@MAINTAINER_MODE_TRUE@	t-b64$(EXEEXT)
 PROGRAMS = $(noinst_PROGRAMS)
 t_b64_SOURCES = t-b64.c
 t_b64_OBJECTS = t-b64.$(OBJEXT)
 am__DEPENDENCIES_1 =
-am__DEPENDENCIES_2 = libcommon.a ../jnlib/libjnlib.a ../gl/libgnu.a \
+am__DEPENDENCIES_2 = libcommon.a $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
 t_b64_DEPENDENCIES = $(am__DEPENDENCIES_2)
@@ -290,6 +341,18 @@ t_gettime_DEPENDENCIES = $(am__DEPENDENCIES_2)
 t_helpfile_SOURCES = t-helpfile.c
 t_helpfile_OBJECTS = t-helpfile.$(OBJEXT)
 t_helpfile_DEPENDENCIES = $(am__DEPENDENCIES_2)
+t_iobuf_SOURCES = t-iobuf.c
+t_iobuf_OBJECTS = t-iobuf.$(OBJEXT)
+t_iobuf_DEPENDENCIES = $(am__DEPENDENCIES_2)
+t_mapstrings_SOURCES = t-mapstrings.c
+t_mapstrings_OBJECTS = t-mapstrings.$(OBJEXT)
+t_mapstrings_DEPENDENCIES = $(am__DEPENDENCIES_2)
+t_mbox_util_SOURCES = t-mbox-util.c
+t_mbox_util_OBJECTS = t-mbox-util.$(OBJEXT)
+t_mbox_util_DEPENDENCIES = $(am__DEPENDENCIES_2)
+t_openpgp_oid_SOURCES = t-openpgp-oid.c
+t_openpgp_oid_OBJECTS = t-openpgp-oid.$(OBJEXT)
+t_openpgp_oid_DEPENDENCIES = $(am__DEPENDENCIES_2)
 t_percent_SOURCES = t-percent.c
 t_percent_OBJECTS = t-percent.$(OBJEXT)
 t_percent_DEPENDENCIES = $(am__DEPENDENCIES_2)
@@ -302,9 +365,27 @@ t_sexputil_DEPENDENCIES = $(am__DEPENDENCIES_2)
 t_ssh_utils_SOURCES = t-ssh-utils.c
 t_ssh_utils_OBJECTS = t-ssh-utils.$(OBJEXT)
 t_ssh_utils_DEPENDENCIES = $(am__DEPENDENCIES_2)
+am__objects_12 =
+am_t_stringhelp_OBJECTS = t-stringhelp.$(OBJEXT) $(am__objects_12)
+t_stringhelp_OBJECTS = $(am_t_stringhelp_OBJECTS)
+t_stringhelp_DEPENDENCIES = $(am__DEPENDENCIES_2)
+t_strlist_SOURCES = t-strlist.c
+t_strlist_OBJECTS = t-strlist.$(OBJEXT)
+t_strlist_DEPENDENCIES = $(am__DEPENDENCIES_2)
 t_sysutils_SOURCES = t-sysutils.c
 t_sysutils_OBJECTS = t-sysutils.$(OBJEXT)
 t_sysutils_DEPENDENCIES = $(am__DEPENDENCIES_2)
+am_t_timestuff_OBJECTS = t-timestuff.$(OBJEXT) $(am__objects_12)
+t_timestuff_OBJECTS = $(am_t_timestuff_OBJECTS)
+t_timestuff_DEPENDENCIES = $(am__DEPENDENCIES_2)
+am__t_w32_reg_SOURCES_DIST = t-w32-reg.c t-support.h
+@HAVE_W32_SYSTEM_TRUE@am_t_w32_reg_OBJECTS = t-w32-reg.$(OBJEXT) \
+@HAVE_W32_SYSTEM_TRUE@	$(am__objects_12)
+t_w32_reg_OBJECTS = $(am_t_w32_reg_OBJECTS)
+@HAVE_W32_SYSTEM_TRUE@t_w32_reg_DEPENDENCIES = $(am__DEPENDENCIES_2)
+am_t_zb32_OBJECTS = t-zb32.$(OBJEXT) $(am__objects_12)
+t_zb32_OBJECTS = $(am_t_zb32_OBJECTS)
+t_zb32_DEPENDENCIES = $(am__DEPENDENCIES_2)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -318,7 +399,7 @@ am__v_at_ = $(am__v_at_@AM_DEFAULT_V@)
 am__v_at_0 = @
 am__v_at_1 = 
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
-depcomp = $(SHELL) $(top_srcdir)/scripts/depcomp
+depcomp = $(SHELL) $(top_srcdir)/build-aux/depcomp
 am__depfiles_maybe = depfiles
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -339,13 +420,19 @@ am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = $(libcommon_a_SOURCES) $(libcommonpth_a_SOURCES) \
 	$(libgpgrl_a_SOURCES) $(libsimple_pwquery_a_SOURCES) t-b64.c \
-	t-convert.c t-exechelp.c t-gettime.c t-helpfile.c t-percent.c \
-	t-session-env.c t-sexputil.c t-ssh-utils.c t-sysutils.c
+	t-convert.c t-exechelp.c t-gettime.c t-helpfile.c t-iobuf.c \
+	t-mapstrings.c t-mbox-util.c t-openpgp-oid.c t-percent.c \
+	t-session-env.c t-sexputil.c t-ssh-utils.c \
+	$(t_stringhelp_SOURCES) t-strlist.c t-sysutils.c \
+	$(t_timestuff_SOURCES) $(t_w32_reg_SOURCES) $(t_zb32_SOURCES)
 DIST_SOURCES = $(am__libcommon_a_SOURCES_DIST) \
 	$(am__libcommonpth_a_SOURCES_DIST) $(libgpgrl_a_SOURCES) \
-	$(libsimple_pwquery_a_SOURCES) t-b64.c t-convert.c \
-	t-exechelp.c t-gettime.c t-helpfile.c t-percent.c \
-	t-session-env.c t-sexputil.c t-ssh-utils.c t-sysutils.c
+	$(am__libsimple_pwquery_a_SOURCES_DIST) t-b64.c t-convert.c \
+	t-exechelp.c t-gettime.c t-helpfile.c t-iobuf.c t-mapstrings.c \
+	t-mbox-util.c t-openpgp-oid.c t-percent.c t-session-env.c \
+	t-sexputil.c t-ssh-utils.c $(t_stringhelp_SOURCES) t-strlist.c \
+	t-sysutils.c $(t_timestuff_SOURCES) \
+	$(am__t_w32_reg_SOURCES_DIST) $(t_zb32_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -393,11 +480,7 @@ am__tty_colors = { \
   fi; \
 }
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
-ABSOLUTE_STDINT_H = @ABSOLUTE_STDINT_H@
 ACLOCAL = @ACLOCAL@
-ADNSLIBS = @ADNSLIBS@
-ALLOCA = @ALLOCA@
-ALLOCA_H = @ALLOCA_H@
 AMTAR = @AMTAR@
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
 AR = @AR@
@@ -405,16 +488,12 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
-BITSIZEOF_PTRDIFF_T = @BITSIZEOF_PTRDIFF_T@
-BITSIZEOF_SIG_ATOMIC_T = @BITSIZEOF_SIG_ATOMIC_T@
-BITSIZEOF_SIZE_T = @BITSIZEOF_SIZE_T@
-BITSIZEOF_WCHAR_T = @BITSIZEOF_WCHAR_T@
-BITSIZEOF_WINT_T = @BITSIZEOF_WINT_T@
 BUILD_FILEVERSION = @BUILD_FILEVERSION@
 BUILD_HOSTNAME = @BUILD_HOSTNAME@
 BUILD_INCLUDED_LIBINTL = @BUILD_INCLUDED_LIBINTL@
 BUILD_REVISION = @BUILD_REVISION@
 BUILD_TIMESTAMP = @BUILD_TIMESTAMP@
+BUILD_VERSION = @BUILD_VERSION@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CC_FOR_BUILD = @CC_FOR_BUILD@
@@ -430,39 +509,25 @@ ECHO_C = @ECHO_C@
 ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
+ENCFS = @ENCFS@
 EXEEXT = @EXEEXT@
-FAQPROG = @FAQPROG@
+FUSERMOUNT = @FUSERMOUNT@
 GETTEXT_MACRO_VERSION = @GETTEXT_MACRO_VERSION@
 GMSGFMT = @GMSGFMT@
 GMSGFMT_015 = @GMSGFMT_015@
 GNUPG_AGENT_PGM = @GNUPG_AGENT_PGM@
+GNUPG_DIRMNGR_LDAP_PGM = @GNUPG_DIRMNGR_LDAP_PGM@
 GNUPG_DIRMNGR_PGM = @GNUPG_DIRMNGR_PGM@
 GNUPG_PINENTRY_PGM = @GNUPG_PINENTRY_PGM@
 GNUPG_PROTECT_TOOL_PGM = @GNUPG_PROTECT_TOOL_PGM@
 GNUPG_SCDAEMON_PGM = @GNUPG_SCDAEMON_PGM@
-GPGKEYS_CURL = @GPGKEYS_CURL@
-GPGKEYS_FINGER = @GPGKEYS_FINGER@
-GPGKEYS_HKP = @GPGKEYS_HKP@
-GPGKEYS_KDNS = @GPGKEYS_KDNS@
 GPGKEYS_LDAP = @GPGKEYS_LDAP@
-GPGKEYS_MAILTO = @GPGKEYS_MAILTO@
 GPG_ERROR_CFLAGS = @GPG_ERROR_CFLAGS@
 GPG_ERROR_CONFIG = @GPG_ERROR_CONFIG@
 GPG_ERROR_LIBS = @GPG_ERROR_LIBS@
 GPG_ERROR_MT_CFLAGS = @GPG_ERROR_MT_CFLAGS@
 GPG_ERROR_MT_LIBS = @GPG_ERROR_MT_LIBS@
 GREP = @GREP@
-HAVE_INTTYPES_H = @HAVE_INTTYPES_H@
-HAVE_LONG_LONG_INT = @HAVE_LONG_LONG_INT@
-HAVE_SIGNED_SIG_ATOMIC_T = @HAVE_SIGNED_SIG_ATOMIC_T@
-HAVE_SIGNED_WCHAR_T = @HAVE_SIGNED_WCHAR_T@
-HAVE_SIGNED_WINT_T = @HAVE_SIGNED_WINT_T@
-HAVE_STDINT_H = @HAVE_STDINT_H@
-HAVE_SYS_BITYPES_H = @HAVE_SYS_BITYPES_H@
-HAVE_SYS_INTTYPES_H = @HAVE_SYS_INTTYPES_H@
-HAVE_SYS_TYPES_H = @HAVE_SYS_TYPES_H@
-HAVE_UNSIGNED_LONG_LONG_INT = @HAVE_UNSIGNED_LONG_LONG_INT@
-HAVE_WCHAR_H = @HAVE_WCHAR_H@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -473,19 +538,18 @@ INTL_MACOSX_LIBS = @INTL_MACOSX_LIBS@
 KSBA_CFLAGS = @KSBA_CFLAGS@
 KSBA_CONFIG = @KSBA_CONFIG@
 KSBA_LIBS = @KSBA_LIBS@
+LBER_LIBS = @LBER_LIBS@
 LDAPLIBS = @LDAPLIBS@
 LDAP_CPPFLAGS = @LDAP_CPPFLAGS@
 LDFLAGS = @LDFLAGS@
 LIBASSUAN_CFLAGS = @LIBASSUAN_CFLAGS@
 LIBASSUAN_CONFIG = @LIBASSUAN_CONFIG@
 LIBASSUAN_LIBS = @LIBASSUAN_LIBS@
-LIBCURL = @LIBCURL@
-LIBCURL_CPPFLAGS = @LIBCURL_CPPFLAGS@
 LIBGCRYPT_CFLAGS = @LIBGCRYPT_CFLAGS@
 LIBGCRYPT_CONFIG = @LIBGCRYPT_CONFIG@
 LIBGCRYPT_LIBS = @LIBGCRYPT_LIBS@
-LIBGNU_LIBDEPS = @LIBGNU_LIBDEPS@
-LIBGNU_LTLIBDEPS = @LIBGNU_LTLIBDEPS@
+LIBGNUTLS_CFLAGS = @LIBGNUTLS_CFLAGS@
+LIBGNUTLS_LIBS = @LIBGNUTLS_LIBS@
 LIBICONV = @LIBICONV@
 LIBINTL = @LIBINTL@
 LIBOBJS = @LIBOBJS@
@@ -504,6 +568,12 @@ MSGFMT = @MSGFMT@
 MSGFMT_015 = @MSGFMT_015@
 MSGMERGE = @MSGMERGE@
 NETLIBS = @NETLIBS@
+NPTH_CFLAGS = @NPTH_CFLAGS@
+NPTH_CONFIG = @NPTH_CONFIG@
+NPTH_LIBS = @NPTH_LIBS@
+NTBTLS_CFLAGS = @NTBTLS_CFLAGS@
+NTBTLS_CONFIG = @NTBTLS_CONFIG@
+NTBTLS_LIBS = @NTBTLS_LIBS@
 OBJEXT = @OBJEXT@
 PACKAGE = @PACKAGE@
 PACKAGE_BUGREPORT = @PACKAGE_BUGREPORT@
@@ -515,37 +585,30 @@ PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
 PERL = @PERL@
+PKG_CONFIG = @PKG_CONFIG@
+PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
+PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 POSUB = @POSUB@
-PTH_CFLAGS = @PTH_CFLAGS@
-PTH_CONFIG = @PTH_CONFIG@
-PTH_LIBS = @PTH_LIBS@
-PTRDIFF_T_SUFFIX = @PTRDIFF_T_SUFFIX@
 RANLIB = @RANLIB@
-SED = @SED@
 SENDMAIL = @SENDMAIL@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 SHRED = @SHRED@
-SIG_ATOMIC_T_SUFFIX = @SIG_ATOMIC_T_SUFFIX@
-SIZE_T_SUFFIX = @SIZE_T_SUFFIX@
-STDINT_H = @STDINT_H@
+SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
+SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
 SYSROOT = @SYSROOT@
 SYS_SOCKET_H = @SYS_SOCKET_H@
 TAR = @TAR@
-UNISTD_H = @UNISTD_H@
 USE_INCLUDED_LIBINTL = @USE_INCLUDED_LIBINTL@
 USE_NLS = @USE_NLS@
 VERSION = @VERSION@
 W32SOCKLIBS = @W32SOCKLIBS@
-WCHAR_T_SUFFIX = @WCHAR_T_SUFFIX@
 WINDRES = @WINDRES@
-WINT_T_SUFFIX = @WINT_T_SUFFIX@
 XGETTEXT = @XGETTEXT@
 XGETTEXT_015 = @XGETTEXT_015@
 XGETTEXT_EXTRA_OPTIONS = @XGETTEXT_EXTRA_OPTIONS@
 ZLIBS = @ZLIBS@
-_libcurl_config = @_libcurl_config@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
 abs_top_builddir = @abs_top_builddir@
@@ -596,76 +659,68 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-EXTRA_DIST = mkstrtable.awk exaudit.awk exstatus.awk \
-             audit-events.h status-codes.h ChangeLog-2011 \
-	     w32info-rc.h.in gnupg.ico
+EXTRA_DIST = mkstrtable.awk exaudit.awk exstatus.awk ChangeLog-2011 \
+             audit-events.h status-codes.h ChangeLog.jnlib \
+	     ChangeLog-2011.include w32info-rc.h.in gnupg.ico
 
-noinst_LIBRARIES = libcommon.a libcommonpth.a libsimple-pwquery.a libgpgrl.a
+noinst_LIBRARIES = libcommon.a libcommonpth.a libgpgrl.a \
+	$(am__append_1)
 BUILT_SOURCES = audit-events.h status-codes.h
 MAINTAINERCLEANFILES = audit-events.h status-codes.h
-AM_CPPFLAGS = -I$(top_srcdir)/gl -I$(top_srcdir)/intl \
-	-DLOCALEDIR=\"$(localedir)\" $(am__append_1) $(am__append_2) \
+
+# NB: AM_CFLAGS may also be used by tools running on the build
+# platform to create source files.
+AM_CPPFLAGS = -DLOCALEDIR=\"$(localedir)\" $(am__append_2) \
 	$(am__append_3) $(am__append_4) $(am__append_5) \
-	$(am__append_6)
-AM_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS) $(KSBA_CFLAGS)
+	$(am__append_6) $(am__append_7) $(am__append_8)
+AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(LIBASSUAN_CFLAGS) $(KSBA_CFLAGS)
+@HAVE_W32CE_SYSTEM_FALSE@extra_sys_libs = 
+
+# Under Windows we use LockFileEx.  WindowsCE provides this only on
+# the WindowsMobile 6 platform and thus we need to use the coredll6
+# import library.  We also want to use a stacksize of 256k instead of
+# the 2MB which is the default with cegcc.  256k is the largest stack
+# we use with pth.
+@HAVE_W32CE_SYSTEM_TRUE@extra_sys_libs = -lcoredll6
+@HAVE_W32CE_SYSTEM_FALSE@extra_bin_ldflags = 
+@HAVE_W32CE_SYSTEM_TRUE@extra_bin_ldflags = -Wl,--stack=0x40000
 resource_objs = 
 
 # Convenience macros
 libcommon = ../common/libcommon.a
 libcommonpth = ../common/libcommonpth.a
-common_sources = \
-	common-defs.h \
-	util.h i18n.c i18n.h \
-	status.c status.h\
-	openpgpdefs.h \
-	gc-opt-flags.h \
-	keyserver.h \
-	sexp-parse.h \
-	tlv.c tlv.h \
-	init.c init.h \
-	sexputil.c \
-	sysutils.c sysutils.h \
-	homedir.c \
-	gettime.c \
-	yesno.c \
-	b64enc.c b64dec.c \
-	zb32.c \
-	convert.c \
-	percent.c \
-	miscellaneous.c \
-	xasprintf.c \
-	xreadline.c \
-	membuf.c membuf.h \
-	iobuf.c iobuf.h \
-	ttyio.c ttyio.h \
-	asshelp.c asshelp.h \
-	exechelp.c exechelp.h \
-	signal.c \
-	estream.c estream.h estream-printf.c estream-printf.h \
-	audit.c audit.h \
-	srv.h \
-	dns-cert.c dns-cert.h \
-	pka.c pka.h \
-	http.c http.h \
-	localename.c \
-	session-env.c session-env.h \
-	ssh-utils.c ssh-utils.h \
-	helpfile.c
+libcommontls = ../common/libcommontls.a
+libcommontlsnpth = ../common/libcommontlsnpth.a
+common_sources = common-defs.h util.h fwddecl.h i18n.c i18n.h types.h \
+	host2net.h dynload.h w32help.h mapstrings.c stringhelp.c \
+	stringhelp.h strlist.c strlist.h utf8conv.c utf8conv.h \
+	argparse.c argparse.h logging.c logging.h dotlock.c dotlock.h \
+	mischelp.c mischelp.h status.c status.h shareddefs.h \
+	openpgpdefs.h gc-opt-flags.h keyserver.h sexp-parse.h tlv.c \
+	tlv.h init.c init.h sexputil.c sysutils.c sysutils.h homedir.c \
+	gettime.c gettime.h yesno.c b64enc.c b64dec.c zb32.c zb32.h \
+	convert.c percent.c mbox-util.c mbox-util.h miscellaneous.c \
+	xasprintf.c xreadline.c membuf.c membuf.h iobuf.c iobuf.h \
+	ttyio.c ttyio.h asshelp.c asshelp2.c asshelp.h exechelp.h \
+	signal.c audit.c audit.h localename.c session-env.c \
+	session-env.h userids.c userids.h openpgp-oid.c ssh-utils.c \
+	ssh-utils.h agent-opt.c helpfile.c mkdir_p.c mkdir_p.h \
+	strlist.c strlist.h call-gpg.c call-gpg.h exectool.c \
+	exectool.h $(am__append_9) $(am__append_10) $(am__append_11) \
+	$(am__append_12)
 
-
-# Sources only useful without PTH.
-without_pth_sources = \
+# Sources only useful without NPTH.
+without_npth_sources = \
         get-passphrase.c get-passphrase.h
 
-libcommon_a_SOURCES = $(common_sources) $(without_pth_sources) \
-	$(am__append_7)
-libcommon_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) -DWITHOUT_GNU_PTH=1
-libcommonpth_a_SOURCES = $(common_sources) $(am__append_8)
-libcommonpth_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(PTH_CFLAGS)
-libsimple_pwquery_a_SOURCES = \
-	simple-pwquery.c simple-pwquery.h asshelp.c asshelp.h
+libcommon_a_SOURCES = $(common_sources) $(without_npth_sources)
+libcommon_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) -DWITHOUT_NPTH=1
+libcommonpth_a_SOURCES = $(common_sources)
+libcommonpth_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS)
+@HAVE_W32CE_SYSTEM_FALSE@libsimple_pwquery_a_SOURCES = \
+@HAVE_W32CE_SYSTEM_FALSE@	simple-pwquery.c simple-pwquery.h asshelp.c asshelp.h
 
-libsimple_pwquery_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS)
+@HAVE_W32CE_SYSTEM_FALSE@libsimple_pwquery_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS)
 libgpgrl_a_SOURCES = \
         gpgrlhelp.c
 
@@ -673,13 +728,26 @@ libgpgrl_a_SOURCES = \
 #
 # Module tests
 #
-module_tests = t-convert t-percent t-gettime t-sysutils t-sexputil t-exechelp \
-	       t-session-env t-ssh-utils
+module_tests = t-stringhelp t-timestuff t-convert t-percent t-gettime \
+	t-sysutils t-sexputil t-session-env t-openpgp-oid t-ssh-utils \
+	t-mapstrings t-zb32 t-mbox-util t-iobuf t-strlist \
+	$(am__append_13) $(am__append_14)
+@MAINTAINER_MODE_FALSE@module_maint_tests = 
+@MAINTAINER_MODE_TRUE@module_maint_tests = t-helpfile t-b64
+t_extra_src = t-support.h
+t_common_cflags = $(KSBA_CFLAGS) $(LIBGCRYPT_CFLAGS) \
+                  $(LIBASSUAN_CFLAGS) $(GPG_ERROR_CFLAGS)
 
-module_maint_tests = t-helpfile t-b64
-t_common_ldadd = libcommon.a ../jnlib/libjnlib.a ../gl/libgnu.a \
-                 $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(LIBINTL) $(LIBICONV)
+t_common_ldadd = libcommon.a \
+                 $(LIBGCRYPT_LIBS) $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) \
+	         $(LIBINTL) $(LIBICONV)
 
+
+# Common tests
+t_stringhelp_SOURCES = t-stringhelp.c $(t_extra_src)
+t_stringhelp_LDADD = $(t_common_ldadd)
+t_timestuff_SOURCES = t-timestuff.c $(t_extra_src)
+t_timestuff_LDADD = $(t_common_ldadd)
 t_convert_LDADD = $(t_common_ldadd)
 t_percent_LDADD = $(t_common_ldadd)
 t_gettime_LDADD = $(t_common_ldadd)
@@ -689,7 +757,18 @@ t_sexputil_LDADD = $(t_common_ldadd)
 t_b64_LDADD = $(t_common_ldadd)
 t_exechelp_LDADD = $(t_common_ldadd)
 t_session_env_LDADD = $(t_common_ldadd)
+t_openpgp_oid_LDADD = $(t_common_ldadd)
 t_ssh_utils_LDADD = $(t_common_ldadd)
+t_mapstrings_LDADD = $(t_common_ldadd)
+t_zb32_SOURCES = t-zb32.c $(t_extra_src)
+t_zb32_LDADD = $(t_common_ldadd)
+t_mbox_util_LDADD = $(t_common_ldadd)
+t_iobuf_LDADD = $(t_common_ldadd)
+t_strlist_LDADD = $(t_common_ldadd)
+
+# System specific test
+@HAVE_W32_SYSTEM_TRUE@t_w32_reg_SOURCES = t-w32-reg.c $(t_extra_src)
+@HAVE_W32_SYSTEM_TRUE@t_w32_reg_LDADD = $(t_common_ldadd)
 all: $(BUILT_SOURCES)
 	$(MAKE) $(AM_MAKEFLAGS) all-am
 
@@ -775,6 +854,22 @@ t-helpfile$(EXEEXT): $(t_helpfile_OBJECTS) $(t_helpfile_DEPENDENCIES) $(EXTRA_t_
 	@rm -f t-helpfile$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(t_helpfile_OBJECTS) $(t_helpfile_LDADD) $(LIBS)
 
+t-iobuf$(EXEEXT): $(t_iobuf_OBJECTS) $(t_iobuf_DEPENDENCIES) $(EXTRA_t_iobuf_DEPENDENCIES) 
+	@rm -f t-iobuf$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(t_iobuf_OBJECTS) $(t_iobuf_LDADD) $(LIBS)
+
+t-mapstrings$(EXEEXT): $(t_mapstrings_OBJECTS) $(t_mapstrings_DEPENDENCIES) $(EXTRA_t_mapstrings_DEPENDENCIES) 
+	@rm -f t-mapstrings$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(t_mapstrings_OBJECTS) $(t_mapstrings_LDADD) $(LIBS)
+
+t-mbox-util$(EXEEXT): $(t_mbox_util_OBJECTS) $(t_mbox_util_DEPENDENCIES) $(EXTRA_t_mbox_util_DEPENDENCIES) 
+	@rm -f t-mbox-util$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(t_mbox_util_OBJECTS) $(t_mbox_util_LDADD) $(LIBS)
+
+t-openpgp-oid$(EXEEXT): $(t_openpgp_oid_OBJECTS) $(t_openpgp_oid_DEPENDENCIES) $(EXTRA_t_openpgp_oid_DEPENDENCIES) 
+	@rm -f t-openpgp-oid$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(t_openpgp_oid_OBJECTS) $(t_openpgp_oid_LDADD) $(LIBS)
+
 t-percent$(EXEEXT): $(t_percent_OBJECTS) $(t_percent_DEPENDENCIES) $(EXTRA_t_percent_DEPENDENCIES) 
 	@rm -f t-percent$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(t_percent_OBJECTS) $(t_percent_LDADD) $(LIBS)
@@ -791,9 +886,29 @@ t-ssh-utils$(EXEEXT): $(t_ssh_utils_OBJECTS) $(t_ssh_utils_DEPENDENCIES) $(EXTRA
 	@rm -f t-ssh-utils$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(t_ssh_utils_OBJECTS) $(t_ssh_utils_LDADD) $(LIBS)
 
+t-stringhelp$(EXEEXT): $(t_stringhelp_OBJECTS) $(t_stringhelp_DEPENDENCIES) $(EXTRA_t_stringhelp_DEPENDENCIES) 
+	@rm -f t-stringhelp$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(t_stringhelp_OBJECTS) $(t_stringhelp_LDADD) $(LIBS)
+
+t-strlist$(EXEEXT): $(t_strlist_OBJECTS) $(t_strlist_DEPENDENCIES) $(EXTRA_t_strlist_DEPENDENCIES) 
+	@rm -f t-strlist$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(t_strlist_OBJECTS) $(t_strlist_LDADD) $(LIBS)
+
 t-sysutils$(EXEEXT): $(t_sysutils_OBJECTS) $(t_sysutils_DEPENDENCIES) $(EXTRA_t_sysutils_DEPENDENCIES) 
 	@rm -f t-sysutils$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(t_sysutils_OBJECTS) $(t_sysutils_LDADD) $(LIBS)
+
+t-timestuff$(EXEEXT): $(t_timestuff_OBJECTS) $(t_timestuff_DEPENDENCIES) $(EXTRA_t_timestuff_DEPENDENCIES) 
+	@rm -f t-timestuff$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(t_timestuff_OBJECTS) $(t_timestuff_LDADD) $(LIBS)
+
+t-w32-reg$(EXEEXT): $(t_w32_reg_OBJECTS) $(t_w32_reg_DEPENDENCIES) $(EXTRA_t_w32_reg_DEPENDENCIES) 
+	@rm -f t-w32-reg$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(t_w32_reg_OBJECTS) $(t_w32_reg_LDADD) $(LIBS)
+
+t-zb32$(EXEEXT): $(t_zb32_OBJECTS) $(t_zb32_DEPENDENCIES) $(EXTRA_t_zb32_DEPENDENCIES) 
+	@rm -f t-zb32$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(t_zb32_OBJECTS) $(t_zb32_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -802,71 +917,99 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpgrlhelp.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-agent-opt.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-argparse.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-asshelp.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-asshelp2.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-audit.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-b64dec.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-b64enc.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-call-gpg.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-convert.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-dns-cert.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-estream-printf.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-estream.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-exechelp.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-dotlock.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-exechelp-posix.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-exechelp-w32.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-exechelp-w32ce.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-exectool.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-get-passphrase.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-gettime.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-helpfile.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-homedir.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-http.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-i18n.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-init.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-iobuf.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-localename.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-logging.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-mapstrings.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-mbox-util.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-membuf.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-miscellaneous.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-mischelp.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-mkdir_p.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-openpgp-oid.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-percent.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-pka.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-session-env.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-sexputil.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-signal.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-srv.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-ssh-utils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-status.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-stringhelp.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-strlist.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-sysutils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-tlv.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-ttyio.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-userids.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-utf8conv.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-w32-afunix.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-w32-reg.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-xasprintf.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-xreadline.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-yesno.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-zb32.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-agent-opt.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-argparse.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-asshelp.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-asshelp2.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-audit.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-b64dec.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-b64enc.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-call-gpg.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-convert.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-dns-cert.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-estream-printf.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-estream.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-exechelp.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-dotlock.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-exechelp-posix.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-exechelp-w32.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-exechelp-w32ce.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-exectool.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-gettime.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-helpfile.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-homedir.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-http.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-i18n.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-init.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-iobuf.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-localename.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-logging.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-mapstrings.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-mbox-util.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-membuf.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-miscellaneous.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-mischelp.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-mkdir_p.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-openpgp-oid.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-percent.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-pka.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-session-env.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-sexputil.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-signal.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-srv.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-ssh-utils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-status.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-stringhelp.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-strlist.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-sysutils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-tlv.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-ttyio.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-userids.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-utf8conv.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-w32-afunix.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-w32-reg.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-xasprintf.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-xreadline.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-yesno.Po@am__quote@
@@ -878,11 +1021,20 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-exechelp.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-gettime.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-helpfile.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-iobuf.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-mapstrings.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-mbox-util.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-openpgp-oid.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-percent.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-session-env.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-sexputil.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-ssh-utils.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-stringhelp.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-strlist.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-sysutils.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-timestuff.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-w32-reg.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-zb32.Po@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
@@ -911,6 +1063,118 @@ libcommon_a-i18n.obj: i18n.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='i18n.c' object='libcommon_a-i18n.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-i18n.obj `if test -f 'i18n.c'; then $(CYGPATH_W) 'i18n.c'; else $(CYGPATH_W) '$(srcdir)/i18n.c'; fi`
+
+libcommon_a-mapstrings.o: mapstrings.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-mapstrings.o -MD -MP -MF $(DEPDIR)/libcommon_a-mapstrings.Tpo -c -o libcommon_a-mapstrings.o `test -f 'mapstrings.c' || echo '$(srcdir)/'`mapstrings.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-mapstrings.Tpo $(DEPDIR)/libcommon_a-mapstrings.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mapstrings.c' object='libcommon_a-mapstrings.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-mapstrings.o `test -f 'mapstrings.c' || echo '$(srcdir)/'`mapstrings.c
+
+libcommon_a-mapstrings.obj: mapstrings.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-mapstrings.obj -MD -MP -MF $(DEPDIR)/libcommon_a-mapstrings.Tpo -c -o libcommon_a-mapstrings.obj `if test -f 'mapstrings.c'; then $(CYGPATH_W) 'mapstrings.c'; else $(CYGPATH_W) '$(srcdir)/mapstrings.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-mapstrings.Tpo $(DEPDIR)/libcommon_a-mapstrings.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mapstrings.c' object='libcommon_a-mapstrings.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-mapstrings.obj `if test -f 'mapstrings.c'; then $(CYGPATH_W) 'mapstrings.c'; else $(CYGPATH_W) '$(srcdir)/mapstrings.c'; fi`
+
+libcommon_a-stringhelp.o: stringhelp.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-stringhelp.o -MD -MP -MF $(DEPDIR)/libcommon_a-stringhelp.Tpo -c -o libcommon_a-stringhelp.o `test -f 'stringhelp.c' || echo '$(srcdir)/'`stringhelp.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-stringhelp.Tpo $(DEPDIR)/libcommon_a-stringhelp.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='stringhelp.c' object='libcommon_a-stringhelp.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-stringhelp.o `test -f 'stringhelp.c' || echo '$(srcdir)/'`stringhelp.c
+
+libcommon_a-stringhelp.obj: stringhelp.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-stringhelp.obj -MD -MP -MF $(DEPDIR)/libcommon_a-stringhelp.Tpo -c -o libcommon_a-stringhelp.obj `if test -f 'stringhelp.c'; then $(CYGPATH_W) 'stringhelp.c'; else $(CYGPATH_W) '$(srcdir)/stringhelp.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-stringhelp.Tpo $(DEPDIR)/libcommon_a-stringhelp.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='stringhelp.c' object='libcommon_a-stringhelp.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-stringhelp.obj `if test -f 'stringhelp.c'; then $(CYGPATH_W) 'stringhelp.c'; else $(CYGPATH_W) '$(srcdir)/stringhelp.c'; fi`
+
+libcommon_a-strlist.o: strlist.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-strlist.o -MD -MP -MF $(DEPDIR)/libcommon_a-strlist.Tpo -c -o libcommon_a-strlist.o `test -f 'strlist.c' || echo '$(srcdir)/'`strlist.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-strlist.Tpo $(DEPDIR)/libcommon_a-strlist.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='strlist.c' object='libcommon_a-strlist.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-strlist.o `test -f 'strlist.c' || echo '$(srcdir)/'`strlist.c
+
+libcommon_a-strlist.obj: strlist.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-strlist.obj -MD -MP -MF $(DEPDIR)/libcommon_a-strlist.Tpo -c -o libcommon_a-strlist.obj `if test -f 'strlist.c'; then $(CYGPATH_W) 'strlist.c'; else $(CYGPATH_W) '$(srcdir)/strlist.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-strlist.Tpo $(DEPDIR)/libcommon_a-strlist.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='strlist.c' object='libcommon_a-strlist.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-strlist.obj `if test -f 'strlist.c'; then $(CYGPATH_W) 'strlist.c'; else $(CYGPATH_W) '$(srcdir)/strlist.c'; fi`
+
+libcommon_a-utf8conv.o: utf8conv.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-utf8conv.o -MD -MP -MF $(DEPDIR)/libcommon_a-utf8conv.Tpo -c -o libcommon_a-utf8conv.o `test -f 'utf8conv.c' || echo '$(srcdir)/'`utf8conv.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-utf8conv.Tpo $(DEPDIR)/libcommon_a-utf8conv.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='utf8conv.c' object='libcommon_a-utf8conv.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-utf8conv.o `test -f 'utf8conv.c' || echo '$(srcdir)/'`utf8conv.c
+
+libcommon_a-utf8conv.obj: utf8conv.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-utf8conv.obj -MD -MP -MF $(DEPDIR)/libcommon_a-utf8conv.Tpo -c -o libcommon_a-utf8conv.obj `if test -f 'utf8conv.c'; then $(CYGPATH_W) 'utf8conv.c'; else $(CYGPATH_W) '$(srcdir)/utf8conv.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-utf8conv.Tpo $(DEPDIR)/libcommon_a-utf8conv.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='utf8conv.c' object='libcommon_a-utf8conv.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-utf8conv.obj `if test -f 'utf8conv.c'; then $(CYGPATH_W) 'utf8conv.c'; else $(CYGPATH_W) '$(srcdir)/utf8conv.c'; fi`
+
+libcommon_a-argparse.o: argparse.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-argparse.o -MD -MP -MF $(DEPDIR)/libcommon_a-argparse.Tpo -c -o libcommon_a-argparse.o `test -f 'argparse.c' || echo '$(srcdir)/'`argparse.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-argparse.Tpo $(DEPDIR)/libcommon_a-argparse.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='argparse.c' object='libcommon_a-argparse.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-argparse.o `test -f 'argparse.c' || echo '$(srcdir)/'`argparse.c
+
+libcommon_a-argparse.obj: argparse.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-argparse.obj -MD -MP -MF $(DEPDIR)/libcommon_a-argparse.Tpo -c -o libcommon_a-argparse.obj `if test -f 'argparse.c'; then $(CYGPATH_W) 'argparse.c'; else $(CYGPATH_W) '$(srcdir)/argparse.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-argparse.Tpo $(DEPDIR)/libcommon_a-argparse.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='argparse.c' object='libcommon_a-argparse.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-argparse.obj `if test -f 'argparse.c'; then $(CYGPATH_W) 'argparse.c'; else $(CYGPATH_W) '$(srcdir)/argparse.c'; fi`
+
+libcommon_a-logging.o: logging.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-logging.o -MD -MP -MF $(DEPDIR)/libcommon_a-logging.Tpo -c -o libcommon_a-logging.o `test -f 'logging.c' || echo '$(srcdir)/'`logging.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-logging.Tpo $(DEPDIR)/libcommon_a-logging.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='logging.c' object='libcommon_a-logging.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-logging.o `test -f 'logging.c' || echo '$(srcdir)/'`logging.c
+
+libcommon_a-logging.obj: logging.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-logging.obj -MD -MP -MF $(DEPDIR)/libcommon_a-logging.Tpo -c -o libcommon_a-logging.obj `if test -f 'logging.c'; then $(CYGPATH_W) 'logging.c'; else $(CYGPATH_W) '$(srcdir)/logging.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-logging.Tpo $(DEPDIR)/libcommon_a-logging.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='logging.c' object='libcommon_a-logging.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-logging.obj `if test -f 'logging.c'; then $(CYGPATH_W) 'logging.c'; else $(CYGPATH_W) '$(srcdir)/logging.c'; fi`
+
+libcommon_a-dotlock.o: dotlock.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-dotlock.o -MD -MP -MF $(DEPDIR)/libcommon_a-dotlock.Tpo -c -o libcommon_a-dotlock.o `test -f 'dotlock.c' || echo '$(srcdir)/'`dotlock.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-dotlock.Tpo $(DEPDIR)/libcommon_a-dotlock.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='dotlock.c' object='libcommon_a-dotlock.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-dotlock.o `test -f 'dotlock.c' || echo '$(srcdir)/'`dotlock.c
+
+libcommon_a-dotlock.obj: dotlock.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-dotlock.obj -MD -MP -MF $(DEPDIR)/libcommon_a-dotlock.Tpo -c -o libcommon_a-dotlock.obj `if test -f 'dotlock.c'; then $(CYGPATH_W) 'dotlock.c'; else $(CYGPATH_W) '$(srcdir)/dotlock.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-dotlock.Tpo $(DEPDIR)/libcommon_a-dotlock.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='dotlock.c' object='libcommon_a-dotlock.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-dotlock.obj `if test -f 'dotlock.c'; then $(CYGPATH_W) 'dotlock.c'; else $(CYGPATH_W) '$(srcdir)/dotlock.c'; fi`
+
+libcommon_a-mischelp.o: mischelp.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-mischelp.o -MD -MP -MF $(DEPDIR)/libcommon_a-mischelp.Tpo -c -o libcommon_a-mischelp.o `test -f 'mischelp.c' || echo '$(srcdir)/'`mischelp.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-mischelp.Tpo $(DEPDIR)/libcommon_a-mischelp.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mischelp.c' object='libcommon_a-mischelp.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-mischelp.o `test -f 'mischelp.c' || echo '$(srcdir)/'`mischelp.c
+
+libcommon_a-mischelp.obj: mischelp.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-mischelp.obj -MD -MP -MF $(DEPDIR)/libcommon_a-mischelp.Tpo -c -o libcommon_a-mischelp.obj `if test -f 'mischelp.c'; then $(CYGPATH_W) 'mischelp.c'; else $(CYGPATH_W) '$(srcdir)/mischelp.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-mischelp.Tpo $(DEPDIR)/libcommon_a-mischelp.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mischelp.c' object='libcommon_a-mischelp.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-mischelp.obj `if test -f 'mischelp.c'; then $(CYGPATH_W) 'mischelp.c'; else $(CYGPATH_W) '$(srcdir)/mischelp.c'; fi`
 
 libcommon_a-status.o: status.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-status.o -MD -MP -MF $(DEPDIR)/libcommon_a-status.Tpo -c -o libcommon_a-status.o `test -f 'status.c' || echo '$(srcdir)/'`status.c
@@ -1094,6 +1358,20 @@ libcommon_a-percent.obj: percent.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-percent.obj `if test -f 'percent.c'; then $(CYGPATH_W) 'percent.c'; else $(CYGPATH_W) '$(srcdir)/percent.c'; fi`
 
+libcommon_a-mbox-util.o: mbox-util.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-mbox-util.o -MD -MP -MF $(DEPDIR)/libcommon_a-mbox-util.Tpo -c -o libcommon_a-mbox-util.o `test -f 'mbox-util.c' || echo '$(srcdir)/'`mbox-util.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-mbox-util.Tpo $(DEPDIR)/libcommon_a-mbox-util.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mbox-util.c' object='libcommon_a-mbox-util.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-mbox-util.o `test -f 'mbox-util.c' || echo '$(srcdir)/'`mbox-util.c
+
+libcommon_a-mbox-util.obj: mbox-util.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-mbox-util.obj -MD -MP -MF $(DEPDIR)/libcommon_a-mbox-util.Tpo -c -o libcommon_a-mbox-util.obj `if test -f 'mbox-util.c'; then $(CYGPATH_W) 'mbox-util.c'; else $(CYGPATH_W) '$(srcdir)/mbox-util.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-mbox-util.Tpo $(DEPDIR)/libcommon_a-mbox-util.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mbox-util.c' object='libcommon_a-mbox-util.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-mbox-util.obj `if test -f 'mbox-util.c'; then $(CYGPATH_W) 'mbox-util.c'; else $(CYGPATH_W) '$(srcdir)/mbox-util.c'; fi`
+
 libcommon_a-miscellaneous.o: miscellaneous.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-miscellaneous.o -MD -MP -MF $(DEPDIR)/libcommon_a-miscellaneous.Tpo -c -o libcommon_a-miscellaneous.o `test -f 'miscellaneous.c' || echo '$(srcdir)/'`miscellaneous.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-miscellaneous.Tpo $(DEPDIR)/libcommon_a-miscellaneous.Po
@@ -1192,19 +1470,19 @@ libcommon_a-asshelp.obj: asshelp.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-asshelp.obj `if test -f 'asshelp.c'; then $(CYGPATH_W) 'asshelp.c'; else $(CYGPATH_W) '$(srcdir)/asshelp.c'; fi`
 
-libcommon_a-exechelp.o: exechelp.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-exechelp.o -MD -MP -MF $(DEPDIR)/libcommon_a-exechelp.Tpo -c -o libcommon_a-exechelp.o `test -f 'exechelp.c' || echo '$(srcdir)/'`exechelp.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-exechelp.Tpo $(DEPDIR)/libcommon_a-exechelp.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp.c' object='libcommon_a-exechelp.o' libtool=no @AMDEPBACKSLASH@
+libcommon_a-asshelp2.o: asshelp2.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-asshelp2.o -MD -MP -MF $(DEPDIR)/libcommon_a-asshelp2.Tpo -c -o libcommon_a-asshelp2.o `test -f 'asshelp2.c' || echo '$(srcdir)/'`asshelp2.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-asshelp2.Tpo $(DEPDIR)/libcommon_a-asshelp2.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='asshelp2.c' object='libcommon_a-asshelp2.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-exechelp.o `test -f 'exechelp.c' || echo '$(srcdir)/'`exechelp.c
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-asshelp2.o `test -f 'asshelp2.c' || echo '$(srcdir)/'`asshelp2.c
 
-libcommon_a-exechelp.obj: exechelp.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-exechelp.obj -MD -MP -MF $(DEPDIR)/libcommon_a-exechelp.Tpo -c -o libcommon_a-exechelp.obj `if test -f 'exechelp.c'; then $(CYGPATH_W) 'exechelp.c'; else $(CYGPATH_W) '$(srcdir)/exechelp.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-exechelp.Tpo $(DEPDIR)/libcommon_a-exechelp.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp.c' object='libcommon_a-exechelp.obj' libtool=no @AMDEPBACKSLASH@
+libcommon_a-asshelp2.obj: asshelp2.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-asshelp2.obj -MD -MP -MF $(DEPDIR)/libcommon_a-asshelp2.Tpo -c -o libcommon_a-asshelp2.obj `if test -f 'asshelp2.c'; then $(CYGPATH_W) 'asshelp2.c'; else $(CYGPATH_W) '$(srcdir)/asshelp2.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-asshelp2.Tpo $(DEPDIR)/libcommon_a-asshelp2.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='asshelp2.c' object='libcommon_a-asshelp2.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-exechelp.obj `if test -f 'exechelp.c'; then $(CYGPATH_W) 'exechelp.c'; else $(CYGPATH_W) '$(srcdir)/exechelp.c'; fi`
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-asshelp2.obj `if test -f 'asshelp2.c'; then $(CYGPATH_W) 'asshelp2.c'; else $(CYGPATH_W) '$(srcdir)/asshelp2.c'; fi`
 
 libcommon_a-signal.o: signal.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-signal.o -MD -MP -MF $(DEPDIR)/libcommon_a-signal.Tpo -c -o libcommon_a-signal.o `test -f 'signal.c' || echo '$(srcdir)/'`signal.c
@@ -1220,34 +1498,6 @@ libcommon_a-signal.obj: signal.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-signal.obj `if test -f 'signal.c'; then $(CYGPATH_W) 'signal.c'; else $(CYGPATH_W) '$(srcdir)/signal.c'; fi`
 
-libcommon_a-estream.o: estream.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-estream.o -MD -MP -MF $(DEPDIR)/libcommon_a-estream.Tpo -c -o libcommon_a-estream.o `test -f 'estream.c' || echo '$(srcdir)/'`estream.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-estream.Tpo $(DEPDIR)/libcommon_a-estream.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='estream.c' object='libcommon_a-estream.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-estream.o `test -f 'estream.c' || echo '$(srcdir)/'`estream.c
-
-libcommon_a-estream.obj: estream.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-estream.obj -MD -MP -MF $(DEPDIR)/libcommon_a-estream.Tpo -c -o libcommon_a-estream.obj `if test -f 'estream.c'; then $(CYGPATH_W) 'estream.c'; else $(CYGPATH_W) '$(srcdir)/estream.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-estream.Tpo $(DEPDIR)/libcommon_a-estream.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='estream.c' object='libcommon_a-estream.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-estream.obj `if test -f 'estream.c'; then $(CYGPATH_W) 'estream.c'; else $(CYGPATH_W) '$(srcdir)/estream.c'; fi`
-
-libcommon_a-estream-printf.o: estream-printf.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-estream-printf.o -MD -MP -MF $(DEPDIR)/libcommon_a-estream-printf.Tpo -c -o libcommon_a-estream-printf.o `test -f 'estream-printf.c' || echo '$(srcdir)/'`estream-printf.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-estream-printf.Tpo $(DEPDIR)/libcommon_a-estream-printf.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='estream-printf.c' object='libcommon_a-estream-printf.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-estream-printf.o `test -f 'estream-printf.c' || echo '$(srcdir)/'`estream-printf.c
-
-libcommon_a-estream-printf.obj: estream-printf.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-estream-printf.obj -MD -MP -MF $(DEPDIR)/libcommon_a-estream-printf.Tpo -c -o libcommon_a-estream-printf.obj `if test -f 'estream-printf.c'; then $(CYGPATH_W) 'estream-printf.c'; else $(CYGPATH_W) '$(srcdir)/estream-printf.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-estream-printf.Tpo $(DEPDIR)/libcommon_a-estream-printf.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='estream-printf.c' object='libcommon_a-estream-printf.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-estream-printf.obj `if test -f 'estream-printf.c'; then $(CYGPATH_W) 'estream-printf.c'; else $(CYGPATH_W) '$(srcdir)/estream-printf.c'; fi`
-
 libcommon_a-audit.o: audit.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-audit.o -MD -MP -MF $(DEPDIR)/libcommon_a-audit.Tpo -c -o libcommon_a-audit.o `test -f 'audit.c' || echo '$(srcdir)/'`audit.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-audit.Tpo $(DEPDIR)/libcommon_a-audit.Po
@@ -1261,48 +1511,6 @@ libcommon_a-audit.obj: audit.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='audit.c' object='libcommon_a-audit.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-audit.obj `if test -f 'audit.c'; then $(CYGPATH_W) 'audit.c'; else $(CYGPATH_W) '$(srcdir)/audit.c'; fi`
-
-libcommon_a-dns-cert.o: dns-cert.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-dns-cert.o -MD -MP -MF $(DEPDIR)/libcommon_a-dns-cert.Tpo -c -o libcommon_a-dns-cert.o `test -f 'dns-cert.c' || echo '$(srcdir)/'`dns-cert.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-dns-cert.Tpo $(DEPDIR)/libcommon_a-dns-cert.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='dns-cert.c' object='libcommon_a-dns-cert.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-dns-cert.o `test -f 'dns-cert.c' || echo '$(srcdir)/'`dns-cert.c
-
-libcommon_a-dns-cert.obj: dns-cert.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-dns-cert.obj -MD -MP -MF $(DEPDIR)/libcommon_a-dns-cert.Tpo -c -o libcommon_a-dns-cert.obj `if test -f 'dns-cert.c'; then $(CYGPATH_W) 'dns-cert.c'; else $(CYGPATH_W) '$(srcdir)/dns-cert.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-dns-cert.Tpo $(DEPDIR)/libcommon_a-dns-cert.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='dns-cert.c' object='libcommon_a-dns-cert.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-dns-cert.obj `if test -f 'dns-cert.c'; then $(CYGPATH_W) 'dns-cert.c'; else $(CYGPATH_W) '$(srcdir)/dns-cert.c'; fi`
-
-libcommon_a-pka.o: pka.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-pka.o -MD -MP -MF $(DEPDIR)/libcommon_a-pka.Tpo -c -o libcommon_a-pka.o `test -f 'pka.c' || echo '$(srcdir)/'`pka.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-pka.Tpo $(DEPDIR)/libcommon_a-pka.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pka.c' object='libcommon_a-pka.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-pka.o `test -f 'pka.c' || echo '$(srcdir)/'`pka.c
-
-libcommon_a-pka.obj: pka.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-pka.obj -MD -MP -MF $(DEPDIR)/libcommon_a-pka.Tpo -c -o libcommon_a-pka.obj `if test -f 'pka.c'; then $(CYGPATH_W) 'pka.c'; else $(CYGPATH_W) '$(srcdir)/pka.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-pka.Tpo $(DEPDIR)/libcommon_a-pka.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pka.c' object='libcommon_a-pka.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-pka.obj `if test -f 'pka.c'; then $(CYGPATH_W) 'pka.c'; else $(CYGPATH_W) '$(srcdir)/pka.c'; fi`
-
-libcommon_a-http.o: http.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-http.o -MD -MP -MF $(DEPDIR)/libcommon_a-http.Tpo -c -o libcommon_a-http.o `test -f 'http.c' || echo '$(srcdir)/'`http.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-http.Tpo $(DEPDIR)/libcommon_a-http.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='http.c' object='libcommon_a-http.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-http.o `test -f 'http.c' || echo '$(srcdir)/'`http.c
-
-libcommon_a-http.obj: http.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-http.obj -MD -MP -MF $(DEPDIR)/libcommon_a-http.Tpo -c -o libcommon_a-http.obj `if test -f 'http.c'; then $(CYGPATH_W) 'http.c'; else $(CYGPATH_W) '$(srcdir)/http.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-http.Tpo $(DEPDIR)/libcommon_a-http.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='http.c' object='libcommon_a-http.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-http.obj `if test -f 'http.c'; then $(CYGPATH_W) 'http.c'; else $(CYGPATH_W) '$(srcdir)/http.c'; fi`
 
 libcommon_a-localename.o: localename.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-localename.o -MD -MP -MF $(DEPDIR)/libcommon_a-localename.Tpo -c -o libcommon_a-localename.o `test -f 'localename.c' || echo '$(srcdir)/'`localename.c
@@ -1332,6 +1540,34 @@ libcommon_a-session-env.obj: session-env.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-session-env.obj `if test -f 'session-env.c'; then $(CYGPATH_W) 'session-env.c'; else $(CYGPATH_W) '$(srcdir)/session-env.c'; fi`
 
+libcommon_a-userids.o: userids.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-userids.o -MD -MP -MF $(DEPDIR)/libcommon_a-userids.Tpo -c -o libcommon_a-userids.o `test -f 'userids.c' || echo '$(srcdir)/'`userids.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-userids.Tpo $(DEPDIR)/libcommon_a-userids.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='userids.c' object='libcommon_a-userids.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-userids.o `test -f 'userids.c' || echo '$(srcdir)/'`userids.c
+
+libcommon_a-userids.obj: userids.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-userids.obj -MD -MP -MF $(DEPDIR)/libcommon_a-userids.Tpo -c -o libcommon_a-userids.obj `if test -f 'userids.c'; then $(CYGPATH_W) 'userids.c'; else $(CYGPATH_W) '$(srcdir)/userids.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-userids.Tpo $(DEPDIR)/libcommon_a-userids.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='userids.c' object='libcommon_a-userids.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-userids.obj `if test -f 'userids.c'; then $(CYGPATH_W) 'userids.c'; else $(CYGPATH_W) '$(srcdir)/userids.c'; fi`
+
+libcommon_a-openpgp-oid.o: openpgp-oid.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-openpgp-oid.o -MD -MP -MF $(DEPDIR)/libcommon_a-openpgp-oid.Tpo -c -o libcommon_a-openpgp-oid.o `test -f 'openpgp-oid.c' || echo '$(srcdir)/'`openpgp-oid.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-openpgp-oid.Tpo $(DEPDIR)/libcommon_a-openpgp-oid.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='openpgp-oid.c' object='libcommon_a-openpgp-oid.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-openpgp-oid.o `test -f 'openpgp-oid.c' || echo '$(srcdir)/'`openpgp-oid.c
+
+libcommon_a-openpgp-oid.obj: openpgp-oid.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-openpgp-oid.obj -MD -MP -MF $(DEPDIR)/libcommon_a-openpgp-oid.Tpo -c -o libcommon_a-openpgp-oid.obj `if test -f 'openpgp-oid.c'; then $(CYGPATH_W) 'openpgp-oid.c'; else $(CYGPATH_W) '$(srcdir)/openpgp-oid.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-openpgp-oid.Tpo $(DEPDIR)/libcommon_a-openpgp-oid.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='openpgp-oid.c' object='libcommon_a-openpgp-oid.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-openpgp-oid.obj `if test -f 'openpgp-oid.c'; then $(CYGPATH_W) 'openpgp-oid.c'; else $(CYGPATH_W) '$(srcdir)/openpgp-oid.c'; fi`
+
 libcommon_a-ssh-utils.o: ssh-utils.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-ssh-utils.o -MD -MP -MF $(DEPDIR)/libcommon_a-ssh-utils.Tpo -c -o libcommon_a-ssh-utils.o `test -f 'ssh-utils.c' || echo '$(srcdir)/'`ssh-utils.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-ssh-utils.Tpo $(DEPDIR)/libcommon_a-ssh-utils.Po
@@ -1345,6 +1581,20 @@ libcommon_a-ssh-utils.obj: ssh-utils.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='ssh-utils.c' object='libcommon_a-ssh-utils.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-ssh-utils.obj `if test -f 'ssh-utils.c'; then $(CYGPATH_W) 'ssh-utils.c'; else $(CYGPATH_W) '$(srcdir)/ssh-utils.c'; fi`
+
+libcommon_a-agent-opt.o: agent-opt.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-agent-opt.o -MD -MP -MF $(DEPDIR)/libcommon_a-agent-opt.Tpo -c -o libcommon_a-agent-opt.o `test -f 'agent-opt.c' || echo '$(srcdir)/'`agent-opt.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-agent-opt.Tpo $(DEPDIR)/libcommon_a-agent-opt.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='agent-opt.c' object='libcommon_a-agent-opt.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-agent-opt.o `test -f 'agent-opt.c' || echo '$(srcdir)/'`agent-opt.c
+
+libcommon_a-agent-opt.obj: agent-opt.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-agent-opt.obj -MD -MP -MF $(DEPDIR)/libcommon_a-agent-opt.Tpo -c -o libcommon_a-agent-opt.obj `if test -f 'agent-opt.c'; then $(CYGPATH_W) 'agent-opt.c'; else $(CYGPATH_W) '$(srcdir)/agent-opt.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-agent-opt.Tpo $(DEPDIR)/libcommon_a-agent-opt.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='agent-opt.c' object='libcommon_a-agent-opt.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-agent-opt.obj `if test -f 'agent-opt.c'; then $(CYGPATH_W) 'agent-opt.c'; else $(CYGPATH_W) '$(srcdir)/agent-opt.c'; fi`
 
 libcommon_a-helpfile.o: helpfile.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-helpfile.o -MD -MP -MF $(DEPDIR)/libcommon_a-helpfile.Tpo -c -o libcommon_a-helpfile.o `test -f 'helpfile.c' || echo '$(srcdir)/'`helpfile.c
@@ -1360,6 +1610,118 @@ libcommon_a-helpfile.obj: helpfile.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-helpfile.obj `if test -f 'helpfile.c'; then $(CYGPATH_W) 'helpfile.c'; else $(CYGPATH_W) '$(srcdir)/helpfile.c'; fi`
 
+libcommon_a-mkdir_p.o: mkdir_p.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-mkdir_p.o -MD -MP -MF $(DEPDIR)/libcommon_a-mkdir_p.Tpo -c -o libcommon_a-mkdir_p.o `test -f 'mkdir_p.c' || echo '$(srcdir)/'`mkdir_p.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-mkdir_p.Tpo $(DEPDIR)/libcommon_a-mkdir_p.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mkdir_p.c' object='libcommon_a-mkdir_p.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-mkdir_p.o `test -f 'mkdir_p.c' || echo '$(srcdir)/'`mkdir_p.c
+
+libcommon_a-mkdir_p.obj: mkdir_p.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-mkdir_p.obj -MD -MP -MF $(DEPDIR)/libcommon_a-mkdir_p.Tpo -c -o libcommon_a-mkdir_p.obj `if test -f 'mkdir_p.c'; then $(CYGPATH_W) 'mkdir_p.c'; else $(CYGPATH_W) '$(srcdir)/mkdir_p.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-mkdir_p.Tpo $(DEPDIR)/libcommon_a-mkdir_p.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mkdir_p.c' object='libcommon_a-mkdir_p.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-mkdir_p.obj `if test -f 'mkdir_p.c'; then $(CYGPATH_W) 'mkdir_p.c'; else $(CYGPATH_W) '$(srcdir)/mkdir_p.c'; fi`
+
+libcommon_a-call-gpg.o: call-gpg.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-call-gpg.o -MD -MP -MF $(DEPDIR)/libcommon_a-call-gpg.Tpo -c -o libcommon_a-call-gpg.o `test -f 'call-gpg.c' || echo '$(srcdir)/'`call-gpg.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-call-gpg.Tpo $(DEPDIR)/libcommon_a-call-gpg.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='call-gpg.c' object='libcommon_a-call-gpg.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-call-gpg.o `test -f 'call-gpg.c' || echo '$(srcdir)/'`call-gpg.c
+
+libcommon_a-call-gpg.obj: call-gpg.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-call-gpg.obj -MD -MP -MF $(DEPDIR)/libcommon_a-call-gpg.Tpo -c -o libcommon_a-call-gpg.obj `if test -f 'call-gpg.c'; then $(CYGPATH_W) 'call-gpg.c'; else $(CYGPATH_W) '$(srcdir)/call-gpg.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-call-gpg.Tpo $(DEPDIR)/libcommon_a-call-gpg.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='call-gpg.c' object='libcommon_a-call-gpg.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-call-gpg.obj `if test -f 'call-gpg.c'; then $(CYGPATH_W) 'call-gpg.c'; else $(CYGPATH_W) '$(srcdir)/call-gpg.c'; fi`
+
+libcommon_a-exectool.o: exectool.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-exectool.o -MD -MP -MF $(DEPDIR)/libcommon_a-exectool.Tpo -c -o libcommon_a-exectool.o `test -f 'exectool.c' || echo '$(srcdir)/'`exectool.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-exectool.Tpo $(DEPDIR)/libcommon_a-exectool.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exectool.c' object='libcommon_a-exectool.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-exectool.o `test -f 'exectool.c' || echo '$(srcdir)/'`exectool.c
+
+libcommon_a-exectool.obj: exectool.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-exectool.obj -MD -MP -MF $(DEPDIR)/libcommon_a-exectool.Tpo -c -o libcommon_a-exectool.obj `if test -f 'exectool.c'; then $(CYGPATH_W) 'exectool.c'; else $(CYGPATH_W) '$(srcdir)/exectool.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-exectool.Tpo $(DEPDIR)/libcommon_a-exectool.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exectool.c' object='libcommon_a-exectool.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-exectool.obj `if test -f 'exectool.c'; then $(CYGPATH_W) 'exectool.c'; else $(CYGPATH_W) '$(srcdir)/exectool.c'; fi`
+
+libcommon_a-w32-reg.o: w32-reg.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-w32-reg.o -MD -MP -MF $(DEPDIR)/libcommon_a-w32-reg.Tpo -c -o libcommon_a-w32-reg.o `test -f 'w32-reg.c' || echo '$(srcdir)/'`w32-reg.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-w32-reg.Tpo $(DEPDIR)/libcommon_a-w32-reg.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='w32-reg.c' object='libcommon_a-w32-reg.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-w32-reg.o `test -f 'w32-reg.c' || echo '$(srcdir)/'`w32-reg.c
+
+libcommon_a-w32-reg.obj: w32-reg.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-w32-reg.obj -MD -MP -MF $(DEPDIR)/libcommon_a-w32-reg.Tpo -c -o libcommon_a-w32-reg.obj `if test -f 'w32-reg.c'; then $(CYGPATH_W) 'w32-reg.c'; else $(CYGPATH_W) '$(srcdir)/w32-reg.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-w32-reg.Tpo $(DEPDIR)/libcommon_a-w32-reg.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='w32-reg.c' object='libcommon_a-w32-reg.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-w32-reg.obj `if test -f 'w32-reg.c'; then $(CYGPATH_W) 'w32-reg.c'; else $(CYGPATH_W) '$(srcdir)/w32-reg.c'; fi`
+
+libcommon_a-w32-afunix.o: w32-afunix.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-w32-afunix.o -MD -MP -MF $(DEPDIR)/libcommon_a-w32-afunix.Tpo -c -o libcommon_a-w32-afunix.o `test -f 'w32-afunix.c' || echo '$(srcdir)/'`w32-afunix.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-w32-afunix.Tpo $(DEPDIR)/libcommon_a-w32-afunix.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='w32-afunix.c' object='libcommon_a-w32-afunix.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-w32-afunix.o `test -f 'w32-afunix.c' || echo '$(srcdir)/'`w32-afunix.c
+
+libcommon_a-w32-afunix.obj: w32-afunix.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-w32-afunix.obj -MD -MP -MF $(DEPDIR)/libcommon_a-w32-afunix.Tpo -c -o libcommon_a-w32-afunix.obj `if test -f 'w32-afunix.c'; then $(CYGPATH_W) 'w32-afunix.c'; else $(CYGPATH_W) '$(srcdir)/w32-afunix.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-w32-afunix.Tpo $(DEPDIR)/libcommon_a-w32-afunix.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='w32-afunix.c' object='libcommon_a-w32-afunix.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-w32-afunix.obj `if test -f 'w32-afunix.c'; then $(CYGPATH_W) 'w32-afunix.c'; else $(CYGPATH_W) '$(srcdir)/w32-afunix.c'; fi`
+
+libcommon_a-exechelp-w32ce.o: exechelp-w32ce.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-exechelp-w32ce.o -MD -MP -MF $(DEPDIR)/libcommon_a-exechelp-w32ce.Tpo -c -o libcommon_a-exechelp-w32ce.o `test -f 'exechelp-w32ce.c' || echo '$(srcdir)/'`exechelp-w32ce.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-exechelp-w32ce.Tpo $(DEPDIR)/libcommon_a-exechelp-w32ce.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp-w32ce.c' object='libcommon_a-exechelp-w32ce.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-exechelp-w32ce.o `test -f 'exechelp-w32ce.c' || echo '$(srcdir)/'`exechelp-w32ce.c
+
+libcommon_a-exechelp-w32ce.obj: exechelp-w32ce.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-exechelp-w32ce.obj -MD -MP -MF $(DEPDIR)/libcommon_a-exechelp-w32ce.Tpo -c -o libcommon_a-exechelp-w32ce.obj `if test -f 'exechelp-w32ce.c'; then $(CYGPATH_W) 'exechelp-w32ce.c'; else $(CYGPATH_W) '$(srcdir)/exechelp-w32ce.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-exechelp-w32ce.Tpo $(DEPDIR)/libcommon_a-exechelp-w32ce.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp-w32ce.c' object='libcommon_a-exechelp-w32ce.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-exechelp-w32ce.obj `if test -f 'exechelp-w32ce.c'; then $(CYGPATH_W) 'exechelp-w32ce.c'; else $(CYGPATH_W) '$(srcdir)/exechelp-w32ce.c'; fi`
+
+libcommon_a-exechelp-w32.o: exechelp-w32.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-exechelp-w32.o -MD -MP -MF $(DEPDIR)/libcommon_a-exechelp-w32.Tpo -c -o libcommon_a-exechelp-w32.o `test -f 'exechelp-w32.c' || echo '$(srcdir)/'`exechelp-w32.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-exechelp-w32.Tpo $(DEPDIR)/libcommon_a-exechelp-w32.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp-w32.c' object='libcommon_a-exechelp-w32.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-exechelp-w32.o `test -f 'exechelp-w32.c' || echo '$(srcdir)/'`exechelp-w32.c
+
+libcommon_a-exechelp-w32.obj: exechelp-w32.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-exechelp-w32.obj -MD -MP -MF $(DEPDIR)/libcommon_a-exechelp-w32.Tpo -c -o libcommon_a-exechelp-w32.obj `if test -f 'exechelp-w32.c'; then $(CYGPATH_W) 'exechelp-w32.c'; else $(CYGPATH_W) '$(srcdir)/exechelp-w32.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-exechelp-w32.Tpo $(DEPDIR)/libcommon_a-exechelp-w32.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp-w32.c' object='libcommon_a-exechelp-w32.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-exechelp-w32.obj `if test -f 'exechelp-w32.c'; then $(CYGPATH_W) 'exechelp-w32.c'; else $(CYGPATH_W) '$(srcdir)/exechelp-w32.c'; fi`
+
+libcommon_a-exechelp-posix.o: exechelp-posix.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-exechelp-posix.o -MD -MP -MF $(DEPDIR)/libcommon_a-exechelp-posix.Tpo -c -o libcommon_a-exechelp-posix.o `test -f 'exechelp-posix.c' || echo '$(srcdir)/'`exechelp-posix.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-exechelp-posix.Tpo $(DEPDIR)/libcommon_a-exechelp-posix.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp-posix.c' object='libcommon_a-exechelp-posix.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-exechelp-posix.o `test -f 'exechelp-posix.c' || echo '$(srcdir)/'`exechelp-posix.c
+
+libcommon_a-exechelp-posix.obj: exechelp-posix.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-exechelp-posix.obj -MD -MP -MF $(DEPDIR)/libcommon_a-exechelp-posix.Tpo -c -o libcommon_a-exechelp-posix.obj `if test -f 'exechelp-posix.c'; then $(CYGPATH_W) 'exechelp-posix.c'; else $(CYGPATH_W) '$(srcdir)/exechelp-posix.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-exechelp-posix.Tpo $(DEPDIR)/libcommon_a-exechelp-posix.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp-posix.c' object='libcommon_a-exechelp-posix.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-exechelp-posix.obj `if test -f 'exechelp-posix.c'; then $(CYGPATH_W) 'exechelp-posix.c'; else $(CYGPATH_W) '$(srcdir)/exechelp-posix.c'; fi`
+
 libcommon_a-get-passphrase.o: get-passphrase.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-get-passphrase.o -MD -MP -MF $(DEPDIR)/libcommon_a-get-passphrase.Tpo -c -o libcommon_a-get-passphrase.o `test -f 'get-passphrase.c' || echo '$(srcdir)/'`get-passphrase.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-get-passphrase.Tpo $(DEPDIR)/libcommon_a-get-passphrase.Po
@@ -1374,20 +1736,6 @@ libcommon_a-get-passphrase.obj: get-passphrase.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-get-passphrase.obj `if test -f 'get-passphrase.c'; then $(CYGPATH_W) 'get-passphrase.c'; else $(CYGPATH_W) '$(srcdir)/get-passphrase.c'; fi`
 
-libcommon_a-srv.o: srv.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-srv.o -MD -MP -MF $(DEPDIR)/libcommon_a-srv.Tpo -c -o libcommon_a-srv.o `test -f 'srv.c' || echo '$(srcdir)/'`srv.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-srv.Tpo $(DEPDIR)/libcommon_a-srv.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='srv.c' object='libcommon_a-srv.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-srv.o `test -f 'srv.c' || echo '$(srcdir)/'`srv.c
-
-libcommon_a-srv.obj: srv.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-srv.obj -MD -MP -MF $(DEPDIR)/libcommon_a-srv.Tpo -c -o libcommon_a-srv.obj `if test -f 'srv.c'; then $(CYGPATH_W) 'srv.c'; else $(CYGPATH_W) '$(srcdir)/srv.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-srv.Tpo $(DEPDIR)/libcommon_a-srv.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='srv.c' object='libcommon_a-srv.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-srv.obj `if test -f 'srv.c'; then $(CYGPATH_W) 'srv.c'; else $(CYGPATH_W) '$(srcdir)/srv.c'; fi`
-
 libcommonpth_a-i18n.o: i18n.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-i18n.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-i18n.Tpo -c -o libcommonpth_a-i18n.o `test -f 'i18n.c' || echo '$(srcdir)/'`i18n.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-i18n.Tpo $(DEPDIR)/libcommonpth_a-i18n.Po
@@ -1401,6 +1749,118 @@ libcommonpth_a-i18n.obj: i18n.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='i18n.c' object='libcommonpth_a-i18n.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-i18n.obj `if test -f 'i18n.c'; then $(CYGPATH_W) 'i18n.c'; else $(CYGPATH_W) '$(srcdir)/i18n.c'; fi`
+
+libcommonpth_a-mapstrings.o: mapstrings.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-mapstrings.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-mapstrings.Tpo -c -o libcommonpth_a-mapstrings.o `test -f 'mapstrings.c' || echo '$(srcdir)/'`mapstrings.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-mapstrings.Tpo $(DEPDIR)/libcommonpth_a-mapstrings.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mapstrings.c' object='libcommonpth_a-mapstrings.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-mapstrings.o `test -f 'mapstrings.c' || echo '$(srcdir)/'`mapstrings.c
+
+libcommonpth_a-mapstrings.obj: mapstrings.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-mapstrings.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-mapstrings.Tpo -c -o libcommonpth_a-mapstrings.obj `if test -f 'mapstrings.c'; then $(CYGPATH_W) 'mapstrings.c'; else $(CYGPATH_W) '$(srcdir)/mapstrings.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-mapstrings.Tpo $(DEPDIR)/libcommonpth_a-mapstrings.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mapstrings.c' object='libcommonpth_a-mapstrings.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-mapstrings.obj `if test -f 'mapstrings.c'; then $(CYGPATH_W) 'mapstrings.c'; else $(CYGPATH_W) '$(srcdir)/mapstrings.c'; fi`
+
+libcommonpth_a-stringhelp.o: stringhelp.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-stringhelp.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-stringhelp.Tpo -c -o libcommonpth_a-stringhelp.o `test -f 'stringhelp.c' || echo '$(srcdir)/'`stringhelp.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-stringhelp.Tpo $(DEPDIR)/libcommonpth_a-stringhelp.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='stringhelp.c' object='libcommonpth_a-stringhelp.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-stringhelp.o `test -f 'stringhelp.c' || echo '$(srcdir)/'`stringhelp.c
+
+libcommonpth_a-stringhelp.obj: stringhelp.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-stringhelp.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-stringhelp.Tpo -c -o libcommonpth_a-stringhelp.obj `if test -f 'stringhelp.c'; then $(CYGPATH_W) 'stringhelp.c'; else $(CYGPATH_W) '$(srcdir)/stringhelp.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-stringhelp.Tpo $(DEPDIR)/libcommonpth_a-stringhelp.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='stringhelp.c' object='libcommonpth_a-stringhelp.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-stringhelp.obj `if test -f 'stringhelp.c'; then $(CYGPATH_W) 'stringhelp.c'; else $(CYGPATH_W) '$(srcdir)/stringhelp.c'; fi`
+
+libcommonpth_a-strlist.o: strlist.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-strlist.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-strlist.Tpo -c -o libcommonpth_a-strlist.o `test -f 'strlist.c' || echo '$(srcdir)/'`strlist.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-strlist.Tpo $(DEPDIR)/libcommonpth_a-strlist.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='strlist.c' object='libcommonpth_a-strlist.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-strlist.o `test -f 'strlist.c' || echo '$(srcdir)/'`strlist.c
+
+libcommonpth_a-strlist.obj: strlist.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-strlist.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-strlist.Tpo -c -o libcommonpth_a-strlist.obj `if test -f 'strlist.c'; then $(CYGPATH_W) 'strlist.c'; else $(CYGPATH_W) '$(srcdir)/strlist.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-strlist.Tpo $(DEPDIR)/libcommonpth_a-strlist.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='strlist.c' object='libcommonpth_a-strlist.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-strlist.obj `if test -f 'strlist.c'; then $(CYGPATH_W) 'strlist.c'; else $(CYGPATH_W) '$(srcdir)/strlist.c'; fi`
+
+libcommonpth_a-utf8conv.o: utf8conv.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-utf8conv.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-utf8conv.Tpo -c -o libcommonpth_a-utf8conv.o `test -f 'utf8conv.c' || echo '$(srcdir)/'`utf8conv.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-utf8conv.Tpo $(DEPDIR)/libcommonpth_a-utf8conv.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='utf8conv.c' object='libcommonpth_a-utf8conv.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-utf8conv.o `test -f 'utf8conv.c' || echo '$(srcdir)/'`utf8conv.c
+
+libcommonpth_a-utf8conv.obj: utf8conv.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-utf8conv.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-utf8conv.Tpo -c -o libcommonpth_a-utf8conv.obj `if test -f 'utf8conv.c'; then $(CYGPATH_W) 'utf8conv.c'; else $(CYGPATH_W) '$(srcdir)/utf8conv.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-utf8conv.Tpo $(DEPDIR)/libcommonpth_a-utf8conv.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='utf8conv.c' object='libcommonpth_a-utf8conv.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-utf8conv.obj `if test -f 'utf8conv.c'; then $(CYGPATH_W) 'utf8conv.c'; else $(CYGPATH_W) '$(srcdir)/utf8conv.c'; fi`
+
+libcommonpth_a-argparse.o: argparse.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-argparse.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-argparse.Tpo -c -o libcommonpth_a-argparse.o `test -f 'argparse.c' || echo '$(srcdir)/'`argparse.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-argparse.Tpo $(DEPDIR)/libcommonpth_a-argparse.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='argparse.c' object='libcommonpth_a-argparse.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-argparse.o `test -f 'argparse.c' || echo '$(srcdir)/'`argparse.c
+
+libcommonpth_a-argparse.obj: argparse.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-argparse.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-argparse.Tpo -c -o libcommonpth_a-argparse.obj `if test -f 'argparse.c'; then $(CYGPATH_W) 'argparse.c'; else $(CYGPATH_W) '$(srcdir)/argparse.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-argparse.Tpo $(DEPDIR)/libcommonpth_a-argparse.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='argparse.c' object='libcommonpth_a-argparse.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-argparse.obj `if test -f 'argparse.c'; then $(CYGPATH_W) 'argparse.c'; else $(CYGPATH_W) '$(srcdir)/argparse.c'; fi`
+
+libcommonpth_a-logging.o: logging.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-logging.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-logging.Tpo -c -o libcommonpth_a-logging.o `test -f 'logging.c' || echo '$(srcdir)/'`logging.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-logging.Tpo $(DEPDIR)/libcommonpth_a-logging.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='logging.c' object='libcommonpth_a-logging.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-logging.o `test -f 'logging.c' || echo '$(srcdir)/'`logging.c
+
+libcommonpth_a-logging.obj: logging.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-logging.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-logging.Tpo -c -o libcommonpth_a-logging.obj `if test -f 'logging.c'; then $(CYGPATH_W) 'logging.c'; else $(CYGPATH_W) '$(srcdir)/logging.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-logging.Tpo $(DEPDIR)/libcommonpth_a-logging.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='logging.c' object='libcommonpth_a-logging.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-logging.obj `if test -f 'logging.c'; then $(CYGPATH_W) 'logging.c'; else $(CYGPATH_W) '$(srcdir)/logging.c'; fi`
+
+libcommonpth_a-dotlock.o: dotlock.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-dotlock.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-dotlock.Tpo -c -o libcommonpth_a-dotlock.o `test -f 'dotlock.c' || echo '$(srcdir)/'`dotlock.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-dotlock.Tpo $(DEPDIR)/libcommonpth_a-dotlock.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='dotlock.c' object='libcommonpth_a-dotlock.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-dotlock.o `test -f 'dotlock.c' || echo '$(srcdir)/'`dotlock.c
+
+libcommonpth_a-dotlock.obj: dotlock.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-dotlock.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-dotlock.Tpo -c -o libcommonpth_a-dotlock.obj `if test -f 'dotlock.c'; then $(CYGPATH_W) 'dotlock.c'; else $(CYGPATH_W) '$(srcdir)/dotlock.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-dotlock.Tpo $(DEPDIR)/libcommonpth_a-dotlock.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='dotlock.c' object='libcommonpth_a-dotlock.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-dotlock.obj `if test -f 'dotlock.c'; then $(CYGPATH_W) 'dotlock.c'; else $(CYGPATH_W) '$(srcdir)/dotlock.c'; fi`
+
+libcommonpth_a-mischelp.o: mischelp.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-mischelp.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-mischelp.Tpo -c -o libcommonpth_a-mischelp.o `test -f 'mischelp.c' || echo '$(srcdir)/'`mischelp.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-mischelp.Tpo $(DEPDIR)/libcommonpth_a-mischelp.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mischelp.c' object='libcommonpth_a-mischelp.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-mischelp.o `test -f 'mischelp.c' || echo '$(srcdir)/'`mischelp.c
+
+libcommonpth_a-mischelp.obj: mischelp.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-mischelp.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-mischelp.Tpo -c -o libcommonpth_a-mischelp.obj `if test -f 'mischelp.c'; then $(CYGPATH_W) 'mischelp.c'; else $(CYGPATH_W) '$(srcdir)/mischelp.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-mischelp.Tpo $(DEPDIR)/libcommonpth_a-mischelp.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mischelp.c' object='libcommonpth_a-mischelp.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-mischelp.obj `if test -f 'mischelp.c'; then $(CYGPATH_W) 'mischelp.c'; else $(CYGPATH_W) '$(srcdir)/mischelp.c'; fi`
 
 libcommonpth_a-status.o: status.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-status.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-status.Tpo -c -o libcommonpth_a-status.o `test -f 'status.c' || echo '$(srcdir)/'`status.c
@@ -1584,6 +2044,20 @@ libcommonpth_a-percent.obj: percent.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-percent.obj `if test -f 'percent.c'; then $(CYGPATH_W) 'percent.c'; else $(CYGPATH_W) '$(srcdir)/percent.c'; fi`
 
+libcommonpth_a-mbox-util.o: mbox-util.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-mbox-util.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-mbox-util.Tpo -c -o libcommonpth_a-mbox-util.o `test -f 'mbox-util.c' || echo '$(srcdir)/'`mbox-util.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-mbox-util.Tpo $(DEPDIR)/libcommonpth_a-mbox-util.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mbox-util.c' object='libcommonpth_a-mbox-util.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-mbox-util.o `test -f 'mbox-util.c' || echo '$(srcdir)/'`mbox-util.c
+
+libcommonpth_a-mbox-util.obj: mbox-util.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-mbox-util.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-mbox-util.Tpo -c -o libcommonpth_a-mbox-util.obj `if test -f 'mbox-util.c'; then $(CYGPATH_W) 'mbox-util.c'; else $(CYGPATH_W) '$(srcdir)/mbox-util.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-mbox-util.Tpo $(DEPDIR)/libcommonpth_a-mbox-util.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mbox-util.c' object='libcommonpth_a-mbox-util.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-mbox-util.obj `if test -f 'mbox-util.c'; then $(CYGPATH_W) 'mbox-util.c'; else $(CYGPATH_W) '$(srcdir)/mbox-util.c'; fi`
+
 libcommonpth_a-miscellaneous.o: miscellaneous.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-miscellaneous.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-miscellaneous.Tpo -c -o libcommonpth_a-miscellaneous.o `test -f 'miscellaneous.c' || echo '$(srcdir)/'`miscellaneous.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-miscellaneous.Tpo $(DEPDIR)/libcommonpth_a-miscellaneous.Po
@@ -1682,19 +2156,19 @@ libcommonpth_a-asshelp.obj: asshelp.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-asshelp.obj `if test -f 'asshelp.c'; then $(CYGPATH_W) 'asshelp.c'; else $(CYGPATH_W) '$(srcdir)/asshelp.c'; fi`
 
-libcommonpth_a-exechelp.o: exechelp.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-exechelp.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-exechelp.Tpo -c -o libcommonpth_a-exechelp.o `test -f 'exechelp.c' || echo '$(srcdir)/'`exechelp.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-exechelp.Tpo $(DEPDIR)/libcommonpth_a-exechelp.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp.c' object='libcommonpth_a-exechelp.o' libtool=no @AMDEPBACKSLASH@
+libcommonpth_a-asshelp2.o: asshelp2.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-asshelp2.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-asshelp2.Tpo -c -o libcommonpth_a-asshelp2.o `test -f 'asshelp2.c' || echo '$(srcdir)/'`asshelp2.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-asshelp2.Tpo $(DEPDIR)/libcommonpth_a-asshelp2.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='asshelp2.c' object='libcommonpth_a-asshelp2.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-exechelp.o `test -f 'exechelp.c' || echo '$(srcdir)/'`exechelp.c
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-asshelp2.o `test -f 'asshelp2.c' || echo '$(srcdir)/'`asshelp2.c
 
-libcommonpth_a-exechelp.obj: exechelp.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-exechelp.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-exechelp.Tpo -c -o libcommonpth_a-exechelp.obj `if test -f 'exechelp.c'; then $(CYGPATH_W) 'exechelp.c'; else $(CYGPATH_W) '$(srcdir)/exechelp.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-exechelp.Tpo $(DEPDIR)/libcommonpth_a-exechelp.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp.c' object='libcommonpth_a-exechelp.obj' libtool=no @AMDEPBACKSLASH@
+libcommonpth_a-asshelp2.obj: asshelp2.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-asshelp2.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-asshelp2.Tpo -c -o libcommonpth_a-asshelp2.obj `if test -f 'asshelp2.c'; then $(CYGPATH_W) 'asshelp2.c'; else $(CYGPATH_W) '$(srcdir)/asshelp2.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-asshelp2.Tpo $(DEPDIR)/libcommonpth_a-asshelp2.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='asshelp2.c' object='libcommonpth_a-asshelp2.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-exechelp.obj `if test -f 'exechelp.c'; then $(CYGPATH_W) 'exechelp.c'; else $(CYGPATH_W) '$(srcdir)/exechelp.c'; fi`
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-asshelp2.obj `if test -f 'asshelp2.c'; then $(CYGPATH_W) 'asshelp2.c'; else $(CYGPATH_W) '$(srcdir)/asshelp2.c'; fi`
 
 libcommonpth_a-signal.o: signal.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-signal.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-signal.Tpo -c -o libcommonpth_a-signal.o `test -f 'signal.c' || echo '$(srcdir)/'`signal.c
@@ -1710,34 +2184,6 @@ libcommonpth_a-signal.obj: signal.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-signal.obj `if test -f 'signal.c'; then $(CYGPATH_W) 'signal.c'; else $(CYGPATH_W) '$(srcdir)/signal.c'; fi`
 
-libcommonpth_a-estream.o: estream.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-estream.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-estream.Tpo -c -o libcommonpth_a-estream.o `test -f 'estream.c' || echo '$(srcdir)/'`estream.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-estream.Tpo $(DEPDIR)/libcommonpth_a-estream.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='estream.c' object='libcommonpth_a-estream.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-estream.o `test -f 'estream.c' || echo '$(srcdir)/'`estream.c
-
-libcommonpth_a-estream.obj: estream.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-estream.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-estream.Tpo -c -o libcommonpth_a-estream.obj `if test -f 'estream.c'; then $(CYGPATH_W) 'estream.c'; else $(CYGPATH_W) '$(srcdir)/estream.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-estream.Tpo $(DEPDIR)/libcommonpth_a-estream.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='estream.c' object='libcommonpth_a-estream.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-estream.obj `if test -f 'estream.c'; then $(CYGPATH_W) 'estream.c'; else $(CYGPATH_W) '$(srcdir)/estream.c'; fi`
-
-libcommonpth_a-estream-printf.o: estream-printf.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-estream-printf.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-estream-printf.Tpo -c -o libcommonpth_a-estream-printf.o `test -f 'estream-printf.c' || echo '$(srcdir)/'`estream-printf.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-estream-printf.Tpo $(DEPDIR)/libcommonpth_a-estream-printf.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='estream-printf.c' object='libcommonpth_a-estream-printf.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-estream-printf.o `test -f 'estream-printf.c' || echo '$(srcdir)/'`estream-printf.c
-
-libcommonpth_a-estream-printf.obj: estream-printf.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-estream-printf.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-estream-printf.Tpo -c -o libcommonpth_a-estream-printf.obj `if test -f 'estream-printf.c'; then $(CYGPATH_W) 'estream-printf.c'; else $(CYGPATH_W) '$(srcdir)/estream-printf.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-estream-printf.Tpo $(DEPDIR)/libcommonpth_a-estream-printf.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='estream-printf.c' object='libcommonpth_a-estream-printf.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-estream-printf.obj `if test -f 'estream-printf.c'; then $(CYGPATH_W) 'estream-printf.c'; else $(CYGPATH_W) '$(srcdir)/estream-printf.c'; fi`
-
 libcommonpth_a-audit.o: audit.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-audit.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-audit.Tpo -c -o libcommonpth_a-audit.o `test -f 'audit.c' || echo '$(srcdir)/'`audit.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-audit.Tpo $(DEPDIR)/libcommonpth_a-audit.Po
@@ -1751,48 +2197,6 @@ libcommonpth_a-audit.obj: audit.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='audit.c' object='libcommonpth_a-audit.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-audit.obj `if test -f 'audit.c'; then $(CYGPATH_W) 'audit.c'; else $(CYGPATH_W) '$(srcdir)/audit.c'; fi`
-
-libcommonpth_a-dns-cert.o: dns-cert.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-dns-cert.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-dns-cert.Tpo -c -o libcommonpth_a-dns-cert.o `test -f 'dns-cert.c' || echo '$(srcdir)/'`dns-cert.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-dns-cert.Tpo $(DEPDIR)/libcommonpth_a-dns-cert.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='dns-cert.c' object='libcommonpth_a-dns-cert.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-dns-cert.o `test -f 'dns-cert.c' || echo '$(srcdir)/'`dns-cert.c
-
-libcommonpth_a-dns-cert.obj: dns-cert.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-dns-cert.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-dns-cert.Tpo -c -o libcommonpth_a-dns-cert.obj `if test -f 'dns-cert.c'; then $(CYGPATH_W) 'dns-cert.c'; else $(CYGPATH_W) '$(srcdir)/dns-cert.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-dns-cert.Tpo $(DEPDIR)/libcommonpth_a-dns-cert.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='dns-cert.c' object='libcommonpth_a-dns-cert.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-dns-cert.obj `if test -f 'dns-cert.c'; then $(CYGPATH_W) 'dns-cert.c'; else $(CYGPATH_W) '$(srcdir)/dns-cert.c'; fi`
-
-libcommonpth_a-pka.o: pka.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-pka.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-pka.Tpo -c -o libcommonpth_a-pka.o `test -f 'pka.c' || echo '$(srcdir)/'`pka.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-pka.Tpo $(DEPDIR)/libcommonpth_a-pka.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pka.c' object='libcommonpth_a-pka.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-pka.o `test -f 'pka.c' || echo '$(srcdir)/'`pka.c
-
-libcommonpth_a-pka.obj: pka.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-pka.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-pka.Tpo -c -o libcommonpth_a-pka.obj `if test -f 'pka.c'; then $(CYGPATH_W) 'pka.c'; else $(CYGPATH_W) '$(srcdir)/pka.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-pka.Tpo $(DEPDIR)/libcommonpth_a-pka.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pka.c' object='libcommonpth_a-pka.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-pka.obj `if test -f 'pka.c'; then $(CYGPATH_W) 'pka.c'; else $(CYGPATH_W) '$(srcdir)/pka.c'; fi`
-
-libcommonpth_a-http.o: http.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-http.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-http.Tpo -c -o libcommonpth_a-http.o `test -f 'http.c' || echo '$(srcdir)/'`http.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-http.Tpo $(DEPDIR)/libcommonpth_a-http.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='http.c' object='libcommonpth_a-http.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-http.o `test -f 'http.c' || echo '$(srcdir)/'`http.c
-
-libcommonpth_a-http.obj: http.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-http.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-http.Tpo -c -o libcommonpth_a-http.obj `if test -f 'http.c'; then $(CYGPATH_W) 'http.c'; else $(CYGPATH_W) '$(srcdir)/http.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-http.Tpo $(DEPDIR)/libcommonpth_a-http.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='http.c' object='libcommonpth_a-http.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-http.obj `if test -f 'http.c'; then $(CYGPATH_W) 'http.c'; else $(CYGPATH_W) '$(srcdir)/http.c'; fi`
 
 libcommonpth_a-localename.o: localename.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-localename.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-localename.Tpo -c -o libcommonpth_a-localename.o `test -f 'localename.c' || echo '$(srcdir)/'`localename.c
@@ -1822,6 +2226,34 @@ libcommonpth_a-session-env.obj: session-env.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-session-env.obj `if test -f 'session-env.c'; then $(CYGPATH_W) 'session-env.c'; else $(CYGPATH_W) '$(srcdir)/session-env.c'; fi`
 
+libcommonpth_a-userids.o: userids.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-userids.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-userids.Tpo -c -o libcommonpth_a-userids.o `test -f 'userids.c' || echo '$(srcdir)/'`userids.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-userids.Tpo $(DEPDIR)/libcommonpth_a-userids.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='userids.c' object='libcommonpth_a-userids.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-userids.o `test -f 'userids.c' || echo '$(srcdir)/'`userids.c
+
+libcommonpth_a-userids.obj: userids.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-userids.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-userids.Tpo -c -o libcommonpth_a-userids.obj `if test -f 'userids.c'; then $(CYGPATH_W) 'userids.c'; else $(CYGPATH_W) '$(srcdir)/userids.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-userids.Tpo $(DEPDIR)/libcommonpth_a-userids.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='userids.c' object='libcommonpth_a-userids.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-userids.obj `if test -f 'userids.c'; then $(CYGPATH_W) 'userids.c'; else $(CYGPATH_W) '$(srcdir)/userids.c'; fi`
+
+libcommonpth_a-openpgp-oid.o: openpgp-oid.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-openpgp-oid.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-openpgp-oid.Tpo -c -o libcommonpth_a-openpgp-oid.o `test -f 'openpgp-oid.c' || echo '$(srcdir)/'`openpgp-oid.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-openpgp-oid.Tpo $(DEPDIR)/libcommonpth_a-openpgp-oid.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='openpgp-oid.c' object='libcommonpth_a-openpgp-oid.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-openpgp-oid.o `test -f 'openpgp-oid.c' || echo '$(srcdir)/'`openpgp-oid.c
+
+libcommonpth_a-openpgp-oid.obj: openpgp-oid.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-openpgp-oid.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-openpgp-oid.Tpo -c -o libcommonpth_a-openpgp-oid.obj `if test -f 'openpgp-oid.c'; then $(CYGPATH_W) 'openpgp-oid.c'; else $(CYGPATH_W) '$(srcdir)/openpgp-oid.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-openpgp-oid.Tpo $(DEPDIR)/libcommonpth_a-openpgp-oid.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='openpgp-oid.c' object='libcommonpth_a-openpgp-oid.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-openpgp-oid.obj `if test -f 'openpgp-oid.c'; then $(CYGPATH_W) 'openpgp-oid.c'; else $(CYGPATH_W) '$(srcdir)/openpgp-oid.c'; fi`
+
 libcommonpth_a-ssh-utils.o: ssh-utils.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-ssh-utils.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-ssh-utils.Tpo -c -o libcommonpth_a-ssh-utils.o `test -f 'ssh-utils.c' || echo '$(srcdir)/'`ssh-utils.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-ssh-utils.Tpo $(DEPDIR)/libcommonpth_a-ssh-utils.Po
@@ -1835,6 +2267,20 @@ libcommonpth_a-ssh-utils.obj: ssh-utils.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='ssh-utils.c' object='libcommonpth_a-ssh-utils.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-ssh-utils.obj `if test -f 'ssh-utils.c'; then $(CYGPATH_W) 'ssh-utils.c'; else $(CYGPATH_W) '$(srcdir)/ssh-utils.c'; fi`
+
+libcommonpth_a-agent-opt.o: agent-opt.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-agent-opt.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-agent-opt.Tpo -c -o libcommonpth_a-agent-opt.o `test -f 'agent-opt.c' || echo '$(srcdir)/'`agent-opt.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-agent-opt.Tpo $(DEPDIR)/libcommonpth_a-agent-opt.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='agent-opt.c' object='libcommonpth_a-agent-opt.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-agent-opt.o `test -f 'agent-opt.c' || echo '$(srcdir)/'`agent-opt.c
+
+libcommonpth_a-agent-opt.obj: agent-opt.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-agent-opt.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-agent-opt.Tpo -c -o libcommonpth_a-agent-opt.obj `if test -f 'agent-opt.c'; then $(CYGPATH_W) 'agent-opt.c'; else $(CYGPATH_W) '$(srcdir)/agent-opt.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-agent-opt.Tpo $(DEPDIR)/libcommonpth_a-agent-opt.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='agent-opt.c' object='libcommonpth_a-agent-opt.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-agent-opt.obj `if test -f 'agent-opt.c'; then $(CYGPATH_W) 'agent-opt.c'; else $(CYGPATH_W) '$(srcdir)/agent-opt.c'; fi`
 
 libcommonpth_a-helpfile.o: helpfile.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-helpfile.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-helpfile.Tpo -c -o libcommonpth_a-helpfile.o `test -f 'helpfile.c' || echo '$(srcdir)/'`helpfile.c
@@ -1850,19 +2296,117 @@ libcommonpth_a-helpfile.obj: helpfile.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-helpfile.obj `if test -f 'helpfile.c'; then $(CYGPATH_W) 'helpfile.c'; else $(CYGPATH_W) '$(srcdir)/helpfile.c'; fi`
 
-libcommonpth_a-srv.o: srv.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-srv.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-srv.Tpo -c -o libcommonpth_a-srv.o `test -f 'srv.c' || echo '$(srcdir)/'`srv.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-srv.Tpo $(DEPDIR)/libcommonpth_a-srv.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='srv.c' object='libcommonpth_a-srv.o' libtool=no @AMDEPBACKSLASH@
+libcommonpth_a-mkdir_p.o: mkdir_p.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-mkdir_p.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-mkdir_p.Tpo -c -o libcommonpth_a-mkdir_p.o `test -f 'mkdir_p.c' || echo '$(srcdir)/'`mkdir_p.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-mkdir_p.Tpo $(DEPDIR)/libcommonpth_a-mkdir_p.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mkdir_p.c' object='libcommonpth_a-mkdir_p.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-srv.o `test -f 'srv.c' || echo '$(srcdir)/'`srv.c
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-mkdir_p.o `test -f 'mkdir_p.c' || echo '$(srcdir)/'`mkdir_p.c
 
-libcommonpth_a-srv.obj: srv.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-srv.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-srv.Tpo -c -o libcommonpth_a-srv.obj `if test -f 'srv.c'; then $(CYGPATH_W) 'srv.c'; else $(CYGPATH_W) '$(srcdir)/srv.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-srv.Tpo $(DEPDIR)/libcommonpth_a-srv.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='srv.c' object='libcommonpth_a-srv.obj' libtool=no @AMDEPBACKSLASH@
+libcommonpth_a-mkdir_p.obj: mkdir_p.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-mkdir_p.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-mkdir_p.Tpo -c -o libcommonpth_a-mkdir_p.obj `if test -f 'mkdir_p.c'; then $(CYGPATH_W) 'mkdir_p.c'; else $(CYGPATH_W) '$(srcdir)/mkdir_p.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-mkdir_p.Tpo $(DEPDIR)/libcommonpth_a-mkdir_p.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mkdir_p.c' object='libcommonpth_a-mkdir_p.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-srv.obj `if test -f 'srv.c'; then $(CYGPATH_W) 'srv.c'; else $(CYGPATH_W) '$(srcdir)/srv.c'; fi`
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-mkdir_p.obj `if test -f 'mkdir_p.c'; then $(CYGPATH_W) 'mkdir_p.c'; else $(CYGPATH_W) '$(srcdir)/mkdir_p.c'; fi`
+
+libcommonpth_a-call-gpg.o: call-gpg.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-call-gpg.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-call-gpg.Tpo -c -o libcommonpth_a-call-gpg.o `test -f 'call-gpg.c' || echo '$(srcdir)/'`call-gpg.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-call-gpg.Tpo $(DEPDIR)/libcommonpth_a-call-gpg.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='call-gpg.c' object='libcommonpth_a-call-gpg.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-call-gpg.o `test -f 'call-gpg.c' || echo '$(srcdir)/'`call-gpg.c
+
+libcommonpth_a-call-gpg.obj: call-gpg.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-call-gpg.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-call-gpg.Tpo -c -o libcommonpth_a-call-gpg.obj `if test -f 'call-gpg.c'; then $(CYGPATH_W) 'call-gpg.c'; else $(CYGPATH_W) '$(srcdir)/call-gpg.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-call-gpg.Tpo $(DEPDIR)/libcommonpth_a-call-gpg.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='call-gpg.c' object='libcommonpth_a-call-gpg.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-call-gpg.obj `if test -f 'call-gpg.c'; then $(CYGPATH_W) 'call-gpg.c'; else $(CYGPATH_W) '$(srcdir)/call-gpg.c'; fi`
+
+libcommonpth_a-exectool.o: exectool.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-exectool.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-exectool.Tpo -c -o libcommonpth_a-exectool.o `test -f 'exectool.c' || echo '$(srcdir)/'`exectool.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-exectool.Tpo $(DEPDIR)/libcommonpth_a-exectool.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exectool.c' object='libcommonpth_a-exectool.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-exectool.o `test -f 'exectool.c' || echo '$(srcdir)/'`exectool.c
+
+libcommonpth_a-exectool.obj: exectool.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-exectool.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-exectool.Tpo -c -o libcommonpth_a-exectool.obj `if test -f 'exectool.c'; then $(CYGPATH_W) 'exectool.c'; else $(CYGPATH_W) '$(srcdir)/exectool.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-exectool.Tpo $(DEPDIR)/libcommonpth_a-exectool.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exectool.c' object='libcommonpth_a-exectool.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-exectool.obj `if test -f 'exectool.c'; then $(CYGPATH_W) 'exectool.c'; else $(CYGPATH_W) '$(srcdir)/exectool.c'; fi`
+
+libcommonpth_a-w32-reg.o: w32-reg.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-w32-reg.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-w32-reg.Tpo -c -o libcommonpth_a-w32-reg.o `test -f 'w32-reg.c' || echo '$(srcdir)/'`w32-reg.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-w32-reg.Tpo $(DEPDIR)/libcommonpth_a-w32-reg.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='w32-reg.c' object='libcommonpth_a-w32-reg.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-w32-reg.o `test -f 'w32-reg.c' || echo '$(srcdir)/'`w32-reg.c
+
+libcommonpth_a-w32-reg.obj: w32-reg.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-w32-reg.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-w32-reg.Tpo -c -o libcommonpth_a-w32-reg.obj `if test -f 'w32-reg.c'; then $(CYGPATH_W) 'w32-reg.c'; else $(CYGPATH_W) '$(srcdir)/w32-reg.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-w32-reg.Tpo $(DEPDIR)/libcommonpth_a-w32-reg.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='w32-reg.c' object='libcommonpth_a-w32-reg.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-w32-reg.obj `if test -f 'w32-reg.c'; then $(CYGPATH_W) 'w32-reg.c'; else $(CYGPATH_W) '$(srcdir)/w32-reg.c'; fi`
+
+libcommonpth_a-w32-afunix.o: w32-afunix.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-w32-afunix.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-w32-afunix.Tpo -c -o libcommonpth_a-w32-afunix.o `test -f 'w32-afunix.c' || echo '$(srcdir)/'`w32-afunix.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-w32-afunix.Tpo $(DEPDIR)/libcommonpth_a-w32-afunix.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='w32-afunix.c' object='libcommonpth_a-w32-afunix.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-w32-afunix.o `test -f 'w32-afunix.c' || echo '$(srcdir)/'`w32-afunix.c
+
+libcommonpth_a-w32-afunix.obj: w32-afunix.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-w32-afunix.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-w32-afunix.Tpo -c -o libcommonpth_a-w32-afunix.obj `if test -f 'w32-afunix.c'; then $(CYGPATH_W) 'w32-afunix.c'; else $(CYGPATH_W) '$(srcdir)/w32-afunix.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-w32-afunix.Tpo $(DEPDIR)/libcommonpth_a-w32-afunix.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='w32-afunix.c' object='libcommonpth_a-w32-afunix.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-w32-afunix.obj `if test -f 'w32-afunix.c'; then $(CYGPATH_W) 'w32-afunix.c'; else $(CYGPATH_W) '$(srcdir)/w32-afunix.c'; fi`
+
+libcommonpth_a-exechelp-w32ce.o: exechelp-w32ce.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-exechelp-w32ce.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-exechelp-w32ce.Tpo -c -o libcommonpth_a-exechelp-w32ce.o `test -f 'exechelp-w32ce.c' || echo '$(srcdir)/'`exechelp-w32ce.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-exechelp-w32ce.Tpo $(DEPDIR)/libcommonpth_a-exechelp-w32ce.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp-w32ce.c' object='libcommonpth_a-exechelp-w32ce.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-exechelp-w32ce.o `test -f 'exechelp-w32ce.c' || echo '$(srcdir)/'`exechelp-w32ce.c
+
+libcommonpth_a-exechelp-w32ce.obj: exechelp-w32ce.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-exechelp-w32ce.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-exechelp-w32ce.Tpo -c -o libcommonpth_a-exechelp-w32ce.obj `if test -f 'exechelp-w32ce.c'; then $(CYGPATH_W) 'exechelp-w32ce.c'; else $(CYGPATH_W) '$(srcdir)/exechelp-w32ce.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-exechelp-w32ce.Tpo $(DEPDIR)/libcommonpth_a-exechelp-w32ce.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp-w32ce.c' object='libcommonpth_a-exechelp-w32ce.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-exechelp-w32ce.obj `if test -f 'exechelp-w32ce.c'; then $(CYGPATH_W) 'exechelp-w32ce.c'; else $(CYGPATH_W) '$(srcdir)/exechelp-w32ce.c'; fi`
+
+libcommonpth_a-exechelp-w32.o: exechelp-w32.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-exechelp-w32.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-exechelp-w32.Tpo -c -o libcommonpth_a-exechelp-w32.o `test -f 'exechelp-w32.c' || echo '$(srcdir)/'`exechelp-w32.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-exechelp-w32.Tpo $(DEPDIR)/libcommonpth_a-exechelp-w32.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp-w32.c' object='libcommonpth_a-exechelp-w32.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-exechelp-w32.o `test -f 'exechelp-w32.c' || echo '$(srcdir)/'`exechelp-w32.c
+
+libcommonpth_a-exechelp-w32.obj: exechelp-w32.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-exechelp-w32.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-exechelp-w32.Tpo -c -o libcommonpth_a-exechelp-w32.obj `if test -f 'exechelp-w32.c'; then $(CYGPATH_W) 'exechelp-w32.c'; else $(CYGPATH_W) '$(srcdir)/exechelp-w32.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-exechelp-w32.Tpo $(DEPDIR)/libcommonpth_a-exechelp-w32.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp-w32.c' object='libcommonpth_a-exechelp-w32.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-exechelp-w32.obj `if test -f 'exechelp-w32.c'; then $(CYGPATH_W) 'exechelp-w32.c'; else $(CYGPATH_W) '$(srcdir)/exechelp-w32.c'; fi`
+
+libcommonpth_a-exechelp-posix.o: exechelp-posix.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-exechelp-posix.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-exechelp-posix.Tpo -c -o libcommonpth_a-exechelp-posix.o `test -f 'exechelp-posix.c' || echo '$(srcdir)/'`exechelp-posix.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-exechelp-posix.Tpo $(DEPDIR)/libcommonpth_a-exechelp-posix.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp-posix.c' object='libcommonpth_a-exechelp-posix.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-exechelp-posix.o `test -f 'exechelp-posix.c' || echo '$(srcdir)/'`exechelp-posix.c
+
+libcommonpth_a-exechelp-posix.obj: exechelp-posix.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-exechelp-posix.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-exechelp-posix.Tpo -c -o libcommonpth_a-exechelp-posix.obj `if test -f 'exechelp-posix.c'; then $(CYGPATH_W) 'exechelp-posix.c'; else $(CYGPATH_W) '$(srcdir)/exechelp-posix.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-exechelp-posix.Tpo $(DEPDIR)/libcommonpth_a-exechelp-posix.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='exechelp-posix.c' object='libcommonpth_a-exechelp-posix.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-exechelp-posix.obj `if test -f 'exechelp-posix.c'; then $(CYGPATH_W) 'exechelp-posix.c'; else $(CYGPATH_W) '$(srcdir)/exechelp-posix.c'; fi`
 
 libsimple_pwquery_a-simple-pwquery.o: simple-pwquery.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsimple_pwquery_a_CFLAGS) $(CFLAGS) -MT libsimple_pwquery_a-simple-pwquery.o -MD -MP -MF $(DEPDIR)/libsimple_pwquery_a-simple-pwquery.Tpo -c -o libsimple_pwquery_a-simple-pwquery.o `test -f 'simple-pwquery.c' || echo '$(srcdir)/'`simple-pwquery.c
@@ -2204,16 +2748,19 @@ uninstall-am:
 # is a distributed built source.  If we would not do that we may end
 # up with two files and then it is not clear which version of the
 # files will be picked up.
-@MAINTAINER_MODE_TRUE@audit-events.h: Makefile mkstrtable.awk exaudit.awk audit.h
+@MAINTAINER_MODE_TRUE@audit-events.h: Makefile.am mkstrtable.awk exaudit.awk audit.h
 @MAINTAINER_MODE_TRUE@	$(AWK) -f $(srcdir)/exaudit.awk $(srcdir)/audit.h \
 @MAINTAINER_MODE_TRUE@	  | $(AWK) -f $(srcdir)/mkstrtable.awk -v textidx=3 -v nogettext=1 \
 @MAINTAINER_MODE_TRUE@		   -v namespace=eventstr_  > $(srcdir)/audit-events.h
 
 # Create the status-codes.h include file from status.h
-@MAINTAINER_MODE_TRUE@status-codes.h: Makefile mkstrtable.awk exstatus.awk status.h
+@MAINTAINER_MODE_TRUE@status-codes.h: Makefile.am mkstrtable.awk exstatus.awk status.h
 @MAINTAINER_MODE_TRUE@	$(AWK) -f $(srcdir)/exstatus.awk $(srcdir)/status.h \
 @MAINTAINER_MODE_TRUE@	  | $(AWK) -f $(srcdir)/mkstrtable.awk -v textidx=3 -v nogettext=1 \
 @MAINTAINER_MODE_TRUE@		   -v namespace=statusstr_  > $(srcdir)/status-codes.h
+
+# All programs should depend on the created libs.
+$(PROGRAMS) : libcommon.a libcommonpth.a
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

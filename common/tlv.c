@@ -3,12 +3,22 @@
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -34,6 +44,7 @@ typedef int gpg_error_t;
 #include <gpg-error.h>
 #endif
 
+#include "util.h"
 #include "tlv.h"
 
 static const unsigned char *
@@ -45,10 +56,9 @@ do_find_tlv (const unsigned char *buffer, size_t length,
   size_t len;
   int this_tag;
   int composite;
-    
+
   for (;;)
     {
-      buffer = s;
       if (n < 2)
         return NULL; /* Buffer definitely too short for tag and length. */
       if (!*s || *s == 0xff)
@@ -85,7 +95,7 @@ do_find_tlv (const unsigned char *buffer, size_t length,
         { /* Two byte length follows. */
           if (n < 2)
             return NULL; /* We expected 2 more bytes with the length. */
-          len = (s[0] << 8) | s[1];
+          len = ((size_t)s[0] << 8) | s[1];
           s += 2; n -= 2;
         }
       else
@@ -97,7 +107,7 @@ do_find_tlv (const unsigned char *buffer, size_t length,
              nesting. */
           const unsigned char *tmp_s;
           size_t tmp_len;
-          
+
           tmp_s = do_find_tlv (s, len, tag, &tmp_len, nestlevel+1);
           if (tmp_s)
             {
@@ -151,11 +161,10 @@ find_tlv_unchecked (const unsigned char *buffer, size_t length,
    and the length part from the TLV triplet.  Update BUFFER and SIZE
    on success. */
 gpg_error_t
-_parse_ber_header (unsigned char const **buffer, size_t *size,
-                   int *r_class, int *r_tag, 
-                   int *r_constructed, int *r_ndef,
-                   size_t *r_length, size_t *r_nhdr,
-                   gpg_err_source_t errsource)
+parse_ber_header (unsigned char const **buffer, size_t *size,
+                  int *r_class, int *r_tag,
+                  int *r_constructed, int *r_ndef,
+                  size_t *r_length, size_t *r_nhdr)
 {
   int c;
   unsigned long tag;
@@ -168,7 +177,7 @@ _parse_ber_header (unsigned char const **buffer, size_t *size,
 
   /* Get the tag. */
   if (!length)
-    return gpg_err_make (errsource, GPG_ERR_EOF);
+    return gpg_err_make (default_errsource, GPG_ERR_EOF);
   c = *buf++; length--; ++*r_nhdr;
 
   *r_class = (c & 0xc0) >> 6;
@@ -182,7 +191,7 @@ _parse_ber_header (unsigned char const **buffer, size_t *size,
         {
           tag <<= 7;
           if (!length)
-            return gpg_err_make (errsource, GPG_ERR_EOF);
+            return gpg_err_make (default_errsource, GPG_ERR_EOF);
           c = *buf++; length--; ++*r_nhdr;
           tag |= c & 0x7f;
 
@@ -193,7 +202,7 @@ _parse_ber_header (unsigned char const **buffer, size_t *size,
 
   /* Get the length. */
   if (!length)
-    return gpg_err_make (errsource, GPG_ERR_EOF);
+    return gpg_err_make (default_errsource, GPG_ERR_EOF);
   c = *buf++; length--; ++*r_nhdr;
 
   if ( !(c & 0x80) )
@@ -201,30 +210,30 @@ _parse_ber_header (unsigned char const **buffer, size_t *size,
   else if (c == 0x80)
     *r_ndef = 1;
   else if (c == 0xff)
-    return gpg_err_make (errsource, GPG_ERR_BAD_BER);
+    return gpg_err_make (default_errsource, GPG_ERR_BAD_BER);
   else
     {
       unsigned long len = 0;
       int count = c & 0x7f;
 
       if (count > sizeof (len) || count > sizeof (size_t))
-        return gpg_err_make (errsource, GPG_ERR_BAD_BER);
+        return gpg_err_make (default_errsource, GPG_ERR_BAD_BER);
 
       for (; count; count--)
         {
           len <<= 8;
           if (!length)
-            return gpg_err_make (errsource, GPG_ERR_EOF);
+            return gpg_err_make (default_errsource, GPG_ERR_EOF);
           c = *buf++; length--; ++*r_nhdr;
           len |= c & 0xff;
         }
       *r_length = len;
     }
-  
+
   /* Without this kludge some example certs can't be parsed. */
   if (*r_class == CLASS_UNIVERSAL && !*r_tag)
     *r_length = 0;
-  
+
   *buffer = buf;
   *size = length;
   return 0;
@@ -234,30 +243,29 @@ _parse_ber_header (unsigned char const **buffer, size_t *size,
 /* FIXME: The following function should not go into this file but for
    now it is easier to keep it here. */
 
-/* Return the next token of an canconical encoded S-expression.  BUF
+/* Return the next token of an canonical encoded S-expression.  BUF
    is the pointer to the S-expression and BUFLEN is a pointer to the
    length of this S-expression (used to validate the syntax).  Both
    are updated to reflect the new position.  The token itself is
-   returned as a pointer into the orginal buffer at TOK and TOKLEN.
+   returned as a pointer into the original buffer at TOK and TOKLEN.
    If a parentheses is the next token, TOK will be set to NULL.
-   TOKLEN is checked to be within the bounds.  On error a error code
-   is returned and all pointers should are not guaranteed to point to
-   a meanigful value. DEPTH should be initialized to 0 and will
+   TOKLEN is checked to be within the bounds.  On error an error code
+   is returned and no pointer is not guaranteed to point to
+   a meaningful value.  DEPTH should be initialized to 0 and will
    reflect on return the actual depth of the tree. To detect the end
    of the S-expression it is advisable to check DEPTH after a
-   successful return:
+   successful return.
 
    depth = 0;
    while (!(err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen))
           && depth)
      process_token (tok, toklen);
-   if (err)  
+   if (err)
      handle_error ();
  */
 gpg_error_t
-_parse_sexp (unsigned char const **buf, size_t *buflen,
-             int *depth, unsigned char const **tok, size_t *toklen,
-             gpg_err_source_t errsource)
+parse_sexp (unsigned char const **buf, size_t *buflen,
+            int *depth, unsigned char const **tok, size_t *toklen)
 {
   const unsigned char *s;
   size_t n, vlen;
@@ -267,7 +275,7 @@ _parse_sexp (unsigned char const **buf, size_t *buflen,
   *tok = NULL;
   *toklen = 0;
   if (!n)
-    return *depth ? gpg_err_make (errsource, GPG_ERR_INV_SEXP) : 0;
+    return *depth ? gpg_err_make (default_errsource, GPG_ERR_INV_SEXP) : 0;
   if (*s == '(')
     {
       s++; n--;
@@ -279,7 +287,7 @@ _parse_sexp (unsigned char const **buf, size_t *buflen,
   if (*s == ')')
     {
       if (!*depth)
-        return gpg_err_make (errsource, GPG_ERR_INV_SEXP);
+        return gpg_err_make (default_errsource, GPG_ERR_INV_SEXP);
       *toklen = 1;
       s++; n--;
       (*depth)--;
@@ -290,10 +298,10 @@ _parse_sexp (unsigned char const **buf, size_t *buflen,
   for (vlen=0; n && *s && *s != ':' && (*s >= '0' && *s <= '9'); s++, n--)
     vlen = vlen*10 + (*s - '0');
   if (!n || *s != ':')
-    return gpg_err_make (errsource, GPG_ERR_INV_SEXP);
+    return gpg_err_make (default_errsource, GPG_ERR_INV_SEXP);
   s++; n--;
   if (vlen > n)
-    return gpg_err_make (errsource, GPG_ERR_INV_SEXP);
+    return gpg_err_make (default_errsource, GPG_ERR_INV_SEXP);
   *tok = s;
   *toklen = vlen;
   s += vlen;
@@ -302,4 +310,3 @@ _parse_sexp (unsigned char const **buf, size_t *buflen,
   *buflen = n;
   return 0;
 }
-

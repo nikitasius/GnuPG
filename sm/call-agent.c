@@ -1,6 +1,6 @@
 /* call-agent.c - Divert GPGSM operations to the agent
  * Copyright (C) 2001, 2002, 2003, 2005, 2007,
- *               2008, 2009 Free Software Foundation, Inc.
+ *               2008, 2009, 2010 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <unistd.h> 
+#include <unistd.h>
 #include <time.h>
 #include <assert.h>
 #ifdef HAVE_LOCALE_H
@@ -66,8 +66,51 @@ struct learn_parm_s
   membuf_t *data;
 };
 
+struct import_key_parm_s
+{
+  ctrl_t ctrl;
+  assuan_context_t ctx;
+  const void *key;
+  size_t keylen;
+};
+
 
 
+/* Print a warning if the server's version number is less than our
+   version number.  Returns an error code on a connection problem.  */
+static gpg_error_t
+warn_version_mismatch (ctrl_t ctrl, assuan_context_t ctx,
+                       const char *servername, int mode)
+{
+  gpg_error_t err;
+  char *serverversion;
+  const char *myversion = strusage (13);
+
+  err = get_assuan_server_version (ctx, mode, &serverversion);
+  if (err)
+    log_error (_("error getting version from '%s': %s\n"),
+               servername, gpg_strerror (err));
+  else if (!compare_version_strings (serverversion, myversion))
+    {
+      char *warn;
+
+      warn = xtryasprintf (_("server '%s' is older than us (%s < %s)"),
+                           servername, serverversion, myversion);
+      if (!warn)
+        err = gpg_error_from_syserror ();
+      else
+        {
+          log_info (_("WARNING: %s\n"), warn);
+          gpgsm_status2 (ctrl, STATUS_WARNING, "server_version_mismatch 0",
+                         warn, NULL);
+          xfree (warn);
+        }
+    }
+  xfree (serverversion);
+  return err;
+}
+
+
 /* Try to connect to the agent via socket or fork it off and work by
    pipes.  Handle the server's initial greeting */
 static int
@@ -87,10 +130,21 @@ start_agent (ctrl_t ctrl)
                                 opt.agent_program,
                                 opt.lc_ctype, opt.lc_messages,
                                 opt.session_env,
-                                opt.verbose, DBG_ASSUAN,
+                                opt.autostart, opt.verbose, DBG_IPC,
                                 gpgsm_status2, ctrl);
-      
-      if (!rc)
+
+      if (!opt.autostart && gpg_err_code (rc) == GPG_ERR_NO_AGENT)
+        {
+          static int shown;
+
+          if (!shown)
+            {
+              shown = 1;
+              log_info (_("no gpg-agent running in this session\n"));
+            }
+        }
+      else if (!rc && !(rc = warn_version_mismatch (ctrl, agent_ctx,
+                                                    GPG_AGENT_NAME, 0)))
         {
           /* Tell the agent that we support Pinentry notifications.  No
              error checking so that it will work also with older
@@ -110,18 +164,6 @@ start_agent (ctrl_t ctrl)
 }
 
 
-
-static gpg_error_t
-membuf_data_cb (void *opaque, const void *buffer, size_t length)
-{
-  membuf_t *data = opaque;
-
-  if (buffer)
-    put_membuf (data, buffer, length);
-  return 0;
-}
-  
-
 /* This is the default inquiry callback.  It mainly handles the
    Pinentry notifications.  */
 static gpg_error_t
@@ -130,16 +172,16 @@ default_inq_cb (void *opaque, const char *line)
   gpg_error_t err;
   ctrl_t ctrl = opaque;
 
-  if (!strncmp (line, "PINENTRY_LAUNCHED", 17) && (line[17]==' '||!line[17]))
+  if (has_leading_keyword (line, "PINENTRY_LAUNCHED"))
     {
       err = gpgsm_proxy_pinentry_notify (ctrl, line);
       if (err)
-        log_error (_("failed to proxy %s inquiry to client\n"), 
+        log_error (_("failed to proxy %s inquiry to client\n"),
                    "PINENTRY_LAUNCHED");
       /* We do not pass errors to avoid breaking other code.  */
     }
   else
-    log_error ("ignoring gpg-agent inquiry `%s'\n", line);
+    log_error ("ignoring gpg-agent inquiry '%s'\n", line);
 
   return 0;
 }
@@ -197,7 +239,7 @@ gpgsm_agent_pksign (ctrl_t ctrl, const char *keygrip, const char *desc,
 
   init_membuf (&data, 1024);
   rc = assuan_transact (agent_ctx, "PKSIGN",
-                        membuf_data_cb, &data, default_inq_cb, ctrl,
+                        put_membuf_cb, &data, default_inq_cb, ctrl,
                         NULL, NULL);
   if (rc)
     {
@@ -241,7 +283,7 @@ gpgsm_scd_pksign (ctrl_t ctrl, const char *keyid, const char *desc,
     case GCRY_MD_RMD160:hashopt = "--hash=rmd160"; break;
     case GCRY_MD_MD5:   hashopt = "--hash=md5"; break;
     case GCRY_MD_SHA256:hashopt = "--hash=sha256"; break;
-    default: 
+    default:
       return gpg_error (GPG_ERR_DIGEST_ALGO);
     }
 
@@ -264,7 +306,7 @@ gpgsm_scd_pksign (ctrl_t ctrl, const char *keyid, const char *desc,
   snprintf (line, DIM(line)-1, "SCD PKSIGN %s %s", hashopt, keyid);
   line[DIM(line)-1] = 0;
   rc = assuan_transact (agent_ctx, line,
-                        membuf_data_cb, &data, default_inq_cb, ctrl,
+                        put_membuf_cb, &data, default_inq_cb, ctrl,
                         NULL, NULL);
   if (rc)
     {
@@ -300,14 +342,14 @@ gpgsm_scd_pksign (ctrl_t ctrl, const char *keyid, const char *desc,
 
 
 /* Handle a CIPHERTEXT inquiry.  Note, we only send the data,
-   assuan_transact talkes care of flushing and writing the end */
+   assuan_transact takes care of flushing and writing the end */
 static gpg_error_t
 inq_ciphertext_cb (void *opaque, const char *line)
 {
-  struct cipher_parm_s *parm = opaque; 
+  struct cipher_parm_s *parm = opaque;
   int rc;
 
-  if (!strncmp (line, "CIPHERTEXT", 10) && (line[10]==' '||!line[10]))
+  if (has_leading_keyword (line, "CIPHERTEXT"))
     {
       assuan_begin_confidential (parm->ctx);
       rc = assuan_send_data (parm->ctx, parm->ciphertext, parm->ciphertextlen);
@@ -316,7 +358,7 @@ inq_ciphertext_cb (void *opaque, const char *line)
   else
     rc = default_inq_cb (parm->ctrl, line);
 
-  return rc; 
+  return rc;
 }
 
 
@@ -324,7 +366,7 @@ inq_ciphertext_cb (void *opaque, const char *line)
    the hex string KEYGRIP. */
 int
 gpgsm_agent_pkdecrypt (ctrl_t ctrl, const char *keygrip, const char *desc,
-                       ksba_const_sexp_t ciphertext, 
+                       ksba_const_sexp_t ciphertext,
                        char **r_buf, size_t *r_buflen )
 {
   int rc;
@@ -334,7 +376,7 @@ gpgsm_agent_pkdecrypt (ctrl_t ctrl, const char *keygrip, const char *desc,
   size_t n, len;
   char *p, *buf, *endp;
   size_t ciphertextlen;
-  
+
   if (!keygrip || strlen(keygrip) != 40 || !ciphertext || !r_buf || !r_buflen)
     return gpg_error (GPG_ERR_INV_VALUE);
   *r_buf = NULL;
@@ -374,7 +416,7 @@ gpgsm_agent_pkdecrypt (ctrl_t ctrl, const char *keygrip, const char *desc,
   cipher_parm.ciphertext = ciphertext;
   cipher_parm.ciphertextlen = ciphertextlen;
   rc = assuan_transact (agent_ctx, "PKDECRYPT",
-                        membuf_data_cb, &data,
+                        put_membuf_cb, &data,
                         inq_ciphertext_cb, &cipher_parm, NULL, NULL);
   if (rc)
     {
@@ -409,7 +451,7 @@ gpgsm_agent_pkdecrypt (ctrl_t ctrl, const char *keygrip, const char *desc,
   endp++;
   if (endp-p+n > len)
     return gpg_error (GPG_ERR_INV_SEXP); /* Oops: Inconsistent S-Exp. */
-  
+
   memmove (buf, endp, n);
 
   *r_buflen = n;
@@ -426,17 +468,17 @@ gpgsm_agent_pkdecrypt (ctrl_t ctrl, const char *keygrip, const char *desc,
 static gpg_error_t
 inq_genkey_parms (void *opaque, const char *line)
 {
-  struct genkey_parm_s *parm = opaque; 
+  struct genkey_parm_s *parm = opaque;
   int rc;
 
-  if (!strncmp (line, "KEYPARAM", 8) && (line[8]==' '||!line[8]))
+  if (has_leading_keyword (line, "KEYPARAM"))
     {
       rc = assuan_send_data (parm->ctx, parm->sexp, parm->sexplen);
     }
   else
     rc = default_inq_cb (parm->ctrl, line);
 
-  return rc; 
+  return rc;
 }
 
 
@@ -469,7 +511,7 @@ gpgsm_agent_genkey (ctrl_t ctrl,
   if (!gk_parm.sexplen)
     return gpg_error (GPG_ERR_INV_VALUE);
   rc = assuan_transact (agent_ctx, "GENKEY",
-                        membuf_data_cb, &data, 
+                        put_membuf_cb, &data,
                         inq_genkey_parms, &gk_parm, NULL, NULL);
   if (rc)
     {
@@ -518,7 +560,7 @@ gpgsm_agent_readkey (ctrl_t ctrl, int fromcard, const char *hexkeygrip,
 
   init_membuf (&data, 1024);
   rc = assuan_transact (agent_ctx, line,
-                        membuf_data_cb, &data, 
+                        put_membuf_cb, &data,
                         default_inq_cb, ctrl, NULL, NULL);
   if (rc)
     {
@@ -560,7 +602,7 @@ store_serialno (const char *line)
 }
 
 
-/* Callback for the gpgsm_agent_serialno fucntion.  */
+/* Callback for the gpgsm_agent_serialno function.  */
 static gpg_error_t
 scd_serialno_status_cb (void *opaque, const char *line)
 {
@@ -589,7 +631,7 @@ gpgsm_agent_scd_serialno (ctrl_t ctrl, char **r_serialno)
 {
   int rc;
   char *serialno = NULL;
- 
+
   *r_serialno = NULL;
   rc = start_agent (ctrl);
   if (rc)
@@ -612,7 +654,7 @@ gpgsm_agent_scd_serialno (ctrl_t ctrl, char **r_serialno)
 
 
 
-/* Callback for the gpgsm_agent_serialno fucntion.  */
+/* Callback for the gpgsm_agent_serialno function.  */
 static gpg_error_t
 scd_keypairinfo_status_cb (void *opaque, const char *line)
 {
@@ -658,7 +700,7 @@ gpgsm_agent_scd_keypairinfo (ctrl_t ctrl, strlist_t *r_list)
 {
   int rc;
   strlist_t list = NULL;
- 
+
   *r_list = NULL;
   rc = start_agent (ctrl);
   if (rc)
@@ -685,14 +727,14 @@ static gpg_error_t
 istrusted_status_cb (void *opaque, const char *line)
 {
   struct rootca_flags_s *flags = opaque;
+  const char *s;
 
-  if (!strncmp (line, "TRUSTLISTFLAG", 13) && (line[13]==' ' || !line[13]))
+  if ((s = has_leading_keyword (line, "TRUSTLISTFLAG")))
     {
-      for (line += 13; *line == ' '; line++)
-        ;
-      if (!strncmp (line, "relax", 5) && (line[5] == ' ' || !line[5]))
+      line = s;
+      if (has_leading_keyword (line, "relax"))
         flags->relax = 1;
-      else if (!strncmp (line, "cm", 2) && (line[2] == ' ' || !line[2]))
+      else if (has_leading_keyword (line, "cm"))
         flags->chain_model = 1;
     }
   return 0;
@@ -735,7 +777,7 @@ gpgsm_agent_istrusted (ctrl_t ctrl, ksba_cert_t cert, const char *hexfpr,
           log_error ("error getting the fingerprint\n");
           return gpg_error (GPG_ERR_GENERAL);
         }
-      
+
       snprintf (line, DIM(line)-1, "ISTRUSTED %s", fpr);
       line[DIM(line)-1] = 0;
       xfree (fpr);
@@ -816,14 +858,14 @@ static gpg_error_t
 learn_status_cb (void *opaque, const char *line)
 {
   struct learn_parm_s *parm = opaque;
+  const char *s;
 
   /* Pass progress data to the caller.  */
-  if (!strncmp (line, "PROGRESS", 8) && (line[8]==' ' || !line[8]))
+  if ((s = has_leading_keyword (line, "PROGRESS")))
     {
+      line = s;
       if (parm->ctrl)
         {
-          for (line += 8; *line == ' '; line++)
-            ;
           if (gpgsm_status (parm->ctrl, STATUS_PROGRESS, line))
             return gpg_error (GPG_ERR_ASS_CANCELED);
         }
@@ -899,7 +941,7 @@ learn_cb (void *opaque, const void *buffer, size_t length)
   init_membuf (parm->data, 4096);
   return 0;
 }
-  
+
 /* Call the agent to learn about a smartcard */
 int
 gpgsm_agent_learn (ctrl_t ctrl)
@@ -913,14 +955,18 @@ gpgsm_agent_learn (ctrl_t ctrl)
   if (rc)
     return rc;
 
+  rc = warn_version_mismatch (ctrl, agent_ctx, SCDAEMON_NAME, 2);
+  if (rc)
+    return rc;
+
   init_membuf (&data, 4096);
   learn_parm.error = 0;
   learn_parm.ctrl = ctrl;
   learn_parm.ctx = agent_ctx;
   learn_parm.data = &data;
   rc = assuan_transact (agent_ctx, "LEARN --send",
-                        learn_cb, &learn_parm, 
-                        NULL, NULL, 
+                        learn_cb, &learn_parm,
+                        NULL, NULL,
                         learn_status_cb, &learn_parm);
   xfree (get_membuf (&data, &len));
   if (rc)
@@ -1009,9 +1055,9 @@ keyinfo_status_cb (void *opaque, const char *line)
   char **serialno = opaque;
   const char *s, *s2;
 
-  if (!strncmp (line, "KEYINFO ", 8) && !*serialno)
+  if ((s = has_leading_keyword (line, "KEYINFO")) && !*serialno)
     {
-      s = strchr (line+8, ' ');
+      s = strchr (s, ' ');
       if (s && s[1] == 'T' && s[2] == ' ' && s[3])
         {
           s += 3;
@@ -1067,3 +1113,183 @@ gpgsm_agent_keyinfo (ctrl_t ctrl, const char *hexkeygrip, char **r_serialno)
   return err;
 }
 
+
+
+/* Ask for the passphrase (this is used for pkcs#12 import/export.  On
+   success the caller needs to free the string stored at R_PASSPHRASE.
+   On error NULL will be stored at R_PASSPHRASE and an appropriate
+   error code returned.  If REPEAT is true the agent tries to get a
+   new passphrase (i.e. asks the user to confirm it).  */
+gpg_error_t
+gpgsm_agent_ask_passphrase (ctrl_t ctrl, const char *desc_msg, int repeat,
+                            char **r_passphrase)
+{
+  gpg_error_t err;
+  char line[ASSUAN_LINELENGTH];
+  char *arg4 = NULL;
+  membuf_t data;
+
+  *r_passphrase = NULL;
+
+  err = start_agent (ctrl);
+  if (err)
+    return err;
+
+  if (desc_msg && *desc_msg && !(arg4 = percent_plus_escape (desc_msg)))
+    return gpg_error_from_syserror ();
+
+  snprintf (line, DIM(line)-1, "GET_PASSPHRASE --data%s -- X X X %s",
+            repeat? " --repeat=1 --check --qualitybar":"",
+            arg4);
+  xfree (arg4);
+
+  init_membuf_secure (&data, 64);
+  err = assuan_transact (agent_ctx, line,
+                         put_membuf_cb, &data,
+                         default_inq_cb, NULL, NULL, NULL);
+
+  if (err)
+    xfree (get_membuf (&data, NULL));
+  else
+    {
+      put_membuf (&data, "", 1);
+      *r_passphrase = get_membuf (&data, NULL);
+      if (!*r_passphrase)
+        err = gpg_error_from_syserror ();
+    }
+  return err;
+}
+
+
+
+/* Retrieve a key encryption key from the agent.  With FOREXPORT true
+   the key shall be use for export, with false for import.  On success
+   the new key is stored at R_KEY and its length at R_KEKLEN.  */
+gpg_error_t
+gpgsm_agent_keywrap_key (ctrl_t ctrl, int forexport,
+                         void **r_kek, size_t *r_keklen)
+{
+  gpg_error_t err;
+  membuf_t data;
+  size_t len;
+  unsigned char *buf;
+  char line[ASSUAN_LINELENGTH];
+
+  *r_kek = NULL;
+  err = start_agent (ctrl);
+  if (err)
+    return err;
+
+  snprintf (line, DIM(line)-1, "KEYWRAP_KEY %s",
+            forexport? "--export":"--import");
+
+  init_membuf_secure (&data, 64);
+  err = assuan_transact (agent_ctx, line,
+                         put_membuf_cb, &data,
+                         default_inq_cb, ctrl, NULL, NULL);
+  if (err)
+    {
+      xfree (get_membuf (&data, &len));
+      return err;
+    }
+  buf = get_membuf (&data, &len);
+  if (!buf)
+    return gpg_error_from_syserror ();
+  *r_kek = buf;
+  *r_keklen = len;
+  return 0;
+}
+
+
+
+
+/* Handle the inquiry for an IMPORT_KEY command.  */
+static gpg_error_t
+inq_import_key_parms (void *opaque, const char *line)
+{
+  struct import_key_parm_s *parm = opaque;
+  gpg_error_t err;
+
+  if (has_leading_keyword (line, "KEYDATA"))
+    {
+      assuan_begin_confidential (parm->ctx);
+      err = assuan_send_data (parm->ctx, parm->key, parm->keylen);
+      assuan_end_confidential (parm->ctx);
+    }
+  else
+    err = default_inq_cb (parm->ctrl, line);
+
+  return err;
+}
+
+
+/* Call the agent to import a key into the agent.  */
+gpg_error_t
+gpgsm_agent_import_key (ctrl_t ctrl, const void *key, size_t keylen)
+{
+  gpg_error_t err;
+  struct import_key_parm_s parm;
+
+  err = start_agent (ctrl);
+  if (err)
+    return err;
+
+  parm.ctrl   = ctrl;
+  parm.ctx    = agent_ctx;
+  parm.key    = key;
+  parm.keylen = keylen;
+
+  err = assuan_transact (agent_ctx, "IMPORT_KEY",
+                         NULL, NULL, inq_import_key_parms, &parm, NULL, NULL);
+  return err;
+}
+
+
+
+/* Receive a secret key from the agent.  KEYGRIP is the hexified
+   keygrip, DESC a prompt to be displayed with the agent's passphrase
+   question (needs to be plus+percent escaped).  On success the key is
+   stored as a canonical S-expression at R_RESULT and R_RESULTLEN. */
+gpg_error_t
+gpgsm_agent_export_key (ctrl_t ctrl, const char *keygrip, const char *desc,
+                        unsigned char **r_result, size_t *r_resultlen)
+{
+  gpg_error_t err;
+  membuf_t data;
+  size_t len;
+  unsigned char *buf;
+  char line[ASSUAN_LINELENGTH];
+
+  *r_result = NULL;
+
+  err = start_agent (ctrl);
+  if (err)
+    return err;
+
+  if (desc)
+    {
+      snprintf (line, DIM(line)-1, "SETKEYDESC %s", desc);
+      err = assuan_transact (agent_ctx, line,
+                             NULL, NULL, NULL, NULL, NULL, NULL);
+      if (err)
+        return err;
+    }
+
+  snprintf (line, DIM(line)-1, "EXPORT_KEY %s", keygrip);
+
+  init_membuf_secure (&data, 1024);
+  err = assuan_transact (agent_ctx, line,
+                         put_membuf_cb, &data,
+                         default_inq_cb, ctrl, NULL, NULL);
+  if (err)
+    {
+      xfree (get_membuf (&data, &len));
+      return err;
+    }
+  buf = get_membuf (&data, &len);
+  if (!buf)
+    return gpg_error_from_syserror ();
+  *r_result = buf;
+  *r_resultlen = len;
+  return 0;
+}

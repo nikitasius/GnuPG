@@ -18,12 +18,17 @@
 ## Process this file with automake to produce Makefile.in
 
 bin_PROGRAMS = gpg-agent
-libexec_PROGRAMS = gpg-protect-tool gpg-preset-passphrase
+libexec_PROGRAMS = gpg-protect-tool
+if !HAVE_W32CE_SYSTEM
+# fixme: Do no use simple-pwquery for preset-passphrase.
+libexec_PROGRAMS += gpg-preset-passphrase
+endif
 noinst_PROGRAMS = $(TESTS)
 
 EXTRA_DIST = ChangeLog-2011 gpg-agent-w32info.rc
 
-AM_CPPFLAGS = -I$(top_srcdir)/gl -I$(top_srcdir)/common -I$(top_srcdir)/intl
+
+AM_CPPFLAGS = -I$(top_srcdir)/common
 
 include $(top_srcdir)/am/cmacros.am
 
@@ -31,7 +36,7 @@ if HAVE_W32_SYSTEM
 resource_objs += gpg-agent-w32info.o
 endif
 
-AM_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS)
+AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS)
 
 gpg_agent_SOURCES = \
 	gpg-agent.c agent.h \
@@ -46,24 +51,30 @@ gpg_agent_SOURCES = \
 	protect.c \
 	trustlist.c \
 	divert-scd.c \
+	cvt-openpgp.c cvt-openpgp.h \
 	call-scd.c \
 	learncard.c
 
-common_libs = $(libcommon) ../jnlib/libjnlib.a ../gl/libgnu.a
-commonpth_libs = $(libcommonpth) ../jnlib/libjnlib.a ../gl/libgnu.a
+common_libs = $(libcommon)
+commonpth_libs = $(libcommonpth)
+if HAVE_W32CE_SYSTEM
+pwquery_libs =
+else
 pwquery_libs = ../common/libsimple-pwquery.a
+endif
 
 
-gpg_agent_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(PTH_CFLAGS)
+gpg_agent_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS)
 gpg_agent_LDADD = $(commonpth_libs) \
-                $(LIBGCRYPT_LIBS) $(LIBASSUAN_LIBS) $(PTH_LIBS) \
+                $(LIBGCRYPT_LIBS) $(LIBASSUAN_LIBS) $(NPTH_LIBS) \
 	        $(GPG_ERROR_LIBS) $(LIBINTL) $(NETLIBS) $(LIBICONV) \
 		$(resource_objs)
+gpg_agent_LDFLAGS = $(extra_bin_ldflags)
+gpg_agent_DEPENDENCIES = $(resource_objs)
 
 gpg_protect_tool_SOURCES = \
 	protect-tool.c \
-	protect.c \
-	minip12.c minip12.h
+	protect.c
 
 gpg_protect_tool_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS)
 gpg_protect_tool_LDADD = $(common_libs) $(LIBGCRYPT_LIBS) $(LIBASSUAN_LIBS) \
@@ -89,8 +100,8 @@ $(PROGRAMS): $(common_libs) $(commonpth_libs) $(pwquery_libs)
 #
 TESTS = t-protect
 
-t_common_ldadd = $(common_libs) \
-                 $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(LIBINTL) $(LIBICONV)
+t_common_ldadd = $(common_libs)  $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
+	          $(LIBINTL) $(LIBICONV) $(NETLIBS)
 
 t_protect_SOURCES = t-protect.c protect.c
 t_protect_LDADD = $(t_common_ldadd)

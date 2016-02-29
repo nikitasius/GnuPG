@@ -1,6 +1,7 @@
 /* options.h
  * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
- *               2007 Free Software Foundation, Inc.
+ *               2007, 2010, 2011 Free Software Foundation, Inc.
+ * Copyright (C) 2015 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -24,6 +25,7 @@
 #include <types.h>
 #include "main.h"
 #include "packet.h"
+#include "tofu.h"
 #include "../common/session-env.h"
 
 #ifndef EXTERN_UNLESS_MAIN_MODULE
@@ -35,6 +37,13 @@
 #endif
 #endif
 
+/* Declaration of a keyserver spec type.  The definition is found in
+   ../common/keyserver.h.  */
+struct keyserver_spec;
+typedef struct keyserver_spec *keyserver_spec_t;
+
+
+/* Global options for GPG.  */
 EXTERN_UNLESS_MAIN_MODULE
 struct
 {
@@ -43,8 +52,10 @@ struct
   unsigned debug;
   int armor;
   char *outfile;
+  estream_t outfp;  /* Hack, sometimes used in place of outfile.  */
   off_t max_output;
   int dry_run;
+  int autostart;
   int list_only;
   int textmode;
   int expert;
@@ -58,14 +69,17 @@ struct
   int check_sigs; /* check key signatures */
   int with_colons;
   int with_key_data;
-  int with_fingerprint; /* opt --with-fingerprint active */
+  int with_icao_spelling; /* Print ICAO spelling with fingerprints.  */
+  int with_fingerprint; /* Option --with-fingerprint active.  */
+  int with_keygrip;     /* Option --with-keygrip active.  */
+  int with_secret;      /* Option --with-secret active.  */
   int fingerprint; /* list fingerprints */
   int list_sigs;   /* list signatures */
+  int print_pka_records;
+  int print_dane_records;
   int no_armor;
   int list_packets; /* list-packets mode: 1=normal, 2=invoked by command*/
   int def_cipher_algo;
-  int force_v3_sigs;
-  int force_v4_certs;
   int force_mdc;
   int disable_mdc;
   int def_digest_algo;
@@ -74,9 +88,11 @@ struct
   int compress_level;
   int bz2_compress_level;
   int bz2_decompress_lowmem;
-  const char *def_secret_key;
+  strlist_t def_secret_key;
   char *def_recipient;
   int def_recipient_self;
+  strlist_t secret_keys_to_try;
+
   int def_cert_level;
   int min_cert_level;
   int ask_cert_level;
@@ -90,6 +106,7 @@ struct
   int max_cert_depth;
   const char *homedir;
   const char *agent_program;
+  const char *dirmngr_program;
 
   /* Options to be passed to the gpg-agent */
   session_env_t session_env;
@@ -97,62 +114,50 @@ struct
   char *lc_messages;
 
   int skip_verify;
-  int compress_keys;
-  int compress_sigs;
-  /* TM_CLASSIC must be zero to accomodate trustdbs generated before
+  int skip_hidden_recipients;
+
+  /* TM_CLASSIC must be zero to accommodate trustdbs generated before
      we started storing the trust model inside the trustdb. */
   enum
     {
-      TM_CLASSIC=0, TM_PGP=1, TM_EXTERNAL=2, TM_ALWAYS, TM_DIRECT, TM_AUTO
+      TM_CLASSIC=0, TM_PGP=1, TM_EXTERNAL=2,
+      TM_ALWAYS, TM_DIRECT, TM_AUTO, TM_TOFU, TM_TOFU_PGP
     } trust_model;
+  enum
+    {
+      TOFU_DB_AUTO=0, TOFU_DB_SPLIT, TOFU_DB_FLAT
+    } tofu_db_format;
+  enum tofu_policy tofu_default_policy;
   int force_ownertrust;
   enum
     {
-      CO_GNUPG, CO_RFC4880, CO_RFC2440, CO_RFC1991, CO_PGP2,
+      CO_GNUPG, CO_RFC4880, CO_RFC2440,
       CO_PGP6, CO_PGP7, CO_PGP8
     } compliance;
   enum
     {
-      KF_SHORT, KF_LONG, KF_0xSHORT, KF_0xLONG
+      KF_DEFAULT, KF_SHORT, KF_LONG, KF_0xSHORT, KF_0xLONG
     } keyid_format;
-  int pgp2_workarounds;
   int shm_coprocess;
   const char *set_filename;
   strlist_t comments;
-  int throw_keyid;
+  int throw_keyids;
   const char *photo_viewer;
   int s2k_mode;
   int s2k_digest_algo;
   int s2k_cipher_algo;
   unsigned char s2k_count; /* This is the encoded form, not the raw
 			      count */
-  int simple_sk_checksum; /* create the deprecated rfc2440 secret key
-			     protection */
   int not_dash_escaped;
   int escape_from;
   int lock_once;
-  struct keyserver_spec
-  {
-    char *uri;
-    char *scheme;
-    char *auth;
-    char *host;
-    char *port;
-    char *path;
-    char *opaque;
-    strlist_t options;
-    struct
-    {
-      unsigned int direct_uri:1;
-    } flags;
-    struct keyserver_spec *next;
-  } *keyserver;
+  keyserver_spec_t keyserver;  /* The list of configured keyservers.  */
   struct
   {
     unsigned int options;
     unsigned int import_options;
     unsigned int export_options;
-    strlist_t other;
+    char *http_proxy;
   } keyserver_options;
   int exec_disable;
   int exec_path_set;
@@ -165,10 +170,12 @@ struct
   prefitem_t *personal_cipher_prefs;
   prefitem_t *personal_digest_prefs;
   prefitem_t *personal_compress_prefs;
+  struct weakhash *weak_digests;
   int no_perm_warn;
   int no_mdc_warn;
   char *temp_dir;
   int no_encrypt_to;
+  int encrypt_to_default_key;
   int interactive;
   struct notation *sig_notations;
   struct notation *cert_notations;
@@ -182,6 +189,7 @@ struct
   int no_literal;
   ulong set_filesize;
   int fast_list_mode;
+  int legacy_list_mode;
   int ignore_time_conflict;
   int ignore_valid_from;
   int ignore_crc_error;
@@ -212,13 +220,6 @@ struct
      value. */
   int limit_card_insert_tries;
 
-#ifdef ENABLE_CARD_SUPPORT
-  /* FIXME: We don't needs this here as it is done in scdaemon. */
-  const char *ctapi_driver; /* Library to access the ctAPI. */
-  const char *pcsc_driver;  /* Library to access the PC/SC system. */
-  int disable_ccid;    /* Disable the use of the internal CCID driver. */
-#endif /*ENABLE_CARD_SUPPORT*/
-
   struct
   {
     /* If set, require an 0x19 backsig to be present on signatures
@@ -243,15 +244,20 @@ struct
       AKL_LOCAL,
       AKL_CERT,
       AKL_PKA,
+      AKL_DANE,
       AKL_LDAP,
       AKL_KEYSERVER,
       AKL_SPEC
     } type;
-    struct keyserver_spec *spec;
+    keyserver_spec_t spec;
     struct akl *next;
   } *auto_key_locate;
 
   int passphrase_repeat;
+  int pinentry_mode;
+
+  int unwrap_encryption;
+  int only_sign_text_ids;
 } opt;
 
 /* CTRL is used to keep some global variables we currently can't
@@ -261,36 +267,43 @@ EXTERN_UNLESS_MAIN_MODULE
 struct {
   int in_auto_key_retrieve; /* True if we are doing an
                                auto_key_retrieve. */
+  /* Hack to store the last error.  We currently need it because the
+     proc_packet machinery is not able to reliabale return error
+     codes.  Thus for the --server purposes we store some of the error
+     codes here.  FIXME! */
+  gpg_error_t lasterr;
 } glo_ctrl;
 
 #define DBG_PACKET_VALUE  1	/* debug packet reading/writing */
 #define DBG_MPI_VALUE	  2	/* debug mpi details */
-#define DBG_CIPHER_VALUE  4	/* debug cipher handling */
+#define DBG_CRYPTO_VALUE  4	/* debug crypto handling */
 				/* (may reveal sensitive data) */
 #define DBG_FILTER_VALUE  8	/* debug internal filter handling */
 #define DBG_IOBUF_VALUE   16	/* debug iobuf stuff */
 #define DBG_MEMORY_VALUE  32	/* debug memory allocation stuff */
-#define DBG_CACHE_VALUE   64	/* debug the cacheing */
+#define DBG_CACHE_VALUE   64	/* debug the caching */
 #define DBG_MEMSTAT_VALUE 128	/* show memory statistics */
 #define DBG_TRUST_VALUE   256	/* debug the trustdb */
 #define DBG_HASHING_VALUE 512	/* debug hashing operations */
-#define DBG_EXTPROG_VALUE 1024  /* debug external program calls */
+#define DBG_IPC_VALUE     1024  /* debug assuan communication */
 #define DBG_CARD_IO_VALUE 2048  /* debug smart card I/O.  */
-
-/* Fixme: For now alias this value.  */
-#define DBG_ASSUAN_VALUE  DBG_EXTPROG_VALUE
-
+#define DBG_CLOCK_VALUE   4096
+#define DBG_LOOKUP_VALUE  8192	/* debug the kety lookup */
+#define DBG_EXTPROG_VALUE 16384 /* debug external program calls */
 
 /* Tests for the debugging flags.  */
 #define DBG_PACKET (opt.debug & DBG_PACKET_VALUE)
-#define DBG_CIPHER (opt.debug & DBG_CIPHER_VALUE)
+#define DBG_CRYPTO (opt.debug & DBG_CRYPTO_VALUE)
 #define DBG_FILTER (opt.debug & DBG_FILTER_VALUE)
 #define DBG_CACHE  (opt.debug & DBG_CACHE_VALUE)
 #define DBG_TRUST  (opt.debug & DBG_TRUST_VALUE)
 #define DBG_HASHING (opt.debug & DBG_HASHING_VALUE)
-#define DBG_EXTPROG (opt.debug & DBG_EXTPROG_VALUE)
+#define DBG_IPC     (opt.debug & DBG_IPC_VALUE)
 #define DBG_CARD_IO (opt.debug & DBG_CARD_IO_VALUE)
-#define DBG_ASSUAN  (opt.debug & DBG_ASSUAN_VALUE)
+#define DBG_IPC     (opt.debug & DBG_IPC_VALUE)
+#define DBG_CLOCK   (opt.debug & DBG_CLOCK_VALUE)
+#define DBG_LOOKUP  (opt.debug & DBG_LOOKUP_VALUE)
+#define DBG_EXTPROG (opt.debug & DBG_EXTPROG_VALUE)
 
 /* FIXME: We need to check whey we did not put this into opt. */
 #define DBG_MEMORY    memory_debug_mode
@@ -300,16 +313,14 @@ EXTERN_UNLESS_MAIN_MODULE int memory_debug_mode;
 EXTERN_UNLESS_MAIN_MODULE int memory_stat_debug_mode;
 
 
-
+/* Compatibility flags.  */
 #define GNUPG   (opt.compliance==CO_GNUPG)
-#define RFC1991 (opt.compliance==CO_RFC1991 || opt.compliance==CO_PGP2)
 #define RFC2440 (opt.compliance==CO_RFC2440)
 #define RFC4880 (opt.compliance==CO_RFC4880)
-#define PGP2    (opt.compliance==CO_PGP2)
 #define PGP6    (opt.compliance==CO_PGP6)
 #define PGP7    (opt.compliance==CO_PGP7)
 #define PGP8    (opt.compliance==CO_PGP8)
-#define PGPX    (PGP2 || PGP6 || PGP7 || PGP8)
+#define PGPX    (PGP6 || PGP7 || PGP8)
 
 /* Various option flags.  Note that there should be no common string
    names between the IMPORT_ and EXPORT_ flags as they can be mixed in
@@ -318,7 +329,6 @@ EXTERN_UNLESS_MAIN_MODULE int memory_stat_debug_mode;
 #define IMPORT_LOCAL_SIGS                (1<<0)
 #define IMPORT_REPAIR_PKS_SUBKEY_BUG     (1<<1)
 #define IMPORT_FAST                      (1<<2)
-#define IMPORT_SK2PK                     (1<<3)
 #define IMPORT_MERGE_ONLY                (1<<4)
 #define IMPORT_MINIMAL                   (1<<5)
 #define IMPORT_CLEAN                     (1<<6)
@@ -331,7 +341,7 @@ EXTERN_UNLESS_MAIN_MODULE int memory_stat_debug_mode;
 #define EXPORT_RESET_SUBKEY_PASSWD       (1<<3)
 #define EXPORT_MINIMAL                   (1<<4)
 #define EXPORT_CLEAN                     (1<<5)
-#define EXPORT_SEXP_FORMAT               (1<<6)
+#define EXPORT_DANE_FORMAT               (1<<6)
 
 #define LIST_SHOW_PHOTOS                 (1<<0)
 #define LIST_SHOW_POLICY_URLS            (1<<1)
@@ -345,6 +355,7 @@ EXTERN_UNLESS_MAIN_MODULE int memory_stat_debug_mode;
 #define LIST_SHOW_KEYRING                (1<<8)
 #define LIST_SHOW_SIG_EXPIRE             (1<<9)
 #define LIST_SHOW_SIG_SUBPACKETS         (1<<10)
+#define LIST_SHOW_USAGE                  (1<<11)
 
 #define VERIFY_SHOW_PHOTOS               (1<<0)
 #define VERIFY_SHOW_POLICY_URLS          (1<<1)
@@ -358,11 +369,12 @@ EXTERN_UNLESS_MAIN_MODULE int memory_stat_debug_mode;
 #define VERIFY_PKA_TRUST_INCREASE        (1<<8)
 #define VERIFY_SHOW_PRIMARY_UID_ONLY     (1<<9)
 
-#define KEYSERVER_USE_TEMP_FILES         (1<<0)
-#define KEYSERVER_KEEP_TEMP_FILES        (1<<1)
+#define KEYSERVER_HTTP_PROXY             (1<<0)
+#define KEYSERVER_TIMEOUT                (1<<1)
 #define KEYSERVER_ADD_FAKE_V3            (1<<2)
 #define KEYSERVER_AUTO_KEY_RETRIEVE      (1<<3)
 #define KEYSERVER_HONOR_KEYSERVER_URL    (1<<4)
 #define KEYSERVER_HONOR_PKA_RECORD       (1<<5)
+
 
 #endif /*G10_OPTIONS_H*/

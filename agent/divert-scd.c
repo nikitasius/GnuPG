@@ -1,4 +1,4 @@
-/* divert-scd.c - divert operations to the scdaemon 
+/* divert-scd.c - divert operations to the scdaemon
  *	Copyright (C) 2002, 2003, 2009 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
@@ -44,7 +44,7 @@ ask_for_card (ctrl_t ctrl, const unsigned char *shadow_info, char **r_kid)
 
   *r_kid = NULL;
 
-  rc = parse_shadow_info (shadow_info, &want_sn, &want_kid);
+  rc = parse_shadow_info (shadow_info, &want_sn, &want_kid, NULL);
   if (rc)
     return rc;
 
@@ -89,9 +89,9 @@ ask_for_card (ctrl_t ctrl, const unsigned char *shadow_info, char **r_kid)
                     "%s:%%0A%%0A"
                     "  \"%.*s\"",
                         no_card
-                        ? _("Please insert the card with serial number")
-                        : _("Please remove the current card and "
-                            "insert the one with serial number"),
+                        ? L_("Please insert the card with serial number")
+                        : L_("Please remove the current card and "
+                             "insert the one with serial number"),
                     want_sn_displen, want_sn) < 0)
             {
               rc = out_of_core ();
@@ -99,6 +99,10 @@ ask_for_card (ctrl_t ctrl, const unsigned char *shadow_info, char **r_kid)
           else
             {
               rc = agent_get_confirmation (ctrl, desc, NULL, NULL, 0);
+	      if (ctrl->pinentry_mode == PINENTRY_MODE_LOOPBACK &&
+		  gpg_err_code (rc) == GPG_ERR_NO_PIN_ENTRY)
+		rc = gpg_error (GPG_ERR_CARD_NOT_PRESENT);
+
               xfree (desc);
             }
         }
@@ -140,7 +144,7 @@ encode_md_for_card (const unsigned char *digest, size_t digestlen, int algo,
   memcpy (frame+asnlen, digest, digestlen);
   if (DBG_CRYPTO)
     log_printhex ("encoded hash:", frame, asnlen+digestlen);
-      
+
   *r_val = frame;
   *r_len = asnlen+digestlen;
   return 0;
@@ -170,11 +174,11 @@ encode_md_for_card (const unsigned char *digest, size_t digestlen, int algo,
    Example:
 
      "|AN|Please enter the new security officer's PIN"
-     
+
    The text "Please ..." will get displayed and the flags 'A' and 'N'
    are considered.
  */
-static int 
+static int
 getpin_cb (void *opaque, const char *info, char *buf, size_t maxbuf)
 {
   struct pin_entry_info_s *pi;
@@ -197,19 +201,19 @@ getpin_cb (void *opaque, const char *info, char *buf, size_t maxbuf)
       for (s=info+1; s < ends; s++)
         {
           if (*s == 'A')
-            prompt = _("Admin PIN");
+            prompt = L_("Admin PIN");
           else if (*s == 'P')
             {
               /* TRANSLATORS: A PUK is the Personal Unblocking Code
                  used to unblock a PIN. */
-              prompt = _("PUK");
+              prompt = L_("PUK");
               is_puk = 1;
             }
           else if (*s == 'N')
             newpin = 1;
           else if (*s == 'R')
             {
-              prompt = _("Reset Code");
+              prompt = L_("Reset Code");
               resetcode = 1;
             }
         }
@@ -220,7 +224,7 @@ getpin_cb (void *opaque, const char *info, char *buf, size_t maxbuf)
     log_debug ("pin_cb called without proper PIN info hack\n");
 
   /* If BUF has been passed as NULL, we are in pinpad mode: The
-     callback opens the popup and immediatley returns. */
+     callback opens the popup and immediately returns. */
   if (!buf)
     {
       if (maxbuf == 0) /* Close the pinentry. */
@@ -235,7 +239,7 @@ getpin_cb (void *opaque, const char *info, char *buf, size_t maxbuf)
               char *desc;
 
               if ( asprintf (&desc,
-                             _("%s%%0A%%0AUse the reader's pinpad for input."),
+                             L_("%s%%0A%%0AUse the reader's pinpad for input."),
                              info) < 0 )
                 rc = gpg_error_from_syserror ();
               else
@@ -284,18 +288,18 @@ getpin_cb (void *opaque, const char *info, char *buf, size_t maxbuf)
           pi2->max_tries = 1;
           rc = agent_askpin (ctrl,
                              (resetcode?
-                              _("Repeat this Reset Code"):
+                              L_("Repeat this Reset Code"):
                               is_puk?
-                              _("Repeat this PUK"):
-                              _("Repeat this PIN")),
+                              L_("Repeat this PUK"):
+                              L_("Repeat this PIN")),
                              prompt, NULL, pi2, NULL, 0);
           if (!rc && strcmp (pi->pin, pi2->pin))
             {
-              again_text = (resetcode? 
-                            N_("Reset Code not correctly repeated; try again"):
+              again_text = (resetcode?
+                            L_("Reset Code not correctly repeated; try again"):
                             is_puk?
-                            N_("PUK not correctly repeated; try again"):
-                            N_("PIN not correctly repeated; try again"));
+                            L_("PUK not correctly repeated; try again"):
+                            L_("PIN not correctly repeated; try again"));
               xfree (pi2);
               xfree (pi);
               goto again;
@@ -307,10 +311,10 @@ getpin_cb (void *opaque, const char *info, char *buf, size_t maxbuf)
     {
       char *desc;
       if ( asprintf (&desc,
-                     _("Please enter the PIN%s%s%s to unlock the card"), 
-                     info? " (`":"",
+                     L_("Please enter the PIN%s%s%s to unlock the card"),
+                     info? " (":"",
                      info? info:"",
-                     info? "')":"") < 0)
+                     info? ")":"") < 0)
         desc = NULL;
       rc = agent_askpin (ctrl, desc?desc:info, prompt, NULL, pi, NULL, 0);
       xfree (desc);
@@ -329,9 +333,10 @@ getpin_cb (void *opaque, const char *info, char *buf, size_t maxbuf)
 
 
 int
-divert_pksign (ctrl_t ctrl, 
+divert_pksign (ctrl_t ctrl,
                const unsigned char *digest, size_t digestlen, int algo,
-               const unsigned char *shadow_info, unsigned char **r_sig)
+               const unsigned char *shadow_info, unsigned char **r_sig,
+               size_t *r_siglen)
 {
   int rc;
   char *kid;
@@ -347,7 +352,7 @@ divert_pksign (ctrl_t ctrl,
       int save = ctrl->use_auth_call;
       ctrl->use_auth_call = 1;
       rc = agent_card_pksign (ctrl, kid, getpin_cb, ctrl,
-                              digest, digestlen, &sigval, &siglen);
+                              algo, digest, digestlen, &sigval, &siglen);
       ctrl->use_auth_call = save;
     }
   else
@@ -359,13 +364,16 @@ divert_pksign (ctrl_t ctrl,
       if (!rc)
         {
           rc = agent_card_pksign (ctrl, kid, getpin_cb, ctrl,
-                                  data, ndata, &sigval, &siglen);
+                                  algo, data, ndata, &sigval, &siglen);
           xfree (data);
         }
     }
 
   if (!rc)
-    *r_sig = sigval;
+    {
+      *r_sig = sigval;
+      *r_siglen = siglen;
+    }
 
   xfree (kid);
 
@@ -375,12 +383,13 @@ divert_pksign (ctrl_t ctrl,
 
 /* Decrypt the the value given asn an S-expression in CIPHER using the
    key identified by SHADOW_INFO and return the plaintext in an
-   allocated buffer in R_BUF.  */
-int  
+   allocated buffer in R_BUF.  The padding information is stored at
+   R_PADDING with -1 for not known.  */
+int
 divert_pkdecrypt (ctrl_t ctrl,
                   const unsigned char *cipher,
                   const unsigned char *shadow_info,
-                  char **r_buf, size_t *r_len)
+                  char **r_buf, size_t *r_len, int *r_padding)
 {
   int rc;
   char *kid;
@@ -391,34 +400,64 @@ divert_pkdecrypt (ctrl_t ctrl,
   char *plaintext;
   size_t plaintextlen;
 
+  *r_padding = -1;
+
   s = cipher;
   if (*s != '(')
     return gpg_error (GPG_ERR_INV_SEXP);
   s++;
   n = snext (&s);
   if (!n)
-    return gpg_error (GPG_ERR_INV_SEXP); 
+    return gpg_error (GPG_ERR_INV_SEXP);
   if (!smatch (&s, n, "enc-val"))
-    return gpg_error (GPG_ERR_UNKNOWN_SEXP); 
+    return gpg_error (GPG_ERR_UNKNOWN_SEXP);
   if (*s != '(')
     return gpg_error (GPG_ERR_UNKNOWN_SEXP);
   s++;
   n = snext (&s);
   if (!n)
-    return gpg_error (GPG_ERR_INV_SEXP); 
-  if (!smatch (&s, n, "rsa"))
-    return gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM); 
-  if (*s != '(')
-    return gpg_error (GPG_ERR_UNKNOWN_SEXP);
-  s++;
-  n = snext (&s);
+    return gpg_error (GPG_ERR_INV_SEXP);
+  if (smatch (&s, n, "rsa"))
+    {
+      if (*s != '(')
+        return gpg_error (GPG_ERR_UNKNOWN_SEXP);
+      s++;
+      n = snext (&s);
+      if (!n)
+        return gpg_error (GPG_ERR_INV_SEXP);
+      if (!smatch (&s, n, "a"))
+        return gpg_error (GPG_ERR_UNKNOWN_SEXP);
+      n = snext (&s);
+    }
+  else if (smatch (&s, n, "ecdh"))
+    {
+      if (*s != '(')
+        return gpg_error (GPG_ERR_UNKNOWN_SEXP);
+      s++;
+      n = snext (&s);
+      if (!n)
+        return gpg_error (GPG_ERR_INV_SEXP);
+      if (smatch (&s, n, "s"))
+        {
+          n = snext (&s);
+          s += n;
+          if (*s++ != ')')
+            return gpg_error (GPG_ERR_INV_SEXP);
+          if (*s++ != '(')
+            return gpg_error (GPG_ERR_UNKNOWN_SEXP);
+          n = snext (&s);
+          if (!n)
+            return gpg_error (GPG_ERR_INV_SEXP);
+        }
+      if (!smatch (&s, n, "e"))
+        return gpg_error (GPG_ERR_UNKNOWN_SEXP);
+      n = snext (&s);
+    }
+  else
+    return gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM);
+
   if (!n)
-    return gpg_error (GPG_ERR_INV_SEXP); 
-  if (!smatch (&s, n, "a"))
     return gpg_error (GPG_ERR_UNKNOWN_SEXP);
-  n = snext (&s);
-  if (!n)
-    return gpg_error (GPG_ERR_UNKNOWN_SEXP); 
   ciphertext = s;
   ciphertextlen = n;
 
@@ -428,7 +467,7 @@ divert_pkdecrypt (ctrl_t ctrl,
 
   rc = agent_card_pkdecrypt (ctrl, kid, getpin_cb, ctrl,
                              ciphertext, ciphertextlen,
-                             &plaintext, &plaintextlen);
+                             &plaintext, &plaintextlen, r_padding);
   if (!rc)
     {
       *r_buf = plaintext;
@@ -438,14 +477,16 @@ divert_pkdecrypt (ctrl_t ctrl,
   return rc;
 }
 
+int
+divert_writekey (ctrl_t ctrl, int force, const char *serialno,
+                 const char *id, const char *keydata, size_t keydatalen)
+{
+  return agent_card_writekey (ctrl, force, serialno, id, keydata, keydatalen,
+                              getpin_cb, ctrl);
+}
 
-int  
+int
 divert_generic_cmd (ctrl_t ctrl, const char *cmdline, void *assuan_context)
 {
   return agent_card_scd (ctrl, cmdline, getpin_cb, ctrl, assuan_context);
 }
-
-
-
-
-

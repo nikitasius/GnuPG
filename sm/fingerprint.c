@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <unistd.h> 
+#include <unistd.h>
 #include <time.h>
 #include <assert.h>
 
@@ -31,13 +31,16 @@
 #include <gcrypt.h>
 #include <ksba.h>
 
+#include "host2net.h"
+
+
 /* Return the fingerprint of the certificate (we can't put this into
    libksba because we need libgcrypt support).  The caller must
    provide an array of sufficient length or NULL so that the function
    allocates the array.  If r_len is not NULL, the length of the
    digest is returned; well, this can also be done by using
    gcry_md_get_algo_dlen().  If algo is 0, a SHA-1 will be used.
-   
+
    If there is a problem , the function does never return NULL but a
    digest of all 0xff.
  */
@@ -47,7 +50,7 @@ gpgsm_get_fingerprint (ksba_cert_t cert, int algo,
 {
   gcry_md_hd_t md;
   int rc, len;
-  
+
   if (!algo)
     algo = GCRY_MD_SHA1;
 
@@ -65,7 +68,7 @@ gpgsm_get_fingerprint (ksba_cert_t cert, int algo,
       size_t buflen;
 
       assert (len >= 20);
-      if (!ksba_cert_get_user_data (cert, "sha1-fingerprint", 
+      if (!ksba_cert_get_user_data (cert, "sha1-fingerprint",
                                     array, len, &buflen)
           && buflen == 20)
         return array;
@@ -149,8 +152,8 @@ gpgsm_get_short_fingerprint (ksba_cert_t cert, unsigned long *r_high)
 
   gpgsm_get_fingerprint (cert, GCRY_MD_SHA1, digest, NULL);
   if (r_high)
-    *r_high = ((digest[12]<<24)|(digest[13]<<16)|(digest[14]<< 8)|digest[15]);
-  return ((digest[16]<<24)|(digest[17]<<16)|(digest[18]<< 8)|digest[19]);
+    *r_high = buf32_to_ulong (digest+12);
+  return buf32_to_ulong (digest + 16);
 }
 
 
@@ -165,7 +168,7 @@ gpgsm_get_keygrip (ksba_cert_t cert, unsigned char *array)
   int rc;
   ksba_sexp_t p;
   size_t n;
-  
+
   p = ksba_cert_get_public_key (cert);
   if (!p)
     return NULL; /* oops */
@@ -189,7 +192,6 @@ gpgsm_get_keygrip (ksba_cert_t cert, unsigned char *array)
   gcry_sexp_release (s_pkey);
   if (!array)
     {
-      rc = gpg_error (GPG_ERR_GENERAL);
       log_error ("can't calculate keygrip\n");
       return NULL;
     }
@@ -234,7 +236,7 @@ gpgsm_get_key_algo_info (ksba_cert_t cert, unsigned int *nbits)
 
   p = ksba_cert_get_public_key (cert);
   if (!p)
-    return 0; 
+    return 0;
   n = gcry_sexp_canon_len (p, 0, NULL, NULL);
   if (!n)
     {
@@ -282,7 +284,7 @@ gpgsm_get_key_algo_info (ksba_cert_t cert, unsigned int *nbits)
    serial number for this.  In most cases the serial number is not
    that large and the resulting string can be passed on an assuan
    command line.  Everything is hexencoded with the serialnumber
-   delimited from the hash by a dot. 
+   delimited from the hash by a dot.
 
    The caller must free the string.
 */
@@ -296,7 +298,7 @@ gpgsm_get_certid (ksba_cert_t cert)
   unsigned long n;
   char *certid;
   int i;
-  
+
   p = ksba_cert_get_issuer (cert, 0);
   if (!p)
     return NULL; /* Ooops: No issuer */
@@ -341,7 +343,3 @@ gpgsm_get_certid (ksba_cert_t cert)
   xfree (serial);
   return certid;
 }
-
-
-
-

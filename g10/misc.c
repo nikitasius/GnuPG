@@ -1,6 +1,7 @@
 /* misc.c - miscellaneous functions
  * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
- *               2008, 2009 Free Software Foundation, Inc.
+ *               2008, 2009, 2010 Free Software Foundation, Inc.
+ * Copyright (C) 2014 Werner Koch
  *
  * This file is part of GnuPG.
  *
@@ -66,19 +67,9 @@
 #include "options.h"
 #include "call-agent.h"
 #include "i18n.h"
+#include "zb32.h"
 
-
-static int
-string_count_chr (const char *string, int c)
-{
-  int count;
-
-  for (count=0; *string; string++ )
-    if ( *string == c )
-      count++;
-  return count;
-}
-
+#include <assert.h>
 
 
 #ifdef ENABLE_SELINUX_HACKS
@@ -107,11 +98,11 @@ register_secured_file (const char *fname)
   struct stat buf;
   struct secured_file_item *sf;
 
-  /* Note that we stop immediatley if something goes wrong here. */
+  /* Note that we stop immediately if something goes wrong here. */
   if (stat (fname, &buf))
-    log_fatal (_("fstat of `%s' failed in %s: %s\n"), fname,
+    log_fatal (_("fstat of '%s' failed in %s: %s\n"), fname,
                "register_secured_file", strerror (errno));
-/*   log_debug ("registering `%s' i=%lu.%lu\n", fname, */
+/*   log_debug ("registering '%s' i=%lu.%lu\n", fname, */
 /*              (unsigned long)buf.st_dev, (unsigned long)buf.st_ino); */
   for (sf=secured_files; sf; sf = sf->next)
     {
@@ -139,11 +130,11 @@ unregister_secured_file (const char *fname)
 
   if (stat (fname, &buf))
     {
-      log_error (_("fstat of `%s' failed in %s: %s\n"), fname,
+      log_error (_("fstat of '%s' failed in %s: %s\n"), fname,
                  "unregister_secured_file", strerror (errno));
       return;
     }
-/*   log_debug ("unregistering `%s' i=%lu.%lu\n", fname,  */
+/*   log_debug ("unregistering '%s' i=%lu.%lu\n", fname,  */
 /*              (unsigned long)buf.st_dev, (unsigned long)buf.st_ino); */
   for (sfprev=NULL,sf=secured_files; sf; sfprev=sf, sf = sf->next)
     {
@@ -215,7 +206,7 @@ is_secured_filename (const char *fname)
     {
       if (errno == ENOENT || errno == EPERM || errno == EACCES)
         return 0;
-      log_error (_("fstat of `%s' failed in %s: %s\n"), fname,
+      log_error (_("fstat of '%s' failed in %s: %s\n"), fname,
                  "is_secured_filename", strerror (errno));
       return 1;
     }
@@ -276,8 +267,9 @@ checksum_mpi (gcry_mpi_t a)
   return csum;
 }
 
+
 void
-print_pubkey_algo_note( int algo )
+print_pubkey_algo_note (pubkey_algo_t algo)
 {
   if(algo >= 100 && algo <= 110)
     {
@@ -285,18 +277,20 @@ print_pubkey_algo_note( int algo )
       if(!warn)
 	{
 	  warn=1;
+          es_fflush (es_stdout);
 	  log_info (_("WARNING: using experimental public key algorithm %s\n"),
 		    openpgp_pk_algo_name (algo));
 	}
     }
-  else if (algo == 20)
+  else if (algo == PUBKEY_ALGO_ELGAMAL)
     {
+      es_fflush (es_stdout);
       log_info (_("WARNING: Elgamal sign+encrypt keys are deprecated\n"));
     }
 }
 
 void
-print_cipher_algo_note( int algo )
+print_cipher_algo_note (cipher_algo_t algo)
 {
   if(algo >= 100 && algo <= 110)
     {
@@ -304,6 +298,7 @@ print_cipher_algo_note( int algo )
       if(!warn)
 	{
 	  warn=1;
+          es_fflush (es_stdout);
 	  log_info (_("WARNING: using experimental cipher algorithm %s\n"),
                     openpgp_cipher_algo_name (algo));
 	}
@@ -311,72 +306,219 @@ print_cipher_algo_note( int algo )
 }
 
 void
-print_digest_algo_note( int algo )
+print_digest_algo_note (digest_algo_t algo)
 {
+  const enum gcry_md_algos galgo = map_md_openpgp_to_gcry (algo);
+  const struct weakhash *weak;
+
   if(algo >= 100 && algo <= 110)
     {
       static int warn=0;
       if(!warn)
 	{
 	  warn=1;
+          es_fflush (es_stdout);
 	  log_info (_("WARNING: using experimental digest algorithm %s\n"),
-                    gcry_md_algo_name (algo));
+                    gcry_md_algo_name (galgo));
 	}
     }
-  else if(algo==DIGEST_ALGO_MD5)
-    log_info (_("WARNING: digest algorithm %s is deprecated\n"),
-              gcry_md_algo_name (algo));
+  else
+      for (weak = opt.weak_digests; weak != NULL; weak = weak->next)
+        if (weak->algo == galgo)
+          {
+            es_fflush (es_stdout);
+            log_info (_("WARNING: digest algorithm %s is deprecated\n"),
+                      gcry_md_algo_name (galgo));
+          }
 }
 
 
 void
-print_md5_rejected_note (void)
+print_digest_rejected_note (enum gcry_md_algos algo)
 {
-  static int shown;
+  struct weakhash* weak;
+  int show = 1;
+  for (weak = opt.weak_digests; weak; weak = weak->next)
+    if (weak->algo == algo)
+      {
+        if (weak->rejection_shown)
+          show = 0;
+        else
+          weak->rejection_shown = 1;
+        break;
+      }
 
-  if (!shown)
+  if (show)
     {
-      fflush (stdout);
+      es_fflush (es_stdout);
       log_info
         (_("Note: signatures using the %s algorithm are rejected\n"),
-         "MD5");
-      shown = 1;
+         gcry_md_algo_name(algo));
     }
+}
+
+
+/* Print a message
+ *  "(reported error: %s)\n
+ * in verbose mode to further explain an error.  If the error code has
+ * the value IGNORE_EC no message is printed.  A message is also not
+ * printed if ERR is 0.  */
+void
+print_reported_error (gpg_error_t err, gpg_err_code_t ignore_ec)
+{
+  if (!opt.verbose)
+    return;
+
+  if (!gpg_err_code (err))
+    ;
+  else if (gpg_err_code (err) == ignore_ec)
+    ;
+  else if (gpg_err_source (err) == GPG_ERR_SOURCE_DEFAULT)
+    log_info (_("(reported error: %s)\n"),
+              gpg_strerror (err));
+  else
+    log_info (_("(reported error: %s <%s>)\n"),
+              gpg_strerror (err), gpg_strsource (err));
+
+}
+
+
+/* Print a message
+ *   "(further info: %s)\n
+ * in verbose mode to further explain an error.  That message is
+ * intended to help debug a problem and should not be translated.
+ */
+void
+print_further_info (const char *format, ...)
+{
+  va_list arg_ptr;
+
+  if (!opt.verbose)
+    return;
+
+  log_info (_("(further info: "));
+  va_start (arg_ptr, format);
+  log_logv (GPGRT_LOG_CONT, format, arg_ptr);
+  va_end (arg_ptr);
+  log_printf (")\n");
 }
 
 
 /* Map OpenPGP algo numbers to those used by Libgcrypt.  We need to do
    this for algorithms we implemented in Libgcrypt after they become
    part of OpenPGP.  */
-int
-map_cipher_openpgp_to_gcry (int algo)
+enum gcry_cipher_algos
+map_cipher_openpgp_to_gcry (cipher_algo_t algo)
 {
   switch (algo)
     {
-    case CIPHER_ALGO_CAMELLIA128: return 310;
-    case CIPHER_ALGO_CAMELLIA192: return 311;
-    case CIPHER_ALGO_CAMELLIA256: return 312;
-    default: return algo;
+    case CIPHER_ALGO_NONE:        return GCRY_CIPHER_NONE;
+
+#ifdef GPG_USE_IDEA
+    case CIPHER_ALGO_IDEA:        return GCRY_CIPHER_IDEA;
+#else
+    case CIPHER_ALGO_IDEA:        return 0;
+#endif
+
+    case CIPHER_ALGO_3DES:	  return GCRY_CIPHER_3DES;
+
+#ifdef GPG_USE_CAST5
+    case CIPHER_ALGO_CAST5:	  return GCRY_CIPHER_CAST5;
+#else
+    case CIPHER_ALGO_CAST5:	  return 0;
+#endif
+
+#ifdef GPG_USE_BLOWFISH
+    case CIPHER_ALGO_BLOWFISH:    return GCRY_CIPHER_BLOWFISH;
+#else
+    case CIPHER_ALGO_BLOWFISH:    return 0;
+#endif
+
+#ifdef GPG_USE_AES128
+    case CIPHER_ALGO_AES:         return GCRY_CIPHER_AES;
+#else
+    case CIPHER_ALGO_AES:         return 0;
+#endif
+
+#ifdef GPG_USE_AES192
+    case CIPHER_ALGO_AES192:      return GCRY_CIPHER_AES192;
+#else
+    case CIPHER_ALGO_AES192:      return 0;
+#endif
+
+#ifdef GPG_USE_AES256
+    case CIPHER_ALGO_AES256:      return GCRY_CIPHER_AES256;
+#else
+    case CIPHER_ALGO_AES256:      return 0;
+#endif
+
+#ifdef GPG_USE_TWOFISH
+    case CIPHER_ALGO_TWOFISH:     return GCRY_CIPHER_TWOFISH;
+#else
+    case CIPHER_ALGO_TWOFISH:     return 0;
+#endif
+
+#ifdef GPG_USE_CAMELLIA128
+    case CIPHER_ALGO_CAMELLIA128: return GCRY_CIPHER_CAMELLIA128;
+#else
+    case CIPHER_ALGO_CAMELLIA128: return 0;
+#endif
+
+#ifdef GPG_USE_CAMELLIA192
+    case CIPHER_ALGO_CAMELLIA192: return GCRY_CIPHER_CAMELLIA192;
+#else
+    case CIPHER_ALGO_CAMELLIA192: return 0;
+#endif
+
+#ifdef GPG_USE_CAMELLIA256
+    case CIPHER_ALGO_CAMELLIA256: return GCRY_CIPHER_CAMELLIA256;
+#else
+    case CIPHER_ALGO_CAMELLIA256: return 0;
+#endif
+    }
+  return 0;
+}
+
+/* The inverse function of above.  */
+static cipher_algo_t
+map_cipher_gcry_to_openpgp (enum gcry_cipher_algos algo)
+{
+  switch (algo)
+    {
+    case GCRY_CIPHER_NONE:        return CIPHER_ALGO_NONE;
+    case GCRY_CIPHER_IDEA:        return CIPHER_ALGO_IDEA;
+    case GCRY_CIPHER_3DES:        return CIPHER_ALGO_3DES;
+    case GCRY_CIPHER_CAST5:       return CIPHER_ALGO_CAST5;
+    case GCRY_CIPHER_BLOWFISH:    return CIPHER_ALGO_BLOWFISH;
+    case GCRY_CIPHER_AES:         return CIPHER_ALGO_AES;
+    case GCRY_CIPHER_AES192:      return CIPHER_ALGO_AES192;
+    case GCRY_CIPHER_AES256:      return CIPHER_ALGO_AES256;
+    case GCRY_CIPHER_TWOFISH:     return CIPHER_ALGO_TWOFISH;
+    case GCRY_CIPHER_CAMELLIA128: return CIPHER_ALGO_CAMELLIA128;
+    case GCRY_CIPHER_CAMELLIA192: return CIPHER_ALGO_CAMELLIA192;
+    case GCRY_CIPHER_CAMELLIA256: return CIPHER_ALGO_CAMELLIA256;
+    default: return 0;
     }
 }
 
-/* The inverse fucntion of above.  */
-static int
-map_cipher_gcry_to_openpgp (int algo)
+/* Map Gcrypt public key algorithm numbers to those used by OpenPGP.
+   FIXME: This mapping is used at only two places - we should get rid
+   of it.  */
+pubkey_algo_t
+map_pk_gcry_to_openpgp (enum gcry_pk_algos algo)
 {
   switch (algo)
     {
-    case 310: return CIPHER_ALGO_CAMELLIA128;
-    case 311: return CIPHER_ALGO_CAMELLIA192;
-    case 312: return CIPHER_ALGO_CAMELLIA256;
-    default: return algo;
+    case GCRY_PK_ECDSA:  return PUBKEY_ALGO_ECDSA;
+    case GCRY_PK_ECDH:   return PUBKEY_ALGO_ECDH;
+    default: return algo < 110 ? algo : 0;
     }
 }
 
 
 /* Return the block length of an OpenPGP cipher algorithm.  */
 int
-openpgp_cipher_blocklen (int algo)
+openpgp_cipher_blocklen (cipher_algo_t algo)
 {
   /* We use the numbers from OpenPGP to be sure that we get the right
      block length.  This is so that the packet parsing code works even
@@ -387,9 +529,13 @@ openpgp_cipher_blocklen (int algo)
      size. */
   switch (algo)
     {
-    case 7: case 8: case 9: /* AES */
-    case 10: /* Twofish */
-    case 11: case 12: case 13: /* Camellia */
+    case CIPHER_ALGO_AES:
+    case CIPHER_ALGO_AES192:
+    case CIPHER_ALGO_AES256:
+    case CIPHER_ALGO_TWOFISH:
+    case CIPHER_ALGO_CAMELLIA128:
+    case CIPHER_ALGO_CAMELLIA192:
+    case CIPHER_ALGO_CAMELLIA256:
       return 16;
 
     default:
@@ -398,85 +544,108 @@ openpgp_cipher_blocklen (int algo)
 }
 
 /****************
- * Wrapper around the libgcrypt function with additonal checks on
+ * Wrapper around the libgcrypt function with additional checks on
  * the OpenPGP contraints for the algo ID.
  */
 int
-openpgp_cipher_test_algo( int algo )
+openpgp_cipher_test_algo (cipher_algo_t algo)
 {
-  /* (5 and 6 are marked reserved by rfc4880.)  */
-  if ( algo < 0 || algo > 110 || algo == 5 || algo == 6 )
+  enum gcry_cipher_algos ga;
+
+  ga = map_cipher_openpgp_to_gcry (algo);
+  if (!ga)
     return gpg_error (GPG_ERR_CIPHER_ALGO);
 
-  return gcry_cipher_test_algo (map_cipher_openpgp_to_gcry (algo));
+  return gcry_cipher_test_algo (ga);
 }
 
 /* Map the OpenPGP cipher algorithm whose ID is contained in ALGORITHM to a
    string representation of the algorithm name.  For unknown algorithm
    IDs this function returns "?".  */
 const char *
-openpgp_cipher_algo_name (int algo)
-{
-  return gcry_cipher_algo_name (map_cipher_openpgp_to_gcry (algo));
-}
-
-
-/* Map OpenPGP public key algorithm numbers to those used by
-   Libgcrypt.  */
-int
-map_pk_openpgp_to_gcry (int algo)
+openpgp_cipher_algo_name (cipher_algo_t algo)
 {
   switch (algo)
     {
-    case PUBKEY_ALGO_ECDSA:     return 301 /*GCRY_PK_ECDSA*/;
-    case PUBKEY_ALGO_ECDH:      return 302 /*GCRY_PK_ECDH*/;
-    case PUBKEY_ALGO_ELGAMAL_E: return GCRY_PK_ELG;
-    default: return algo;
+    case CIPHER_ALGO_NONE:        break;
+    case CIPHER_ALGO_IDEA:        return "IDEA";
+    case CIPHER_ALGO_3DES:	  return "3DES";
+    case CIPHER_ALGO_CAST5:	  return "CAST5";
+    case CIPHER_ALGO_BLOWFISH:    return "BLOWFISH";
+    case CIPHER_ALGO_AES:         return "AES";
+    case CIPHER_ALGO_AES192:      return "AES192";
+    case CIPHER_ALGO_AES256:      return "AES256";
+    case CIPHER_ALGO_TWOFISH:     return "TWOFISH";
+    case CIPHER_ALGO_CAMELLIA128: return "CAMELLIA128";
+    case CIPHER_ALGO_CAMELLIA192: return "CAMELLIA192";
+    case CIPHER_ALGO_CAMELLIA256: return "CAMELLIA256";
     }
+  return "?";
 }
 
 
+/* Return 0 if ALGO is a supported OpenPGP public key algorithm.  */
 int
-openpgp_pk_test_algo( int algo )
+openpgp_pk_test_algo (pubkey_algo_t algo)
 {
-  /* ECC is not yet supported even if supported by Libgcrypt.  */
-  if (algo == PUBKEY_ALGO_ECDH || algo == PUBKEY_ALGO_ECDSA)
-    return gpg_error (GPG_ERR_PUBKEY_ALGO);
-
-  /* Dont't allow type 20 keys unless in rfc2440 mode.  */
-  if (!RFC2440 && algo == 20)
-    return gpg_error (GPG_ERR_PUBKEY_ALGO);
-
-  if (algo == PUBKEY_ALGO_ELGAMAL_E)
-    algo = GCRY_PK_ELG;
-
-  if (algo < 0 || algo > 110)
-    return gpg_error (GPG_ERR_PUBKEY_ALGO);
-  return gcry_pk_test_algo (map_pk_openpgp_to_gcry (algo));
+  return openpgp_pk_test_algo2 (algo, 0);
 }
 
+
+/* Return 0 if ALGO is a supported OpenPGP public key algorithm and
+   allows the usage USE.  */
 int
-openpgp_pk_test_algo2( int algo, unsigned int use )
+openpgp_pk_test_algo2 (pubkey_algo_t algo, unsigned int use)
 {
+  enum gcry_pk_algos ga = 0;
   size_t use_buf = use;
 
-  /* ECC is not yet supported even if supported by Libgcrypt.  */
-  if (algo == PUBKEY_ALGO_ECDH || algo == PUBKEY_ALGO_ECDSA)
+  switch (algo)
+    {
+#ifdef GPG_USE_RSA
+    case PUBKEY_ALGO_RSA:       ga = GCRY_PK_RSA;   break;
+    case PUBKEY_ALGO_RSA_E:     ga = GCRY_PK_RSA_E; break;
+    case PUBKEY_ALGO_RSA_S:     ga = GCRY_PK_RSA_S; break;
+#else
+    case PUBKEY_ALGO_RSA:       break;
+    case PUBKEY_ALGO_RSA_E:     break;
+    case PUBKEY_ALGO_RSA_S:     break;
+#endif
+
+    case PUBKEY_ALGO_ELGAMAL_E: ga = GCRY_PK_ELG;   break;
+    case PUBKEY_ALGO_DSA:       ga = GCRY_PK_DSA;   break;
+
+#ifdef GPG_USE_ECDH
+    case PUBKEY_ALGO_ECDH:      ga = GCRY_PK_ECC;   break;
+#else
+    case PUBKEY_ALGO_ECDH:      break;
+#endif
+
+#ifdef GPG_USE_ECDSA
+    case PUBKEY_ALGO_ECDSA:     ga = GCRY_PK_ECC;   break;
+#else
+    case PUBKEY_ALGO_ECDSA:     break;
+#endif
+
+#ifdef GPG_USE_EDDSA
+    case PUBKEY_ALGO_EDDSA:     ga = GCRY_PK_ECC;   break;
+#else
+    case PUBKEY_ALGO_EDDSA:     break;
+#endif
+
+    case PUBKEY_ALGO_ELGAMAL:
+      /* Dont't allow type 20 keys unless in rfc2440 mode.  */
+      if (RFC2440)
+        ga = GCRY_PK_ELG;
+      break;
+    }
+  if (!ga)
     return gpg_error (GPG_ERR_PUBKEY_ALGO);
 
-  /* Dont't allow type 20 keys unless in rfc2440 mode.  */
-  if (!RFC2440 && algo == 20)
-    return gpg_error (GPG_ERR_PUBKEY_ALGO);
-
-  if (algo == PUBKEY_ALGO_ELGAMAL_E)
-    algo = GCRY_PK_ELG;
-
-  if (algo < 0 || algo > 110)
-    return gpg_error (GPG_ERR_PUBKEY_ALGO);
-
-  return gcry_pk_algo_info (map_pk_openpgp_to_gcry (algo),
-                            GCRYCTL_TEST_ALGO, NULL, &use_buf);
+  /* No check whether Libgcrypt has support for the algorithm.  */
+  return gcry_pk_algo_info (ga, GCRYCTL_TEST_ALGO, NULL, &use_buf);
 }
+
 
 int
 openpgp_pk_algo_usage ( int algo )
@@ -490,6 +659,7 @@ openpgp_pk_algo_usage ( int algo )
                  | PUBKEY_USAGE_ENC | PUBKEY_USAGE_AUTH);
           break;
       case PUBKEY_ALGO_RSA_E:
+      case PUBKEY_ALGO_ECDH:
           use = PUBKEY_USAGE_ENC;
           break;
       case PUBKEY_ALGO_RSA_S:
@@ -505,75 +675,132 @@ openpgp_pk_algo_usage ( int algo )
       case PUBKEY_ALGO_DSA:
           use = PUBKEY_USAGE_CERT | PUBKEY_USAGE_SIG | PUBKEY_USAGE_AUTH;
           break;
-      case PUBKEY_ALGO_ECDH:
-          use = PUBKEY_USAGE_ENC;
-          break;
       case PUBKEY_ALGO_ECDSA:
+      case PUBKEY_ALGO_EDDSA:
           use = PUBKEY_USAGE_CERT | PUBKEY_USAGE_SIG | PUBKEY_USAGE_AUTH;
-          break;
       default:
           break;
     }
     return use;
 }
 
-
-/* Map the OpenPGP cipher algorithm whose ID is contained in ALGORITHM to a
+/* Map the OpenPGP pubkey algorithm whose ID is contained in ALGO to a
    string representation of the algorithm name.  For unknown algorithm
    IDs this function returns "?".  */
 const char *
-openpgp_pk_algo_name (int algo)
+openpgp_pk_algo_name (pubkey_algo_t algo)
 {
-  return gcry_pk_algo_name (map_pk_openpgp_to_gcry (algo));
-}
-
-
-int
-openpgp_md_test_algo( int algo )
-{
-  /* Note: If the list of actual supported OpenPGP algorithms changes,
-     make sure that our hard coded values at
-     print_status_begin_signing() gets updated. */
-  /* 4, 5, 6, 7 are defined by rfc2440 but will be removed from the
-     next revision of the standard.  */
-  if (algo < 0 || algo > 110 || (algo >= 4 && algo <= 7))
-    return gpg_error (GPG_ERR_DIGEST_ALGO);
-  return gcry_md_test_algo (algo);
-}
-
-#ifdef USE_IDEA
-/* Special warning for the IDEA cipher */
-void
-idea_cipher_warn(int show)
-{
-  static int warned=0;
-
-  if(!warned || show)
+  switch (algo)
     {
-      log_info(_("the IDEA cipher plugin is not present\n"));
-      log_info(_("please see %s for more information\n"),
-               "https://gnupg.org/faq/why-not-idea.html");
-      warned=1;
+    case PUBKEY_ALGO_RSA:
+    case PUBKEY_ALGO_RSA_E:
+    case PUBKEY_ALGO_RSA_S:     return "RSA";
+    case PUBKEY_ALGO_ELGAMAL:
+    case PUBKEY_ALGO_ELGAMAL_E: return "ELG";
+    case PUBKEY_ALGO_DSA:       return "DSA";
+    case PUBKEY_ALGO_ECDH:      return "ECDH";
+    case PUBKEY_ALGO_ECDSA:     return "ECDSA";
+    case PUBKEY_ALGO_EDDSA:     return "EDDSA";
     }
+  return "?";
 }
+
+
+/* Explicit mapping of OpenPGP digest algos to Libgcrypt.  */
+/* FIXME: We do not yes use it everywhere.  */
+enum gcry_md_algos
+map_md_openpgp_to_gcry (digest_algo_t algo)
+{
+  switch (algo)
+    {
+#ifdef GPG_USE_MD5
+    case DIGEST_ALGO_MD5:    return GCRY_MD_MD5;
+#else
+    case DIGEST_ALGO_MD5:    return 0;
 #endif
+
+    case DIGEST_ALGO_SHA1:   return GCRY_MD_SHA1;
+
+#ifdef GPG_USE_RMD160
+    case DIGEST_ALGO_RMD160: return GCRY_MD_RMD160;
+#else
+    case DIGEST_ALGO_RMD160: return 0;
+#endif
+
+#ifdef GPG_USE_SHA224
+    case DIGEST_ALGO_SHA224: return GCRY_MD_SHA224;
+#else
+    case DIGEST_ALGO_SHA224: return 0;
+#endif
+
+    case DIGEST_ALGO_SHA256: return GCRY_MD_SHA256;
+
+#ifdef GPG_USE_SHA384
+    case DIGEST_ALGO_SHA384: return GCRY_MD_SHA384;
+#else
+    case DIGEST_ALGO_SHA384: return 0;
+#endif
+
+#ifdef GPG_USE_SHA512
+    case DIGEST_ALGO_SHA512: return GCRY_MD_SHA512;
+#else
+    case DIGEST_ALGO_SHA512: return 0;
+#endif
+    }
+  return 0;
+}
+
+
+/* Return 0 if ALGO is suitable and implemented OpenPGP hash
+   algorithm.  */
+int
+openpgp_md_test_algo (digest_algo_t algo)
+{
+  enum gcry_md_algos ga;
+
+  ga = map_md_openpgp_to_gcry (algo);
+  if (!ga)
+    return gpg_error (GPG_ERR_DIGEST_ALGO);
+
+  return gcry_md_test_algo (ga);
+}
+
+
+/* Map the OpenPGP digest algorithm whose ID is contained in ALGO to a
+   string representation of the algorithm name.  For unknown algorithm
+   IDs this function returns "?".  */
+const char *
+openpgp_md_algo_name (int algo)
+{
+  switch (algo)
+    {
+    case DIGEST_ALGO_MD5:    return "MD5";
+    case DIGEST_ALGO_SHA1:   return "SHA1";
+    case DIGEST_ALGO_RMD160: return "RIPEMD160";
+    case DIGEST_ALGO_SHA256: return "SHA256";
+    case DIGEST_ALGO_SHA384: return "SHA384";
+    case DIGEST_ALGO_SHA512: return "SHA512";
+    case DIGEST_ALGO_SHA224: return "SHA224";
+    }
+  return "?";
+}
 
 
 static unsigned long
-get_signature_count (PKT_secret_key *sk)
+get_signature_count (PKT_public_key *pk)
 {
 #ifdef ENABLE_CARD_SUPPORT
-  if(sk && sk->is_protected && sk->protect.s2k.mode==1002)
-    {
-      struct agent_card_info_s info;
-      if(agent_scd_getattr("SIG-COUNTER",&info)==0)
-	return info.sig_counter;
-    }
-#endif
+  struct agent_card_info_s info;
 
-  /* How to do this without a card? */
-
+  (void)pk;
+  if (!agent_scd_getattr ("SIG-COUNTER",&info))
+    return info.sig_counter;
+  else
+    return 0;
+#else
+  (void)pk;
   return 0;
+#endif
 }
 
 /* Expand %-strings.  Returns a string which must be xfreed.  Returns
@@ -589,13 +816,13 @@ pct_expando(const char *string,struct expando_args *args)
   if(args->pk)
     keyid_from_pk(args->pk,pk_keyid);
 
-  if(args->sk)
-    keyid_from_sk(args->sk,sk_keyid);
+  if(args->pksk)
+    keyid_from_pk (args->pksk, sk_keyid);
 
   /* This is used so that %k works in photoid command strings in
      --list-secret-keys (which of course has a sk, but no pk). */
-  if(!args->pk && args->sk)
-    keyid_from_sk(args->sk,pk_keyid);
+  if(!args->pk && args->pksk)
+    keyid_from_pk (args->pksk, pk_keyid);
 
   while(*ch!='\0')
     {
@@ -673,42 +900,45 @@ pct_expando(const char *string,struct expando_args *args)
 	    case 'c': /* signature count from card, if any. */
 	      if(idx+10<maxlen)
 		{
-		  sprintf(&ret[idx],"%lu",get_signature_count(args->sk));
+		  sprintf (&ret[idx],"%lu", get_signature_count (args->pksk));
 		  idx+=strlen(&ret[idx]);
 		  done=1;
 		}
 	      break;
 
-	    case 'p': /* primary pk fingerprint of a sk */
-	    case 'f': /* pk fingerprint */
-	    case 'g': /* sk fingerprint */
+	    case 'f': /* Fingerprint of key being signed */
+	    case 'p': /* Fingerprint of the primary key making the signature. */
+	    case 'g': /* Fingerprint of the key making the signature.  */
 	      {
 		byte array[MAX_FINGERPRINT_LEN];
 		size_t len;
 		int i;
 
-		if((*(ch+1))=='p' && args->sk)
+		if ((*(ch+1))=='f' && args->pk)
+		  fingerprint_from_pk (args->pk, array, &len);
+		else if ((*(ch+1))=='p' && args->pksk)
 		  {
-		    if(args->sk->is_primary)
-		      fingerprint_from_sk(args->sk,array,&len);
-		    else if(args->sk->main_keyid[0] || args->sk->main_keyid[1])
+		    if(args->pksk->flags.primary)
+		      fingerprint_from_pk (args->pksk, array, &len);
+		    else if (args->pksk->main_keyid[0]
+                             || args->pksk->main_keyid[1])
 		      {
+                        /* Not the primary key: Find the fingerprint
+                           of the primary key.  */
 			PKT_public_key *pk=
 			  xmalloc_clear(sizeof(PKT_public_key));
 
-			if(get_pubkey_fast(pk,args->sk->main_keyid)==0)
-			  fingerprint_from_pk(pk,array,&len);
+			if (!get_pubkey_fast (pk,args->pksk->main_keyid))
+			  fingerprint_from_pk (pk, array, &len);
 			else
-			  memset(array,0,(len=MAX_FINGERPRINT_LEN));
-			free_public_key(pk);
+			  memset (array, 0, (len=MAX_FINGERPRINT_LEN));
+			free_public_key (pk);
 		      }
-		    else
+		    else /* Oops: info about the primary key missing.  */
 		      memset(array,0,(len=MAX_FINGERPRINT_LEN));
 		  }
-		else if((*(ch+1))=='f' && args->pk)
-		  fingerprint_from_pk(args->pk,array,&len);
-		else if((*(ch+1))=='g' && args->sk)
-		  fingerprint_from_sk(args->sk,array,&len);
+		else if((*(ch+1))=='g' && args->pksk)
+		  fingerprint_from_pk (args->pksk, array, &len);
 		else
 		  memset(array,0,(len=MAX_FINGERPRINT_LEN));
 
@@ -844,29 +1074,17 @@ deprecated_command (const char *name)
 
 
 void
-obsolete_option (const char *configname, unsigned int configlineno,
-                 const char *name)
-{
-  if(configname)
-    log_info (_("%s:%u: obsolete option \"%s\" - it has no effect\n"),
-              configname, configlineno, name);
-  else
-    log_info (_("WARNING: \"%s\" is an obsolete option - it has no effect\n"),
-              name);
-}
-
-
-void
 obsolete_scdaemon_option (const char *configname, unsigned int configlineno,
                           const char *name)
 {
   if (configname)
-    log_info (_("%s:%u: \"%s%s\" is obsolete in this file"
+    log_info (_("%s:%u: \"%s\" is obsolete in this file"
                 " - it only has effect in %s\n"),
-              configname, configlineno, name, "--", "scdaemon.conf");
+              configname, configlineno, name, SCDAEMON_NAME EXTSEP_S "conf");
   else
     log_info (_("WARNING: \"%s%s\" is an obsolete option"
-                " - it has no effect except on %s\n"), "--", name, "scdaemon");
+                " - it has no effect except on %s\n"),
+              "--", name, SCDAEMON_NAME);
 }
 
 
@@ -902,6 +1120,8 @@ string_to_digest_algo (const char *string)
 {
   int val;
 
+  /* FIXME: We should make use of our wrapper function and not assume
+     that there is a 1 to 1 mapping between OpenPGP and Libgcrypt.  */
   val = gcry_md_map_name (string);
   if (!val && string && (string[0]=='H' || string[0]=='h'))
     {
@@ -982,15 +1202,18 @@ string_to_compress_algo(const char *string)
 int
 check_compress_algo(int algo)
 {
-#ifdef HAVE_BZIP2
-  if(algo>=0 && algo<=3)
-    return 0;
-#else
-  if(algo>=0 && algo<=2)
-    return 0;
+  switch (algo)
+    {
+    case 0: return 0;
+#ifdef HAVE_ZIP
+    case 1:
+    case 2: return 0;
 #endif
-
-  return G10ERR_COMPR_ALGO;
+#ifdef HAVE_BZIP2
+    case 3: return 0;
+#endif
+    default: return GPG_ERR_COMPR_ALGO;
+    }
 }
 
 int
@@ -1028,8 +1251,6 @@ compliance_option_string(void)
     case CO_GNUPG:   return "--gnupg";
     case CO_RFC4880: return "--openpgp";
     case CO_RFC2440: return "--rfc2440";
-    case CO_RFC1991: return "--rfc1991";
-    case CO_PGP2:    return "--pgp2";
     case CO_PGP6:    return "--pgp6";
     case CO_PGP7:    return "--pgp7";
     case CO_PGP8:    return "--pgp8";
@@ -1055,14 +1276,6 @@ compliance_failure(void)
 
     case CO_RFC2440:
       ver="OpenPGP (older)";
-      break;
-
-    case CO_RFC1991:
-      ver="old PGP";
-      break;
-
-    case CO_PGP2:
-      ver="PGP 2.x";
       break;
 
     case CO_PGP6:
@@ -1217,8 +1430,8 @@ parse_options(char *str,unsigned int *options,
 
       for(i=0;opts[i].name;i++)
         if(opts[i].help)
-	  printf("%s%*s%s\n",opts[i].name,
-		 maxlen+2-(int)strlen(opts[i].name),"",_(opts[i].help));
+	  es_printf("%s%*s%s\n",opts[i].name,
+                    maxlen+2-(int)strlen(opts[i].name),"",_(opts[i].help));
 
       g10_exit(0);
     }
@@ -1253,7 +1466,7 @@ parse_options(char *str,unsigned int *options,
 		      if(ascii_strncasecmp(opts[j].name,tok,toklen)==0)
 			{
 			  if(noisy)
-			    log_info(_("ambiguous option `%s'\n"),otok);
+			    log_info(_("ambiguous option '%s'\n"),otok);
 			  return 0;
 			}
 		    }
@@ -1278,60 +1491,12 @@ parse_options(char *str,unsigned int *options,
       if(!opts[i].name)
 	{
 	  if(noisy)
-	    log_info(_("unknown option `%s'\n"),otok);
+	    log_info(_("unknown option '%s'\n"),otok);
 	  return 0;
 	}
     }
 
   return 1;
-}
-
-
-/* Check whether the string has characters not valid in an RFC-822
-   address.  To cope with OpenPGP we ignore non-ascii characters
-   so that for example umlauts are legal in an email address.  An
-   OpenPGP user ID must be utf-8 encoded but there is no strict
-   requirement for RFC-822.  Thus to avoid IDNA encoding we put the
-   address verbatim as utf-8 into the user ID under the assumption
-   that mail programs handle IDNA at a lower level and take OpenPGP
-   user IDs as utf-8.  Note that we can't do an utf-8 encoding
-   checking here because in keygen.c this function is called with the
-   native encoding and native to utf-8 encoding is only done  later.  */
-int
-has_invalid_email_chars (const char *s)
-{
-  int at_seen=0;
-  const char *valid_chars=
-    "01234567890_-.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-  for ( ; *s; s++ )
-    {
-      if ( (*s & 0x80) )
-        continue; /* We only care about ASCII.  */
-      if ( *s == '@' )
-        at_seen=1;
-      else if ( !at_seen && !( !!strchr( valid_chars, *s ) || *s == '+' ) )
-        return 1;
-      else if ( at_seen && !strchr( valid_chars, *s ) )
-        return 1;
-    }
-  return 0;
-}
-
-
-/* Check whether NAME represents a valid mailbox according to
-   RFC822. Returns true if so. */
-int
-is_valid_mailbox (const char *name)
-{
-  return !( !name
-            || !*name
-            || has_invalid_email_chars (name)
-            || string_count_chr (name,'@') != 1
-            || *name == '@'
-            || name[strlen(name)-1] == '@'
-            || name[strlen(name)-1] == '.'
-            || strstr (name, "..") );
 }
 
 
@@ -1381,96 +1546,82 @@ path_access(const char *file,int mode)
 
 
 
-/* Temporary helper. */
+/* Return the number of public key parameters as used by OpenPGP.  */
 int
-pubkey_get_npkey( int algo )
+pubkey_get_npkey (pubkey_algo_t algo)
 {
-  size_t n;
+  switch (algo)
+    {
+    case PUBKEY_ALGO_RSA:
+    case PUBKEY_ALGO_RSA_E:
+    case PUBKEY_ALGO_RSA_S:     return 2;
+    case PUBKEY_ALGO_ELGAMAL_E: return 3;
+    case PUBKEY_ALGO_DSA:       return 4;
+    case PUBKEY_ALGO_ECDH:      return 3;
+    case PUBKEY_ALGO_ECDSA:     return 2;
+    case PUBKEY_ALGO_ELGAMAL:   return 3;
+    case PUBKEY_ALGO_EDDSA:     return 2;
+    }
+  return 0;
+}
 
-  /* ECC is special in that domain parameters are given by an OID.  */
-  if (algo == PUBKEY_ALGO_ECDSA)
-    return 0; /* We don't support the key format.  */
-  else if (algo == PUBKEY_ALGO_ECDH)
-    return 0; /* We don't support the key format.  */
 
-  if (algo == GCRY_PK_ELG_E)
-    algo = GCRY_PK_ELG;
-  else if (algo == GCRY_PK_RSA_E || algo == GCRY_PK_RSA_S)
-    algo = GCRY_PK_RSA;
-
-  if (gcry_pk_algo_info (map_pk_openpgp_to_gcry (algo),
-                         GCRYCTL_GET_ALGO_NPKEY, NULL, &n))
-    n = 0;
-  return n;
+/* Return the number of secret key parameters as used by OpenPGP.  */
+int
+pubkey_get_nskey (pubkey_algo_t algo)
+{
+  switch (algo)
+    {
+    case PUBKEY_ALGO_RSA:
+    case PUBKEY_ALGO_RSA_E:
+    case PUBKEY_ALGO_RSA_S:     return 6;
+    case PUBKEY_ALGO_ELGAMAL_E: return 4;
+    case PUBKEY_ALGO_DSA:       return 5;
+    case PUBKEY_ALGO_ECDH:      return 4;
+    case PUBKEY_ALGO_ECDSA:     return 3;
+    case PUBKEY_ALGO_ELGAMAL:   return 4;
+    case PUBKEY_ALGO_EDDSA:     return 3;
+    }
+  return 0;
 }
 
 /* Temporary helper. */
 int
-pubkey_get_nskey( int algo )
+pubkey_get_nsig (pubkey_algo_t algo)
 {
-  size_t n;
-
-  /* ECC is special in that domain parameters are given by an OID.  */
-  if (algo == PUBKEY_ALGO_ECDSA)
-    return 0; /* We don't support the key format.  */
-  else if (algo == PUBKEY_ALGO_ECDH)
-    return 0; /* We don't support the key format.  */
-
-  if (algo == GCRY_PK_ELG_E)
-    algo = GCRY_PK_ELG;
-  else if (algo == GCRY_PK_RSA_E || algo == GCRY_PK_RSA_S)
-    algo = GCRY_PK_RSA;
-
-  if (gcry_pk_algo_info (map_pk_openpgp_to_gcry (algo),
-                         GCRYCTL_GET_ALGO_NSKEY, NULL, &n ))
-    n = 0;
-  return n;
+  switch (algo)
+    {
+    case PUBKEY_ALGO_RSA:
+    case PUBKEY_ALGO_RSA_E:
+    case PUBKEY_ALGO_RSA_S:     return 1;
+    case PUBKEY_ALGO_ELGAMAL_E: return 0;
+    case PUBKEY_ALGO_DSA:       return 2;
+    case PUBKEY_ALGO_ECDH:      return 0;
+    case PUBKEY_ALGO_ECDSA:     return 2;
+    case PUBKEY_ALGO_ELGAMAL:   return 2;
+    case PUBKEY_ALGO_EDDSA:     return 2;
+    }
+  return 0;
 }
+
 
 /* Temporary helper. */
 int
-pubkey_get_nsig( int algo )
+pubkey_get_nenc (pubkey_algo_t algo)
 {
-  size_t n;
-
-  /* ECC is special.  */
-  if (algo == PUBKEY_ALGO_ECDSA)
-    return 0;  /* We don't support the key format.  */
-  else if (algo == PUBKEY_ALGO_ECDH)
-    return 0;
-
-  if (algo == GCRY_PK_ELG_E)
-    algo = GCRY_PK_ELG;
-  else if (algo == GCRY_PK_RSA_E || algo == GCRY_PK_RSA_S)
-    algo = GCRY_PK_RSA;
-
-  if (gcry_pk_algo_info (map_pk_openpgp_to_gcry (algo),
-                         GCRYCTL_GET_ALGO_NSIGN, NULL, &n))
-    n = 0;
-  return n;
-}
-
-/* Temporary helper. */
-int
-pubkey_get_nenc( int algo )
-{
-  size_t n;
-
-  /* ECC is special.  */
-  if (algo == PUBKEY_ALGO_ECDSA)
-    return 0;
-  else if (algo == PUBKEY_ALGO_ECDH)
-    return 0;  /* We don't support the key format.  */
-
-  if (algo == GCRY_PK_ELG_E)
-    algo = GCRY_PK_ELG;
-  else if (algo == GCRY_PK_RSA_E || algo == GCRY_PK_RSA_S)
-    algo = GCRY_PK_RSA;
-
-  if (gcry_pk_algo_info (map_pk_openpgp_to_gcry (algo),
-                         GCRYCTL_GET_ALGO_NENCR, NULL, &n ))
-    n = 0;
-  return n;
+  switch (algo)
+    {
+    case PUBKEY_ALGO_RSA:
+    case PUBKEY_ALGO_RSA_E:
+    case PUBKEY_ALGO_RSA_S:     return 1;
+    case PUBKEY_ALGO_ELGAMAL_E: return 2;
+    case PUBKEY_ALGO_DSA:       return 0;
+    case PUBKEY_ALGO_ECDH:      return 2;
+    case PUBKEY_ALGO_ECDSA:     return 0;
+    case PUBKEY_ALGO_ELGAMAL:   return 2;
+    case PUBKEY_ALGO_EDDSA:     return 0;
+    }
+  return 0;
 }
 
 
@@ -1478,61 +1629,141 @@ pubkey_get_nenc( int algo )
 unsigned int
 pubkey_nbits( int algo, gcry_mpi_t *key )
 {
-    int rc, nbits;
-    gcry_sexp_t sexp;
+  int rc, nbits;
+  gcry_sexp_t sexp;
 
-    if( algo == GCRY_PK_DSA ) {
-	rc = gcry_sexp_build ( &sexp, NULL,
-			      "(public-key(dsa(p%m)(q%m)(g%m)(y%m)))",
-				  key[0], key[1], key[2], key[3] );
+  if (algo == PUBKEY_ALGO_DSA
+      && key[0] && key[1] && key[2] && key[3])
+    {
+      rc = gcry_sexp_build (&sexp, NULL,
+                            "(public-key(dsa(p%m)(q%m)(g%m)(y%m)))",
+                            key[0], key[1], key[2], key[3] );
     }
-    else if( algo == GCRY_PK_ELG || algo == GCRY_PK_ELG_E ) {
-	rc = gcry_sexp_build ( &sexp, NULL,
-			      "(public-key(elg(p%m)(g%m)(y%m)))",
-				  key[0], key[1], key[2] );
+  else if ((algo == PUBKEY_ALGO_ELGAMAL || algo == PUBKEY_ALGO_ELGAMAL_E)
+           && key[0] && key[1] && key[2])
+    {
+      rc = gcry_sexp_build (&sexp, NULL,
+                            "(public-key(elg(p%m)(g%m)(y%m)))",
+                            key[0], key[1], key[2] );
     }
-    else if (algo == GCRY_PK_RSA
-             || algo == GCRY_PK_RSA_S
-             || algo == GCRY_PK_RSA_E ) {
-	rc = gcry_sexp_build ( &sexp, NULL,
-			      "(public-key(rsa(n%m)(e%m)))",
-				  key[0], key[1] );
+  else if (is_RSA (algo)
+           && key[0] && key[1])
+    {
+      rc = gcry_sexp_build (&sexp, NULL,
+                            "(public-key(rsa(n%m)(e%m)))",
+                            key[0], key[1] );
     }
-    else
-	return 0;
+  else if ((algo == PUBKEY_ALGO_ECDSA || algo == PUBKEY_ALGO_ECDH
+            || algo == PUBKEY_ALGO_EDDSA)
+           && key[0] && key[1])
+    {
+      char *curve = openpgp_oid_to_str (key[0]);
+      if (!curve)
+        rc = gpg_error_from_syserror ();
+      else
+        {
+          rc = gcry_sexp_build (&sexp, NULL,
+                                "(public-key(ecc(curve%s)(q%m)))",
+                                curve, key[1]);
+          xfree (curve);
+        }
+    }
+  else
+    return 0;
 
-    if ( rc )
-	BUG ();
+  if (rc)
+    BUG ();
 
-    nbits = gcry_pk_get_nbits( sexp );
-    gcry_sexp_release( sexp );
-    return nbits;
+  nbits = gcry_pk_get_nbits (sexp);
+  gcry_sexp_release (sexp);
+  return nbits;
 }
 
 
 
-/* FIXME: Use gcry_mpi_print directly. */
 int
-mpi_print( FILE *fp, gcry_mpi_t a, int mode )
+mpi_print (estream_t fp, gcry_mpi_t a, int mode)
 {
-    int n=0;
+  int n = 0;
+  size_t nwritten;
 
-    if( !a )
-	return fprintf(fp, "[MPI_NULL]");
-    if( !mode ) {
-	unsigned int n1;
-	n1 = gcry_mpi_get_nbits(a);
-	n += fprintf(fp, "[%u bits]", n1);
+  if (!a)
+    return es_fprintf (fp, "[MPI_NULL]");
+  if (!mode)
+    {
+      unsigned int n1;
+      n1 = gcry_mpi_get_nbits(a);
+      n += es_fprintf (fp, "[%u bits]", n1);
     }
-    else {
-	unsigned char *buffer;
+  else if (gcry_mpi_get_flag (a, GCRYMPI_FLAG_OPAQUE))
+    {
+      unsigned int nbits;
+      unsigned char *p = gcry_mpi_get_opaque (a, &nbits);
+      if (!p)
+        n += es_fprintf (fp, "[invalid opaque value]");
+      else
+        {
+          if (!es_write_hexstring (fp, p, (nbits + 7)/8, 0, &nwritten))
+            n += nwritten;
+        }
+    }
+  else
+    {
+      unsigned char *buffer;
+      size_t buflen;
 
-	if (gcry_mpi_aprint (GCRYMPI_FMT_HEX, &buffer, NULL, a))
-          BUG ();
-	fputs( buffer, fp );
-	n += strlen(buffer);
-	gcry_free( buffer );
+      if (gcry_mpi_aprint (GCRYMPI_FMT_USG, &buffer, &buflen, a))
+        BUG ();
+      if (!es_write_hexstring (fp, buffer, buflen, 0, &nwritten))
+        n += nwritten;
+      gcry_free (buffer);
     }
-    return n;
+  return n;
 }
 
+
+/* pkey[1] or skey[1] is Q for ECDSA, which is an uncompressed point,
+   i.e.  04 <x> <y> */
+unsigned int
+ecdsa_qbits_from_Q (unsigned int qbits)
+{
+  if ((qbits%8) > 3)
+    {
+      log_error (_("ECDSA public key is expected to be in SEC encoding "
+                   "multiple of 8 bits\n"));
+      return 0;
+    }
+  qbits -= qbits%8;
+  qbits /= 2;
+  return qbits;
+}
+
+
+/* Ignore signatures and certifications made over certain digest
+ * algorithms by default, MD5 is considered weak.  This allows users
+ * to deprecate support for other algorithms as well.
+ */
+void
+additional_weak_digest (const char* digestname)
+{
+  struct weakhash *weak = NULL;
+  const enum gcry_md_algos algo = string_to_digest_algo(digestname);
+
+  if (algo == GCRY_MD_NONE)
+    {
+      log_error (_("unknown weak digest '%s'\n"), digestname);
+      return;
+    }
+
+  /* Check to ensure it's not already present.  */
+  for (weak = opt.weak_digests; weak; weak = weak->next)
+    if (algo == weak->algo)
+      return;
+
+  /* Add it to the head of the list.  */
+  weak = xmalloc(sizeof(*weak));
+  weak->algo = algo;
+  weak->rejection_shown = 0;
+  weak->next = opt.weak_digests;
+  opt.weak_digests = weak;
+}

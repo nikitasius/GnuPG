@@ -1,6 +1,6 @@
 /* gpgsm.c - GnuPG for S/MIME
- * Copyright (C) 2001, 2002, 2003, 2004, 2005,
- *               2006, 2007, 2008  Free Software Foundation, Inc.
+ * Copyright (C) 2001-2008, 2010  Free Software Foundation, Inc.
+ * Copyright (C) 2001-2008, 2010  Werner Koch
  *
  * This file is part of GnuPG.
  *
@@ -37,6 +37,8 @@
 #include "keydb.h"
 #include "sysutils.h"
 #include "gc-opt-flags.h"
+#include "asshelp.h"
+#include "../common/init.h"
 
 
 #ifndef O_BINARY
@@ -72,6 +74,8 @@ enum cmd_and_opt_values {
   aRecvKeys,
   aExport,
   aExportSecretKeyP12,
+  aExportSecretKeyP8,
+  aExportSecretKeyRaw,
   aServer,
   aLearnCard,
   aCallDirmngr,
@@ -143,6 +147,8 @@ enum cmd_and_opt_values {
 
   oWithFingerprint,
   oWithMD5Fingerprint,
+  oWithKeygrip,
+  oWithSecret,
   oAnswerYes,
   oAnswerNo,
   oKeyring,
@@ -177,7 +183,8 @@ enum cmd_and_opt_values {
   oIgnoreTimeConflict,
   oNoRandomSeedFile,
   oNoCommonCertsImport,
-  oIgnoreCertExtension
+  oIgnoreCertExtension,
+  oNoAutostart
  };
 
 
@@ -186,10 +193,10 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_group (300, N_("@Commands:\n ")),
 
   ARGPARSE_c (aSign, "sign", N_("make a signature")),
-  ARGPARSE_c (aClearsign, "clearsign", N_("make a clear text signature") ),
+/*ARGPARSE_c (aClearsign, "clearsign", N_("make a clear text signature") ),*/
   ARGPARSE_c (aDetachedSign, "detach-sign", N_("make a detached signature")),
   ARGPARSE_c (aEncr, "encrypt", N_("encrypt data")),
-  ARGPARSE_c (aSym, "symmetric", N_("encryption only with symmetric cipher")),
+/*ARGPARSE_c (aSym, "symmetric", N_("encryption only with symmetric cipher")),*/
   ARGPARSE_c (aDecrypt, "decrypt", N_("decrypt data (default)")),
   ARGPARSE_c (aVerify, "verify",  N_("verify a signature")),
   ARGPARSE_c (aListKeys, "list-keys", N_("list keys")),
@@ -201,11 +208,17 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_c (aKeygen, "gen-key", N_("generate a new key pair")),
   ARGPARSE_c (aDeleteKey, "delete-keys",
               N_("remove keys from the public keyring")),
-  ARGPARSE_c (aSendKeys, "send-keys", N_("export keys to a key server")),
-  ARGPARSE_c (aRecvKeys, "recv-keys", N_("import keys from a key server")),
+/*ARGPARSE_c (aSendKeys, "send-keys", N_("export keys to a key server")),*/
+/*ARGPARSE_c (aRecvKeys, "recv-keys", N_("import keys from a key server")),*/
   ARGPARSE_c (aImport, "import", N_("import certificates")),
   ARGPARSE_c (aExport, "export", N_("export certificates")),
+
+  /* We use -raw and not -p1 for pkcs#1 secret key export so that it
+     won't accidentally be used in case -p12 was intended.  */
   ARGPARSE_c (aExportSecretKeyP12, "export-secret-key-p12", "@"),
+  ARGPARSE_c (aExportSecretKeyP8,  "export-secret-key-p8", "@"),
+  ARGPARSE_c (aExportSecretKeyRaw, "export-secret-key-raw", "@"),
+
   ARGPARSE_c (aLearnCard, "learn-card", N_("register a smartcard")),
   ARGPARSE_c (aServer, "server", N_("run in server mode")),
   ARGPARSE_c (aCallDirmngr, "call-dirmngr",
@@ -240,8 +253,7 @@ static ARGPARSE_OPTS opts[] = {
 
   ARGPARSE_s_s (oRecipient, "recipient", N_("|USER-ID|encrypt for USER-ID")),
 
-  ARGPARSE_s_n (oPreferSystemDirmngr,"prefer-system-dirmngr",
-                N_("use system's dirmngr if available")),
+  ARGPARSE_s_n (oPreferSystemDirmngr,"prefer-system-dirmngr", "@"),
 
   ARGPARSE_s_n (oDisableCRLChecks, "disable-crl-checks",
                 N_("never consult a CRL")),
@@ -311,7 +323,7 @@ static ARGPARSE_OPTS opts[] = {
                 N_("|SPEC|use this keyserver to lookup keys")),
   ARGPARSE_s_s (oOptions, "options", N_("|FILE|read options from FILE")),
 
-  ARGPARSE_p_u (oDebug, "debug", "@"),
+  ARGPARSE_s_s (oDebug, "debug", "@"),
   ARGPARSE_s_s (oDebugLevel, "debug-level",
                 N_("|LEVEL|set the debugging level to LEVEL")),
   ARGPARSE_s_n (oDebugAll, "debug-all", "@"),
@@ -372,12 +384,15 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oWithEphemeralKeys,  "with-ephemeral-keys", "@"),
   ARGPARSE_s_n (oSkipVerify, "skip-verify", "@"),
   ARGPARSE_s_n (oWithFingerprint, "with-fingerprint", "@"),
+  ARGPARSE_s_n (oWithKeygrip,     "with-keygrip", "@"),
+  ARGPARSE_s_n (oWithSecret,      "with-secret", "@"),
   ARGPARSE_s_s (oDisableCipherAlgo,  "disable-cipher-algo", "@"),
   ARGPARSE_s_s (oDisablePubkeyAlgo,  "disable-pubkey-algo", "@"),
   ARGPARSE_s_n (oIgnoreTimeConflict, "ignore-time-conflict", "@"),
   ARGPARSE_s_n (oNoRandomSeedFile,  "no-random-seed-file", "@"),
   ARGPARSE_s_n (oNoCommonCertsImport, "no-common-certs-import", "@"),
   ARGPARSE_s_s (oIgnoreCertExtension, "ignore-cert-extension", "@"),
+  ARGPARSE_s_n (oNoAutostart, "no-autostart", "@"),
 
   /* Command aliases.  */
   ARGPARSE_c (aListKeys, "list-key", "@"),
@@ -391,6 +406,19 @@ static ARGPARSE_OPTS opts[] = {
 };
 
 
+/* The list of supported debug flags.  */
+static struct debug_flags_s debug_flags [] =
+  {
+    { DBG_X509_VALUE   , "x509"    },
+    { DBG_MPI_VALUE    , "mpi"     },
+    { DBG_CRYPTO_VALUE , "crypto"  },
+    { DBG_MEMORY_VALUE , "memory"  },
+    { DBG_CACHE_VALUE  , "cache"   },
+    { DBG_MEMSTAT_VALUE, "memstat" },
+    { DBG_HASHING_VALUE, "hashing" },
+    { DBG_IPC_VALUE    , "ipc"     },
+    { 0, NULL }
+  };
 
 
 /* Global variable to keep an error count. */
@@ -408,12 +436,22 @@ static int allow_special_filenames;
 
 /* Default value for include-certs.  We need an extra macro for
    gpgconf-list because the variable will be changed by the command
-   line option.  */
+   line option.
+
+   It is often cumbersome to locate intermediate certificates, thus by
+   default we include all certificates in the chain.  However we leave
+   out the root certificate because that would make it too easy for
+   the recipient to import that root certificate.  A root certificate
+   should be installed only after due checks and thus it won't help to
+   send it along with each message.  */
 #define DEFAULT_INCLUDE_CERTS -2 /* Include all certs but root. */
 static int default_include_certs = DEFAULT_INCLUDE_CERTS;
 
 /* Whether the chain mode shall be used for validation.  */
 static int default_validation_model;
+
+/* The default cipher algo.  */
+#define DEFAULT_CIPHER_ALGO "AES"
 
 
 static char *build_list (const char *text,
@@ -424,8 +462,7 @@ static void set_cmd (enum cmd_and_opt_values *ret_cmd,
 static void emergency_cleanup (void);
 static int check_special_filename (const char *fname, int for_write);
 static int open_read (const char *filename);
-static estream_t open_es_fread (const char *filename);
-static FILE *open_fwrite (const char *filename);
+static estream_t open_es_fread (const char *filename, const char *mode);
 static estream_t open_es_fwrite (const char *filename);
 static void run_protect_tool (int argc, char **argv);
 
@@ -512,17 +549,17 @@ my_strusage( int level )
 
   switch (level)
     {
-    case 11: p = "gpgsm (GnuPG)";
+    case 11: p = "@GPGSM@ (@GNUPG@)";
       break;
     case 13: p = VERSION; break;
     case 17: p = PRINTABLE_OS_NAME; break;
     case 19: p = _("Please report bugs to <@EMAIL@>.\n"); break;
 
     case 1:
-    case 40: p = _("Usage: gpgsm [options] [files] (-h for help)");
+    case 40: p = _("Usage: @GPGSM@ [options] [files] (-h for help)");
       break;
     case 41:
-      p = _("Syntax: gpgsm [options] [files]\n"
+      p = _("Syntax: @GPGSM@ [options] [files]\n"
             "Sign, check, encrypt or decrypt using the S/MIME protocol\n"
             "Default operation depends on the input data\n");
       break;
@@ -543,7 +580,7 @@ my_strusage( int level )
     case 33: p = _("\nSupported algorithms:\n"); break;
     case 34:
       if (!ciphers)
-        ciphers = build_list ("Cipher: ", gcry_cipher_algo_name,
+        ciphers = build_list ("Cipher: ", gnupg_cipher_algo_name,
                               our_cipher_test_algo );
       p = ciphers;
       break;
@@ -593,7 +630,7 @@ build_list (const char *text, const char * (*mapf)(int), int (*chkf)(int))
 	}
     }
   if (p)
-    p = stpcpy(p, "\n" );
+    strcpy (p, "\n" );
   return list;
 }
 
@@ -614,9 +651,7 @@ set_binary (FILE *fp)
 static void
 wrong_args (const char *text)
 {
-  fputs (_("usage: gpgsm [options] "), stderr);
-  fputs (text, stderr);
-  putc ('\n', stderr);
+  fprintf (stderr, _("usage: %s [options] %s\n"), GPGSM_NAME, text);
   gpgsm_exit (2);
 }
 
@@ -648,11 +683,11 @@ set_debug (void)
   else if (!strcmp (debug_level, "none") || (numok && numlvl < 1))
     opt.debug = 0;
   else if (!strcmp (debug_level, "basic") || (numok && numlvl <= 2))
-    opt.debug = DBG_ASSUAN_VALUE;
+    opt.debug = DBG_IPC_VALUE;
   else if (!strcmp (debug_level, "advanced") || (numok && numlvl <= 5))
-    opt.debug = DBG_ASSUAN_VALUE|DBG_X509_VALUE;
+    opt.debug = DBG_IPC_VALUE|DBG_X509_VALUE;
   else if (!strcmp (debug_level, "expert")  || (numok && numlvl <= 8))
-    opt.debug = (DBG_ASSUAN_VALUE|DBG_X509_VALUE
+    opt.debug = (DBG_IPC_VALUE|DBG_X509_VALUE
                  |DBG_CACHE_VALUE|DBG_CRYPTO_VALUE);
   else if (!strcmp (debug_level, "guru") || numok)
     {
@@ -666,7 +701,7 @@ set_debug (void)
     }
   else
     {
-      log_error (_("invalid debug-level `%s' given\n"), debug_level);
+      log_error (_("invalid debug-level '%s' given\n"), debug_level);
       gpgsm_exit (2);
     }
 
@@ -684,15 +719,7 @@ set_debug (void)
   gcry_control (GCRYCTL_SET_VERBOSITY, (int)opt.verbose);
 
   if (opt.debug)
-    log_info ("enabled debug flags:%s%s%s%s%s%s%s%s\n",
-              (opt.debug & DBG_X509_VALUE   )? " x509":"",
-              (opt.debug & DBG_MPI_VALUE    )? " mpi":"",
-              (opt.debug & DBG_CRYPTO_VALUE )? " crypto":"",
-              (opt.debug & DBG_MEMORY_VALUE )? " memory":"",
-              (opt.debug & DBG_CACHE_VALUE  )? " cache":"",
-              (opt.debug & DBG_MEMSTAT_VALUE)? " memstat":"",
-              (opt.debug & DBG_HASHING_VALUE)? " hashing":"",
-              (opt.debug & DBG_ASSUAN_VALUE )? " assuan":"" );
+    parse_debug_flag (NULL, &opt.debug, debug_flags);
 }
 
 
@@ -731,12 +758,12 @@ do_add_recipient (ctrl_t ctrl, const char *name,
     {
       if (recp_required)
         {
-          log_error ("can't encrypt to `%s': %s\n", name, gpg_strerror (rc));
+          log_error ("can't encrypt to '%s': %s\n", name, gpg_strerror (rc));
           gpgsm_status2 (ctrl, STATUS_INV_RECP,
                          get_inv_recpsgnr_code (rc), name, NULL);
         }
       else
-        log_info (_("NOTE: won't be able to encrypt to `%s': %s\n"),
+        log_info (_("Note: won't be able to encrypt to '%s': %s\n"),
                   name, gpg_strerror (rc));
     }
 }
@@ -747,7 +774,7 @@ parse_validation_model (const char *model)
 {
   int i = gpgsm_parse_validation_model (model);
   if (i == -1)
-    log_error (_("unknown validation model `%s'\n"), model);
+    log_error (_("unknown validation model '%s'\n"), model);
   else
     default_validation_model = i;
 }
@@ -888,23 +915,21 @@ main ( int argc, char **argv)
 
   /*mtrace();*/
 
-  gnupg_reopen_std ("gpgsm");
+  early_system_init ();
+  gnupg_reopen_std (GPGSM_NAME);
   /* trap_unaligned ();*/
   gnupg_rl_initialize ();
   set_strusage (my_strusage);
   gcry_control (GCRYCTL_SUSPEND_SECMEM_WARN);
-  /* We don't need any locking in libgcrypt unless we use any kind of
-     threading. */
-  gcry_control (GCRYCTL_DISABLE_INTERNAL_LOCKING);
 
   /* Please note that we may running SUID(ROOT), so be very CAREFUL
      when adding any stuff between here and the call to secmem_init()
      somewhere after the option parsing */
-  log_set_prefix ("gpgsm", 1);
+  log_set_prefix (GPGSM_NAME, 1);
 
   /* Make sure that our subsystems are ready.  */
-  i18n_init();
-  init_common_subsystems ();
+  i18n_init ();
+  init_common_subsystems (&argc, &argv);
 
   /* Check that the libraries are suitable.  Do it here because the
      option parse may need services of the library */
@@ -922,8 +947,9 @@ main ( int argc, char **argv)
 
   gnupg_init_signals (0, emergency_cleanup);
 
-  create_dotlock (NULL); /* register locking cleanup */
+  dotlock_create (NULL, 0); /* Register lockfile cleanup.  */
 
+  opt.autostart = 1;
   opt.session_env = session_env_new ();
   if (!opt.session_env)
     log_fatal ("error allocating session environment block: %s\n",
@@ -931,9 +957,10 @@ main ( int argc, char **argv)
 
   /* Note: If you change this default cipher algorithm , please
      remember to update the Gpgconflist entry as well.  */
-  opt.def_cipher_algoid = "AES";
+  opt.def_cipher_algoid = DEFAULT_CIPHER_ALGO;
 
   opt.homedir = default_homedir ();
+
 
   /* First check whether we have a config file on the commandline */
   orig_argc = argc;
@@ -978,8 +1005,8 @@ main ( int argc, char **argv)
   malloc_hooks.realloc = gcry_realloc;
   malloc_hooks.free = gcry_free;
   assuan_set_malloc_hooks (&malloc_hooks);
-  assuan_set_assuan_log_prefix (log_get_prefix (NULL));
   assuan_set_gpg_err_source (GPG_ERR_SOURCE_DEFAULT);
+  setup_libassuan_logging (&opt.debug);
 
   keybox_set_malloc_hooks (gcry_malloc, gcry_realloc, gcry_free);
 
@@ -992,7 +1019,7 @@ main ( int argc, char **argv)
 
   /* Set the default option file */
   if (default_config )
-    configname = make_filename (opt.homedir, "gpgsm.conf", NULL);
+    configname = make_filename (opt.homedir, GPGSM_NAME EXTSEP_S "conf", NULL);
   /* Set the default policy file */
   opt.policy_file = make_filename (opt.homedir, "policies.txt", NULL);
 
@@ -1011,18 +1038,18 @@ main ( int argc, char **argv)
         if (default_config)
           {
             if (parse_debug)
-              log_info (_("NOTE: no default option file `%s'\n"), configname);
+              log_info (_("Note: no default option file '%s'\n"), configname);
           }
         else
           {
-            log_error (_("option file `%s': %s\n"), configname, strerror(errno));
+            log_error (_("option file '%s': %s\n"), configname, strerror(errno));
             gpgsm_exit(2);
           }
         xfree(configname);
         configname = NULL;
       }
     if (parse_debug && configname)
-      log_info (_("reading options from `%s'\n"), configname);
+      log_info (_("reading options from '%s'\n"), configname);
     default_config = 0;
   }
 
@@ -1078,6 +1105,8 @@ main ( int argc, char **argv)
         case aRecvKeys:
         case aExport:
         case aExportSecretKeyP12:
+        case aExportSecretKeyP8:
+        case aExportSecretKeyRaw:
         case aDumpKeys:
         case aDumpChain:
         case aDumpExternalKeys:
@@ -1219,7 +1248,13 @@ main ( int argc, char **argv)
 
         case oKeyring: append_to_strlist (&nrings, pargs.r.ret_str); break;
 
-        case oDebug: debug_value |= pargs.r.ret_ulong; break;
+        case oDebug:
+          if (parse_debug_flag (pargs.r.ret_str, &debug_value, debug_flags))
+            {
+              pargs.r_opt = ARGPARSE_INVALID_ARG;
+              pargs.err = ARGPARSE_PRINT_ERROR;
+            }
+          break;
         case oDebugAll: debug_value = ~0; break;
         case oDebugNone: debug_value = 0; break;
         case oDebugLevel: debug_level = pargs.r.ret_str; break;
@@ -1239,6 +1274,10 @@ main ( int argc, char **argv)
           with_fpr=1; /*fall thru*/
         case aFingerprint:
           opt.fingerprint++;
+          break;
+
+        case oWithKeygrip:
+          opt.with_keygrip = 1;
           break;
 
         case oOptions:
@@ -1272,7 +1311,7 @@ main ( int argc, char **argv)
 
         case oDirmngrProgram: opt.dirmngr_program = pargs.r.ret_str;  break;
         case oDisableDirmngr: opt.disable_dirmngr = 1;  break;
-        case oPreferSystemDirmngr: opt.prefer_system_dirmngr = 1; break;
+        case oPreferSystemDirmngr: /* Obsolete */; break;
         case oProtectToolProgram:
           opt.protect_tool_program = pargs.r.ret_str;
           break;
@@ -1313,6 +1352,7 @@ main ( int argc, char **argv)
 
         case oWithKeyData: opt.with_key_data=1; /* fall thru */
         case oWithColons: ctrl.with_colons = 1; break;
+        case oWithSecret: ctrl.with_secret = 1; break;
         case oWithValidation: ctrl.with_validation=1; break;
         case oWithEphemeralKeys: ctrl.with_ephemeral_keys=1; break;
 
@@ -1393,6 +1433,8 @@ main ( int argc, char **argv)
           add_to_strlist (&opt.ignored_cert_extensions, pargs.r.ret_str);
           break;
 
+        case oNoAutostart: opt.autostart = 0; break;
+
         default:
           pargs.err = configfp? ARGPARSE_PRINT_WARNING:ARGPARSE_PRINT_ERROR;
           break;
@@ -1412,7 +1454,9 @@ main ( int argc, char **argv)
   configname = NULL;
 
   if (!opt.config_filename)
-    opt.config_filename = make_filename (opt.homedir, "gpgsm.conf", NULL);
+    opt.config_filename = make_filename (opt.homedir,
+                                         GPGSM_NAME EXTSEP_S "conf",
+                                         NULL);
 
   if (log_get_errorcount(0))
     gpgsm_exit(2);
@@ -1426,9 +1470,9 @@ main ( int argc, char **argv)
 
   if (greeting)
     {
-      fprintf(stderr, "%s %s; %s\n",
-              strusage(11), strusage(13), strusage(14) );
-      fprintf(stderr, "%s\n", strusage(15) );
+      es_fprintf (es_stderr, "%s %s; %s\n",
+                  strusage(11), strusage(13), strusage(14) );
+      es_fprintf (es_stderr, "%s\n", strusage(15) );
     }
 #  ifdef IS_DEVELOPMENT_VERSION
   if (!opt.batch)
@@ -1443,7 +1487,7 @@ main ( int argc, char **argv)
     log_info (_("WARNING: program may create a core file!\n"));
 
 /*   if (opt.qualsig_approval && !opt.quiet) */
-/*     log_info (_("This software has offically been approved to " */
+/*     log_info (_("This software has officially been approved to " */
 /*                 "create and verify\n" */
 /*                 "qualified signatures according to German law.\n")); */
 
@@ -1463,6 +1507,16 @@ main ( int argc, char **argv)
       log_printf ("\n");
     }
 
+  /* Print a warning if an argument looks like an option.  */
+  if (!opt.quiet && !(pargs.flags & ARGPARSE_FLAG_STOP_SEEN))
+    {
+      int i;
+
+      for (i=0; i < argc; i++)
+        if (argv[i][0] == '-' && argv[i][1] == '-')
+          log_info (_("Note: '%s' is not considered an option\n"), argv[i]);
+    }
+
 /*FIXME    if (opt.batch) */
 /*      tty_batchmode (1); */
 
@@ -1470,7 +1524,7 @@ main ( int argc, char **argv)
 
   set_debug ();
 
-  /* Although we alwasy use gpgsm_exit, we better install a regualr
+  /* Although we always use gpgsm_exit, we better install a regualr
      exit handler so that at least the secure memory gets wiped
      out. */
   if (atexit (emergency_cleanup))
@@ -1557,7 +1611,7 @@ main ( int argc, char **argv)
           filelist[1] = NULL;
           if (!access (filelist[0], F_OK))
             {
-              log_info (_("importing common certificates `%s'\n"),
+              log_info (_("importing common certificates '%s'\n"),
                         filelist[0]);
               gpgsm_import_files (&ctrl, 1, filelist, open_read);
             }
@@ -1598,7 +1652,7 @@ main ( int argc, char **argv)
           int rc = gpgsm_add_to_certlist (&ctrl, sl->d, 1, &signerlist, 0);
           if (rc)
             {
-              log_error (_("can't sign using `%s': %s\n"),
+              log_error (_("can't sign using '%s': %s\n"),
                          sl->d, gpg_strerror (rc));
               gpgsm_status2 (&ctrl, STATUS_INV_SGNR,
                              get_inv_recpsgnr_code (rc), sl->d, NULL);
@@ -1633,35 +1687,35 @@ main ( int argc, char **argv)
       { /* List options and default values in the GPG Conf format.  */
 	char *config_filename_esc = percent_escape (opt.config_filename, NULL);
 
-        printf ("gpgconf-gpgsm.conf:%lu:\"%s\n",
-                GC_OPT_FLAG_DEFAULT, config_filename_esc);
+        es_printf ("%s-%s.conf:%lu:\"%s\n",
+                   GPGCONF_NAME, GPGSM_NAME,
+                   GC_OPT_FLAG_DEFAULT, config_filename_esc);
         xfree (config_filename_esc);
 
-        printf ("verbose:%lu:\n", GC_OPT_FLAG_NONE);
-	printf ("quiet:%lu:\n", GC_OPT_FLAG_NONE);
-	printf ("debug-level:%lu:\"none:\n", GC_OPT_FLAG_DEFAULT);
-	printf ("log-file:%lu:\n", GC_OPT_FLAG_NONE);
-        printf ("disable-crl-checks:%lu:\n", GC_OPT_FLAG_NONE);
-        printf ("disable-trusted-cert-crl-check:%lu:\n", GC_OPT_FLAG_NONE);
-        printf ("enable-ocsp:%lu:\n", GC_OPT_FLAG_NONE);
-        printf ("include-certs:%lu:%d:\n", GC_OPT_FLAG_DEFAULT,
-                DEFAULT_INCLUDE_CERTS);
-        printf ("disable-policy-checks:%lu:\n", GC_OPT_FLAG_NONE);
-        printf ("auto-issuer-key-retrieve:%lu:\n", GC_OPT_FLAG_NONE);
-        printf ("disable-dirmngr:%lu:\n", GC_OPT_FLAG_NONE);
-#ifndef HAVE_W32_SYSTEM
-        printf ("prefer-system-dirmngr:%lu:\n", GC_OPT_FLAG_NONE);
-#endif
-        printf ("cipher-algo:%lu:\"AES:\n", GC_OPT_FLAG_DEFAULT);
-        printf ("p12-charset:%lu:\n", GC_OPT_FLAG_DEFAULT);
-        printf ("default-key:%lu:\n", GC_OPT_FLAG_DEFAULT);
-        printf ("encrypt-to:%lu:\n", GC_OPT_FLAG_DEFAULT);
-	printf ("keyserver:%lu:\n", GC_OPT_FLAG_NONE);
+        es_printf ("verbose:%lu:\n", GC_OPT_FLAG_NONE);
+	es_printf ("quiet:%lu:\n", GC_OPT_FLAG_NONE);
+	es_printf ("debug-level:%lu:\"none:\n", GC_OPT_FLAG_DEFAULT);
+	es_printf ("log-file:%lu:\n", GC_OPT_FLAG_NONE);
+        es_printf ("disable-crl-checks:%lu:\n", GC_OPT_FLAG_NONE);
+        es_printf ("disable-trusted-cert-crl-check:%lu:\n", GC_OPT_FLAG_NONE);
+        es_printf ("enable-ocsp:%lu:\n", GC_OPT_FLAG_NONE);
+        es_printf ("include-certs:%lu:%d:\n", GC_OPT_FLAG_DEFAULT,
+                   DEFAULT_INCLUDE_CERTS);
+        es_printf ("disable-policy-checks:%lu:\n", GC_OPT_FLAG_NONE);
+        es_printf ("auto-issuer-key-retrieve:%lu:\n", GC_OPT_FLAG_NONE);
+        es_printf ("disable-dirmngr:%lu:\n", GC_OPT_FLAG_NONE);
+        es_printf ("cipher-algo:%lu:\"%s:\n", GC_OPT_FLAG_DEFAULT,
+                   DEFAULT_CIPHER_ALGO);
+        es_printf ("p12-charset:%lu:\n", GC_OPT_FLAG_DEFAULT);
+        es_printf ("default-key:%lu:\n", GC_OPT_FLAG_DEFAULT);
+        es_printf ("encrypt-to:%lu:\n", GC_OPT_FLAG_DEFAULT);
+	es_printf ("keyserver:%lu:\n", GC_OPT_FLAG_NONE);
 
         /* The next one is an info only item and should match what
            proc_parameters actually implements.  */
-        printf ("default_pubkey_algo:%lu:\"%s:\n", GC_OPT_FLAG_DEFAULT,
-                "RSA-2048");
+        es_printf ("default_pubkey_algo:%lu:\"%s:\n", GC_OPT_FLAG_DEFAULT,
+                   "RSA-2048");
+
       }
       break;
     case aGPGConfTest:
@@ -1694,7 +1748,7 @@ main ( int argc, char **argv)
 
     case aEncr: /* Encrypt the given file. */
       {
-        FILE *fp = open_fwrite (opt.outfile?opt.outfile:"-");
+        estream_t fp = open_es_fwrite (opt.outfile?opt.outfile:"-");
 
         set_binary (stdin);
 
@@ -1705,14 +1759,13 @@ main ( int argc, char **argv)
         else
           wrong_args ("--encrypt [datafile]");
 
-        if (fp != stdout)
-          fclose (fp);
+        es_fclose (fp);
       }
       break;
 
     case aSign: /* Sign the given file. */
       {
-        FILE *fp = open_fwrite (opt.outfile?opt.outfile:"-");
+        estream_t fp = open_es_fwrite (opt.outfile?opt.outfile:"-");
 
         /* Fixme: We should also allow to concatenate multiple files for
            signing because that is what gpg does.*/
@@ -1725,8 +1778,7 @@ main ( int argc, char **argv)
         else
           wrong_args ("--sign [datafile]");
 
-        if (fp != stdout)
-          fclose (fp);
+        es_fclose (fp);
       }
       break;
 
@@ -1740,13 +1792,13 @@ main ( int argc, char **argv)
 
     case aVerify:
       {
-        FILE *fp = NULL;
+        estream_t fp = NULL;
 
         set_binary (stdin);
         if (argc == 2 && opt.outfile)
           log_info ("option --output ignored for a detached signature\n");
         else if (opt.outfile)
-          fp = open_fwrite (opt.outfile);
+          fp = open_es_fwrite (opt.outfile);
 
         if (!argc)
           gpgsm_verify (&ctrl, 0, -1, fp); /* normal signature from stdin */
@@ -1757,14 +1809,13 @@ main ( int argc, char **argv)
         else
           wrong_args ("--verify [signature [detached_data]]");
 
-        if (fp && fp != stdout)
-          fclose (fp);
+        es_fclose (fp);
       }
       break;
 
     case aDecrypt:
       {
-        FILE *fp = open_fwrite (opt.outfile?opt.outfile:"-");
+        estream_t fp = open_es_fwrite (opt.outfile?opt.outfile:"-");
 
         set_binary (stdin);
         if (!argc)
@@ -1773,8 +1824,8 @@ main ( int argc, char **argv)
           gpgsm_decrypt (&ctrl, open_read (*argv), fp); /* from file */
         else
           wrong_args ("--decrypt [filename]");
-        if (fp != stdout)
-          fclose (fp);
+
+        es_fclose (fp);
       }
       break;
 
@@ -1824,27 +1875,26 @@ main ( int argc, char **argv)
     case aKeygen: /* Generate a key; well kind of. */
       {
         estream_t fpin = NULL;
-        FILE *fpout;
+        estream_t fpout;
 
         if (opt.batch)
           {
             if (!argc) /* Create from stdin. */
-              fpin = open_es_fread ("-");
+              fpin = open_es_fread ("-", "r");
             else if (argc == 1) /* From file. */
-              fpin = open_es_fread (*argv);
+              fpin = open_es_fread (*argv, "r");
             else
               wrong_args ("--gen-key --batch [parmfile]");
           }
 
-        fpout = open_fwrite (opt.outfile?opt.outfile:"-");
+        fpout = open_es_fwrite (opt.outfile?opt.outfile:"-");
 
         if (fpin)
           gpgsm_genkey (&ctrl, fpin, fpout);
         else
           gpgsm_gencertreq_tty (&ctrl, fpout);
 
-        if (fpout != stdout)
-          fclose (fpout);
+        es_fclose (fpout);
       }
       break;
 
@@ -1855,27 +1905,53 @@ main ( int argc, char **argv)
 
     case aExport:
       {
-        FILE *fp = open_fwrite (opt.outfile?opt.outfile:"-");
+        estream_t fp;
 
+        fp = open_es_fwrite (opt.outfile?opt.outfile:"-");
         for (sl=NULL; argc; argc--, argv++)
           add_to_strlist (&sl, *argv);
-        gpgsm_export (&ctrl, sl, fp, NULL);
+        gpgsm_export (&ctrl, sl, fp);
         free_strlist(sl);
-        if (fp != stdout)
-          fclose (fp);
+        es_fclose (fp);
       }
       break;
 
     case aExportSecretKeyP12:
       {
-        FILE *fp = open_fwrite (opt.outfile?opt.outfile:"-");
+        estream_t fp = open_es_fwrite (opt.outfile?opt.outfile:"-");
 
         if (argc == 1)
-          gpgsm_p12_export (&ctrl, *argv, fp);
+          gpgsm_p12_export (&ctrl, *argv, fp, 0);
         else
           wrong_args ("--export-secret-key-p12 KEY-ID");
-        if (fp != stdout)
-          fclose (fp);
+        if (fp != es_stdout)
+          es_fclose (fp);
+      }
+      break;
+
+    case aExportSecretKeyP8:
+      {
+        estream_t fp = open_es_fwrite (opt.outfile?opt.outfile:"-");
+
+        if (argc == 1)
+          gpgsm_p12_export (&ctrl, *argv, fp, 1);
+        else
+          wrong_args ("--export-secret-key-p8 KEY-ID");
+        if (fp != es_stdout)
+          es_fclose (fp);
+      }
+      break;
+
+    case aExportSecretKeyRaw:
+      {
+        estream_t fp = open_es_fwrite (opt.outfile?opt.outfile:"-");
+
+        if (argc == 1)
+          gpgsm_p12_export (&ctrl, *argv, fp, 2);
+        else
+          wrong_args ("--export-secret-key-raw KEY-ID");
+        if (fp != es_stdout)
+          es_fclose (fp);
       }
       break;
 
@@ -1991,6 +2067,7 @@ gpgsm_init_default_ctrl (struct server_control_s *ctrl)
   ctrl->include_certs = default_include_certs;
   ctrl->use_ocsp = opt.enable_ocsp;
   ctrl->validation_model = default_validation_model;
+  ctrl->offline = opt.disable_dirmngr;
 }
 
 
@@ -2001,6 +2078,8 @@ gpgsm_parse_validation_model (const char *model)
     return 0;
   else if ( !ascii_strcasecmp (model, "chain") )
     return 1;
+  else if ( !ascii_strcasecmp (model, "steed") )
+    return 2;
   else
     return -1;
 }
@@ -2026,9 +2105,9 @@ check_special_filename (const char *fname, int for_write)
 
 
 
-/* Open the FILENAME for read and return the filedescriptor.  Stop
+/* Open the FILENAME for read and return the file descriptor.  Stop
    with an error message in case of problems.  "-" denotes stdin and
-   if special filenames are allowed the given fd is opened instead. */
+   if special filenames are allowed the given fd is opened instead.  */
 static int
 open_read (const char *filename)
 {
@@ -2045,7 +2124,7 @@ open_read (const char *filename)
   fd = open (filename, O_RDONLY | O_BINARY);
   if (fd == -1)
     {
-      log_error (_("can't open `%s': %s\n"), filename, strerror (errno));
+      log_error (_("can't open '%s': %s\n"), filename, strerror (errno));
       gpgsm_exit (2);
     }
   return fd;
@@ -2053,7 +2132,7 @@ open_read (const char *filename)
 
 /* Same as open_read but return an estream_t.  */
 static estream_t
-open_es_fread (const char *filename)
+open_es_fread (const char *filename, const char *mode)
 {
   int fd;
   estream_t fp;
@@ -2064,7 +2143,7 @@ open_es_fread (const char *filename)
     fd = check_special_filename (filename, 0);
   if (fd != -1)
     {
-      fp = es_fdopen_nc (fd, "rb");
+      fp = es_fdopen_nc (fd, mode);
       if (!fp)
         {
           log_error ("es_fdopen(%d) failed: %s\n", fd, strerror (errno));
@@ -2072,48 +2151,10 @@ open_es_fread (const char *filename)
         }
       return fp;
     }
-  fp = es_fopen (filename, "rb");
+  fp = es_fopen (filename, mode);
   if (!fp)
     {
-      log_error (_("can't open `%s': %s\n"), filename, strerror (errno));
-      gpgsm_exit (2);
-    }
-  return fp;
-}
-
-
-/* Open FILENAME for fwrite and return the stream.  Stop with an error
-   message in case of problems.  "-" denotes stdout and if special
-   filenames are allowed the given fd is opened instead. Caller must
-   close the returned stream unless it is stdout. */
-static FILE *
-open_fwrite (const char *filename)
-{
-  int fd;
-  FILE *fp;
-
-  if (filename[0] == '-' && !filename[1])
-    {
-      set_binary (stdout);
-      return stdout;
-    }
-
-  fd = check_special_filename (filename, 1);
-  if (fd != -1)
-    {
-      fp = fdopen (dup (fd), "wb");
-      if (!fp)
-        {
-          log_error ("fdopen(%d) failed: %s\n", fd, strerror (errno));
-          gpgsm_exit (2);
-        }
-      set_binary (fp);
-      return fp;
-    }
-  fp = fopen (filename, "wb");
-  if (!fp)
-    {
-      log_error (_("can't open `%s': %s\n"), filename, strerror (errno));
+      log_error (_("can't open '%s': %s\n"), filename, strerror (errno));
       gpgsm_exit (2);
     }
   return fp;
@@ -2151,7 +2192,7 @@ open_es_fwrite (const char *filename)
   fp = es_fopen (filename, "wb");
   if (!fp)
     {
-      log_error (_("can't open `%s': %s\n"), filename, strerror (errno));
+      log_error (_("can't open '%s': %s\n"), filename, strerror (errno));
       gpgsm_exit (2);
     }
   return fp;
@@ -2161,7 +2202,10 @@ open_es_fwrite (const char *filename)
 static void
 run_protect_tool (int argc, char **argv)
 {
-#ifndef HAVE_W32_SYSTEM
+#ifdef HAVE_W32_SYSTEM
+  (void)argc;
+  (void)argv;
+#else
   const char *pgm;
   char **av;
   int i;
@@ -2179,7 +2223,7 @@ run_protect_tool (int argc, char **argv)
     av[i] = *argv;
   av[i] = NULL;
   execv (pgm, av);
-  log_error ("error executing `%s': %s\n", pgm, strerror (errno));
-#endif /*HAVE_W32_SYSTEM*/
+  log_error ("error executing '%s': %s\n", pgm, strerror (errno));
+#endif /*!HAVE_W32_SYSTEM*/
   gpgsm_exit (2);
 }

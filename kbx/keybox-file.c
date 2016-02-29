@@ -27,6 +27,9 @@
 #include "keybox-defs.h"
 
 
+#define IMAGELEN_LIMIT (5*1024*1024)
+
+
 #if !defined(HAVE_FTELLO) && !defined(ftello)
 static off_t
 ftello (FILE *stream)
@@ -42,8 +45,8 @@ ftello (FILE *stream)
 
 
 
-/* Read a block at the current postion and return it in r_blob.
-   r_blob may be NULL to simply skip the current block */
+/* Read a block at the current position and return it in r_blob.
+   r_blob may be NULL to simply skip the current block.  */
 int
 _keybox_read_blob2 (KEYBOXBLOB *r_blob, FILE *fp, int *skipped_deleted)
 {
@@ -55,7 +58,8 @@ _keybox_read_blob2 (KEYBOXBLOB *r_blob, FILE *fp, int *skipped_deleted)
 
   *skipped_deleted = 0;
  again:
-  *r_blob = NULL;
+  if (r_blob)
+    *r_blob = NULL;
   off = ftello (fp);
   if (off == (off_t)-1)
     return gpg_error_from_syserror ();
@@ -74,10 +78,7 @@ _keybox_read_blob2 (KEYBOXBLOB *r_blob, FILE *fp, int *skipped_deleted)
     }
 
   imagelen = (c1 << 24) | (c2 << 16) | (c3 << 8 ) | c4;
-  if (imagelen > 500000) /* Sanity check. */
-    return gpg_error (GPG_ERR_TOO_LARGE);
-  
-  if (imagelen < 5) 
+  if (imagelen < 5)
     return gpg_error (GPG_ERR_TOO_SHORT);
 
   if (!type)
@@ -89,8 +90,17 @@ _keybox_read_blob2 (KEYBOXBLOB *r_blob, FILE *fp, int *skipped_deleted)
       goto again;
     }
 
+  if (imagelen > IMAGELEN_LIMIT) /* Sanity check. */
+    {
+      /* Seek forward so that the caller may choose to ignore this
+         record.  */
+      if (fseek (fp, imagelen-5, SEEK_CUR))
+        return gpg_error_from_syserror ();
+      return gpg_error (GPG_ERR_TOO_LARGE);
+    }
+
   image = xtrymalloc (imagelen);
-  if (!image) 
+  if (!image)
     return gpg_error_from_syserror ();
 
   image[0] = c1; image[1] = c2; image[2] = c3; image[3] = c4; image[4] = type;
@@ -100,7 +110,7 @@ _keybox_read_blob2 (KEYBOXBLOB *r_blob, FILE *fp, int *skipped_deleted)
       xfree (image);
       return tmperr;
     }
-  
+
   rc = r_blob? _keybox_new_blob (r_blob, image, imagelen, off) : 0;
   if (rc || !r_blob)
     xfree (image);
@@ -123,6 +133,10 @@ _keybox_write_blob (KEYBOXBLOB blob, FILE *fp)
   size_t length;
 
   image = _keybox_get_blob_image (blob, &length);
+
+  if (length > IMAGELEN_LIMIT)
+    return gpg_error (GPG_ERR_TOO_LARGE);
+
   if (fwrite (image, length, 1, fp) != 1)
     return gpg_error_from_syserror ();
   return 0;
@@ -131,7 +145,7 @@ _keybox_write_blob (KEYBOXBLOB blob, FILE *fp)
 
 /* Write a fresh header type blob. */
 int
-_keybox_write_header_blob (FILE *fp)
+_keybox_write_header_blob (FILE *fp, int for_openpgp)
 {
   unsigned char image[32];
   u32 val;
@@ -140,9 +154,11 @@ _keybox_write_header_blob (FILE *fp)
   /* Length of this blob. */
   image[3] = 32;
 
-  image[4] = BLOBTYPE_HEADER;
+  image[4] = KEYBOX_BLOBTYPE_HEADER;
   image[5] = 1; /* Version */
-  
+  if (for_openpgp)
+    image[7] = 0x02; /* OpenPGP data may be available.  */
+
   memcpy (image+8, "KBXf", 4);
   val = time (NULL);
   /* created_at and last maintenance run. */
@@ -159,5 +175,3 @@ _keybox_write_header_blob (FILE *fp)
     return gpg_error_from_syserror ();
   return 0;
 }
-
-

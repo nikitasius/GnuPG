@@ -17,15 +17,13 @@
 
 ## Process this file with automake to produce Makefile.in
 
+EXTRA_DIST = ChangeLog-2011 gpgsm-w32info.rc
 
 bin_PROGRAMS = gpgsm
 
-EXTRA_DIST = ChangeLog-2011 gpgsm-w32info.rc
+AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(KSBA_CFLAGS) $(LIBASSUAN_CFLAGS)
 
-AM_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS) \
-            $(KSBA_CFLAGS) $(LIBASSUAN_CFLAGS)
-
-AM_CPPFLAGS = -I$(top_srcdir)/gl -I$(top_srcdir)/common -I$(top_srcdir)/intl
+AM_CPPFLAGS = -I$(top_srcdir)/common -DKEYBOX_WITH_X509=1
 include $(top_srcdir)/am/cmacros.am
 
 if HAVE_W32_SYSTEM
@@ -55,16 +53,17 @@ gpgsm_SOURCES = \
 	delete.c \
 	certreqgen.c \
 	certreqgen-ui.c \
+	minip12.c minip12.h \
 	qualified.c
 
 
-common_libs = $(libcommon) ../kbx/libkeybox.a ../jnlib/libjnlib.a \
-              ../gl/libgnu.a
+common_libs = ../kbx/libkeybox509.a $(libcommon)
 
-gpgsm_LDADD = $(common_libs) ../common/libgpgrl.a  $(NETLIBS) \
+gpgsm_LDADD = $(common_libs) ../common/libgpgrl.a \
               $(LIBGCRYPT_LIBS) $(KSBA_LIBS) $(LIBASSUAN_LIBS) \
-              $(GPG_ERROR_LIBS) $(LIBREADLINE) $(LIBINTL) $(ZLIBS) \
-	      $(LIBICONV) $(resource_objs)
+              $(GPG_ERROR_LIBS) $(LIBREADLINE) $(LIBINTL) \
+	      $(LIBICONV) $(resource_objs) $(extra_sys_libs)
+gpgsm_LDFLAGS = $(extra_bin_ldflags)
 
 # Make sure that all libs are build before we use them.  This is
 # important for things like make -j2.

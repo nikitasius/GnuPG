@@ -22,7 +22,7 @@
 
 #include <ksba.h>
 
-#include "../kbx/keybox-search-desc.h"
+#include "../common/userids.h"
 
 typedef struct keydb_handle *KEYDB_HANDLE;
 
@@ -31,19 +31,13 @@ typedef struct keydb_handle *KEYDB_HANDLE;
 
 
 /*-- keydb.c --*/
-int keydb_add_resource (const char *url, int force, int secret,
-                        int *auto_created);
+gpg_error_t keydb_add_resource (const char *url, int force, int secret,
+                                int *auto_created);
 KEYDB_HANDLE keydb_new (int secret);
 void keydb_release (KEYDB_HANDLE hd);
 int keydb_set_ephemeral (KEYDB_HANDLE hd, int yes);
 const char *keydb_get_resource_name (KEYDB_HANDLE hd);
 gpg_error_t keydb_lock (KEYDB_HANDLE hd);
-
-#if 0 /* pgp stuff */
-int keydb_get_keyblock (KEYDB_HANDLE hd, KBNODE *ret_kb);
-int keydb_update_keyblock (KEYDB_HANDLE hd, KBNODE kb);
-int keydb_insert_keyblock (KEYDB_HANDLE hd, KBNODE kb);
-#endif
 
 gpg_error_t keydb_get_flags (KEYDB_HANDLE hd, int which, int idx,
                              unsigned int *value);
@@ -60,7 +54,7 @@ int keydb_delete (KEYDB_HANDLE hd, int unlock);
 int keydb_locate_writable (KEYDB_HANDLE hd, const char *reserved);
 void keydb_rebuild_caches (void);
 
-int keydb_search_reset (KEYDB_HANDLE hd);
+gpg_error_t keydb_search_reset (KEYDB_HANDLE hd);
 int keydb_search (KEYDB_HANDLE hd, KEYDB_SEARCH_DESC *desc, size_t ndesc);
 int keydb_search_first (KEYDB_HANDLE hd);
 int keydb_search_next (KEYDB_HANDLE hd);
@@ -71,8 +65,6 @@ int keydb_search_issuer_sn (KEYDB_HANDLE hd,
                             const char *issuer, const unsigned char *serial);
 int keydb_search_subject (KEYDB_HANDLE hd, const char *issuer);
 
-int keydb_classify_name (const char *name, KEYDB_SEARCH_DESC *desc);
-
 int keydb_store_cert (ksba_cert_t cert, int ephemeral, int *existed);
 gpg_error_t keydb_set_cert_flags (ksba_cert_t cert, int ephemeral,
                                   int which, int idx,
@@ -82,7 +74,3 @@ void keydb_clear_some_cert_flags (ctrl_t ctrl, strlist_t names);
 
 
 #endif /*GNUPG_KEYDB_H*/
-
-
-
-

@@ -1,6 +1,6 @@
 /* build-packet.c - assemble packets and write them
  * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
- *               2006 Free Software Foundation, Inc.
+ *               2006, 2010, 2011  Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -26,18 +26,16 @@
 #include <ctype.h>
 
 #include "gpg.h"
+#include "util.h"
 #include "packet.h"
 #include "status.h"
 #include "iobuf.h"
-#include "util.h"
-#include "cipher.h"
 #include "i18n.h"
 #include "options.h"
-#include "../include/host2net.h"
+#include "host2net.h"
 
 static int do_user_id( IOBUF out, int ctb, PKT_user_id *uid );
-static int do_public_key( IOBUF out, int ctb, PKT_public_key *pk );
-static int do_secret_key( IOBUF out, int ctb, PKT_secret_key *pk );
+static int do_key (iobuf_t out, int ctb, PKT_public_key *pk);
 static int do_symkey_enc( IOBUF out, int ctb, PKT_symkey_enc *enc );
 static int do_pubkey_enc( IOBUF out, int ctb, PKT_pubkey_enc *enc );
 static u32 calc_plaintext( PKT_plaintext *pt );
@@ -55,7 +53,6 @@ static int write_header( IOBUF out, int ctb, u32 len );
 static int write_sign_packet_header( IOBUF out, int ctb, u32 len );
 static int write_header2( IOBUF out, int ctb, u32 len, int hdrlen );
 static int write_new_header( IOBUF out, int ctb, u32 len, int hdrlen );
-static int write_version( IOBUF out, int ctb );
 
 /****************
  * Build a packet and write it to INP
@@ -73,8 +70,16 @@ build_packet( IOBUF out, PACKET *pkt )
 	log_debug("build_packet() type=%d\n", pkt->pkttype );
     assert( pkt->pkt.generic );
 
-    switch( (pkttype = pkt->pkttype) )
+    switch ((pkttype = pkt->pkttype))
       {
+      case PKT_PUBLIC_KEY:
+        if (pkt->pkt.public_key->seckey_info)
+          pkttype = PKT_SECRET_KEY;
+        break;
+      case PKT_PUBLIC_SUBKEY:
+        if (pkt->pkt.public_key->seckey_info)
+          pkttype = PKT_SECRET_SUBKEY;
+        break;
       case PKT_PLAINTEXT: new_ctb = pkt->pkt.plaintext->new_ctb; break;
       case PKT_ENCRYPTED:
       case PKT_ENCRYPTED_MDC: new_ctb = pkt->pkt.encrypted->new_ctb; break;
@@ -108,11 +113,9 @@ build_packet( IOBUF out, PACKET *pkt )
 	break;
       case PKT_PUBLIC_SUBKEY:
       case PKT_PUBLIC_KEY:
-	rc = do_public_key( out, ctb, pkt->pkt.public_key );
-	break;
       case PKT_SECRET_SUBKEY:
       case PKT_SECRET_KEY:
-	rc = do_secret_key( out, ctb, pkt->pkt.secret_key );
+	rc = do_key (out, ctb, pkt->pkt.public_key);
 	break;
       case PKT_SYMKEY_ENC:
 	rc = do_symkey_enc( out, ctb, pkt->pkt.symkey_enc );
@@ -153,32 +156,87 @@ build_packet( IOBUF out, PACKET *pkt )
 /*
  * Write the mpi A to OUT.
  */
-static int
-mpi_write (iobuf_t out, gcry_mpi_t a)
+gpg_error_t
+gpg_mpi_write (iobuf_t out, gcry_mpi_t a)
 {
-  char buffer[(MAX_EXTERN_MPI_BITS+7)/8+2]; /* 2 is for the mpi length. */
-  size_t nbytes;
   int rc;
 
-  nbytes = DIM(buffer);
-  rc = gcry_mpi_print (GCRYMPI_FMT_PGP, buffer, nbytes, &nbytes, a );
-  if( !rc )
-    rc = iobuf_write( out, buffer, nbytes );
-  else if (gpg_err_code(rc) == GPG_ERR_TOO_SHORT )
+  if (gcry_mpi_get_flag (a, GCRYMPI_FLAG_OPAQUE))
     {
-      log_info ("mpi too large (%u bits)\n", gcry_mpi_get_nbits (a));
-      /* The buffer was too small. We better tell the user about the MPI. */
-      rc = gpg_error (GPG_ERR_TOO_LARGE);
+      unsigned int nbits;
+      const unsigned char *p;
+      unsigned char lenhdr[2];
+
+      /* gcry_log_debugmpi ("a", a); */
+      p = gcry_mpi_get_opaque (a, &nbits);
+      if (p)
+        {
+          /* Strip leading zero bits.  */
+          for (; nbits >= 8 && !*p; p++, nbits -= 8)
+            ;
+          if (nbits >= 8 && !(*p & 0x80))
+            if (--nbits >= 7 && !(*p & 0x40))
+              if (--nbits >= 6 && !(*p & 0x20))
+                if (--nbits >= 5 && !(*p & 0x10))
+                  if (--nbits >= 4 && !(*p & 0x08))
+                    if (--nbits >= 3 && !(*p & 0x04))
+                      if (--nbits >= 2 && !(*p & 0x02))
+                        if (--nbits >= 1 && !(*p & 0x01))
+                          --nbits;
+        }
+      /* gcry_log_debug ("   [%u bit]\n", nbits); */
+      /* gcry_log_debughex (" ", p, (nbits+7)/8); */
+      lenhdr[0] = nbits >> 8;
+      lenhdr[1] = nbits;
+      rc = iobuf_write (out, lenhdr, 2);
+      if (!rc && p)
+        rc = iobuf_write (out, p, (nbits+7)/8);
+    }
+  else
+    {
+      char buffer[(MAX_EXTERN_MPI_BITS+7)/8+2]; /* 2 is for the mpi length. */
+      size_t nbytes;
+
+      nbytes = DIM(buffer);
+      rc = gcry_mpi_print (GCRYMPI_FMT_PGP, buffer, nbytes, &nbytes, a );
+      if( !rc )
+        rc = iobuf_write( out, buffer, nbytes );
+      else if (gpg_err_code(rc) == GPG_ERR_TOO_SHORT )
+        {
+          log_info ("mpi too large (%u bits)\n", gcry_mpi_get_nbits (a));
+          /* The buffer was too small. We better tell the user about the MPI. */
+          rc = gpg_error (GPG_ERR_TOO_LARGE);
+        }
     }
 
   return rc;
 }
 
 
-
-/****************
- * calculate the length of a packet described by PKT
+/*
+ * Write an opaque MPI to the output stream without length info.
  */
+gpg_error_t
+gpg_mpi_write_nohdr (iobuf_t out, gcry_mpi_t a)
+{
+  int rc;
+
+  if (gcry_mpi_get_flag (a, GCRYMPI_FLAG_OPAQUE))
+    {
+      unsigned int nbits;
+      const void *p;
+
+      p = gcry_mpi_get_opaque (a, &nbits);
+      rc = p ? iobuf_write (out, p, (nbits+7)/8) : 0;
+    }
+  else
+    rc = gpg_error (GPG_ERR_BAD_MPI);
+
+  return rc;
+}
+
+
+/* Calculate the length of a packet described by PKT.  */
 u32
 calc_packet_length( PACKET *pkt )
 {
@@ -212,232 +270,173 @@ calc_packet_length( PACKET *pkt )
     return n;
 }
 
-static void
+
+static gpg_error_t
 write_fake_data (IOBUF out, gcry_mpi_t a)
 {
-  if (a)
-    {
-      unsigned int n;
-      void *p;
+  unsigned int n;
+  void *p;
 
-      p = gcry_mpi_get_opaque ( a, &n );
-      if (p)
-        iobuf_write (out, p, (n+7)/8 );
-    }
+  if (!a)
+    return 0;
+  p = gcry_mpi_get_opaque ( a, &n);
+  if (!p)
+    return 0; /* For example due to a read error in
+                 parse-packet.c:read_rest.  */
+  return iobuf_write (out, p, (n+7)/8 );
 }
+
 
 static int
 do_user_id( IOBUF out, int ctb, PKT_user_id *uid )
 {
-    int rc;
+  int rc;
 
-    if( uid->attrib_data )
-      {
-	write_header(out, ctb, uid->attrib_len);
-	rc = iobuf_write( out, uid->attrib_data, uid->attrib_len );
-      }
-    else
-      {
-        write_header2( out, ctb, uid->len, 2 );
-	rc = iobuf_write( out, uid->name, uid->len );
-      }
-    return rc;
-}
-
-static int
-do_public_key( IOBUF out, int ctb, PKT_public_key *pk )
-{
-  int rc = 0;
-  int n, i;
-  IOBUF a = iobuf_temp();
-
-  if ( !pk->version )
-    iobuf_put( a, 3 );
+  if (uid->attrib_data)
+    {
+      write_header(out, ctb, uid->attrib_len);
+      rc = iobuf_write( out, uid->attrib_data, uid->attrib_len );
+    }
   else
-    iobuf_put( a, pk->version );
-  write_32(a, pk->timestamp );
-  if ( pk->version < 4 )
     {
-      u16 ndays;
-      if ( pk->expiredate )
-        ndays = (u16)((pk->expiredate - pk->timestamp) / 86400L);
-      else
-        ndays = 0;
-      write_16(a, ndays );
+      write_header2( out, ctb, uid->len, 2 );
+      rc = iobuf_write( out, uid->name, uid->len );
     }
-  iobuf_put (a, pk->pubkey_algo );
-  n = pubkey_get_npkey ( pk->pubkey_algo );
-  if ( !n )
-    write_fake_data( a, pk->pkey[0] );
-  for (i=0; i < n && !rc ; i++ )
-    rc = mpi_write(a, pk->pkey[i] );
-
-  if (!rc)
-    {
-      write_header2 (out, ctb, iobuf_get_temp_length(a), pk->hdrbytes);
-      rc = iobuf_write_temp ( out, a );
-    }
-
-  iobuf_close(a);
   return rc;
 }
 
 
 static int
-do_secret_key( IOBUF out, int ctb, PKT_secret_key *sk )
+do_key (iobuf_t out, int ctb, PKT_public_key *pk)
 {
-  int rc = 0;
+  gpg_error_t err = 0;
   int i, nskey, npkey;
-  IOBUF a = iobuf_temp(); /* Build in a self-enlarging buffer.  */
+  iobuf_t a = iobuf_temp(); /* Build in a self-enlarging buffer.  */
 
-  /* Write the version number - if none is specified, use 3 */
-  if ( !sk->version )
-    iobuf_put ( a, 3 );
+  /* Write the version number - if none is specified, use 4 */
+  if ( !pk->version )
+    iobuf_put ( a, 4 );
   else
-    iobuf_put ( a, sk->version );
-  write_32 (a, sk->timestamp );
+    iobuf_put ( a, pk->version );
+  write_32 (a, pk->timestamp );
 
-  /* v3 needs the expiration time. */
-  if ( sk->version < 4 )
-    {
-      u16 ndays;
-      if ( sk->expiredate )
-        ndays = (u16)((sk->expiredate - sk->timestamp) / 86400L);
-      else
-        ndays = 0;
-      write_16(a, ndays);
-    }
-
-  iobuf_put (a, sk->pubkey_algo );
+  iobuf_put (a, pk->pubkey_algo );
 
   /* Get number of secret and public parameters.  They are held in one
      array first the public ones, then the secret ones.  */
-  nskey = pubkey_get_nskey ( sk->pubkey_algo );
-  npkey = pubkey_get_npkey ( sk->pubkey_algo );
+  nskey = pubkey_get_nskey (pk->pubkey_algo);
+  npkey = pubkey_get_npkey (pk->pubkey_algo);
 
-  /* If we don't have any public parameters - which is the case if we
-     don't know the algorithm used - the parameters are stored as one
-     blob in a faked (opaque) MPI. */
-  if ( !npkey )
+  /* If we don't have any public parameters - which is for example the
+     case if we don't know the algorithm used - the parameters are
+     stored as one blob in a faked (opaque) MPI. */
+  if (!npkey)
     {
-      write_fake_data( a, sk->skey[0] );
+      write_fake_data (a, pk->pkey[0]);
       goto leave;
     }
-  assert ( npkey < nskey );
+  assert (npkey < nskey);
 
-  /* Writing the public parameters is easy. */
   for (i=0; i < npkey; i++ )
-    if ((rc = mpi_write (a, sk->skey[i])))
-      goto leave;
-
-  /* Build the header for protected (encrypted) secret parameters.  */
-  if ( sk->is_protected )
     {
-      if ( is_RSA(sk->pubkey_algo)
-           && sk->version < 4
-           && !sk->protect.s2k.mode )
-        {
-          /* The simple rfc1991 (v3) way. */
-          iobuf_put (a, sk->protect.algo );
-          iobuf_write (a, sk->protect.iv, sk->protect.ivlen );
-	}
+      if (   (pk->pubkey_algo == PUBKEY_ALGO_ECDSA && (i == 0))
+          || (pk->pubkey_algo == PUBKEY_ALGO_EDDSA && (i == 0))
+          || (pk->pubkey_algo == PUBKEY_ALGO_ECDH  && (i == 0 || i == 2)))
+        err = gpg_mpi_write_nohdr (a, pk->pkey[i]);
       else
+        err = gpg_mpi_write (a, pk->pkey[i]);
+      if (err)
+        goto leave;
+    }
+
+
+  if (pk->seckey_info)
+    {
+      /* This is a secret key packet.  */
+      struct seckey_info *ski = pk->seckey_info;
+
+      /* Build the header for protected (encrypted) secret parameters.  */
+      if (ski->is_protected)
         {
           /* OpenPGP protection according to rfc2440. */
-          iobuf_put(a, sk->protect.sha1chk? 0xfe : 0xff );
-          iobuf_put(a, sk->protect.algo );
-          if ( sk->protect.s2k.mode >= 1000 )
+          iobuf_put (a, ski->sha1chk? 0xfe : 0xff);
+          iobuf_put (a, ski->algo);
+          if (ski->s2k.mode >= 1000)
             {
               /* These modes are not possible in OpenPGP, we use them
-                 to implement our extensions, 101 can be seen as a
+                 to implement our extensions, 101 can be viewed as a
                  private/experimental extension (this is not specified
                  in rfc2440 but the same scheme is used for all other
-                 algorithm identifiers) */
-              iobuf_put(a, 101 );
-              iobuf_put(a, sk->protect.s2k.hash_algo );
-              iobuf_write(a, "GNU", 3 );
-              iobuf_put(a, sk->protect.s2k.mode - 1000 );
-	    }
+                 algorithm identifiers). */
+              iobuf_put (a, 101);
+              iobuf_put (a, ski->s2k.hash_algo);
+              iobuf_write (a, "GNU", 3 );
+              iobuf_put (a, ski->s2k.mode - 1000);
+            }
           else
             {
-              iobuf_put(a, sk->protect.s2k.mode );
-              iobuf_put(a, sk->protect.s2k.hash_algo );
-	    }
-          if ( sk->protect.s2k.mode == 1
-               || sk->protect.s2k.mode == 3 )
-            iobuf_write (a, sk->protect.s2k.salt, 8 );
+              iobuf_put (a, ski->s2k.mode);
+              iobuf_put (a, ski->s2k.hash_algo);
+            }
 
-          if ( sk->protect.s2k.mode == 3 )
-            iobuf_put (a, sk->protect.s2k.count );
+          if (ski->s2k.mode == 1 || ski->s2k.mode == 3)
+            iobuf_write (a, ski->s2k.salt, 8);
+
+          if (ski->s2k.mode == 3)
+            iobuf_put (a, ski->s2k.count);
 
           /* For our special modes 1001, 1002 we do not need an IV. */
-          if ( sk->protect.s2k.mode != 1001
-               && sk->protect.s2k.mode != 1002 )
-            iobuf_write (a, sk->protect.iv, sk->protect.ivlen );
-	}
-    }
-  else
-    iobuf_put (a, 0 );
+          if (ski->s2k.mode != 1001 && ski->s2k.mode != 1002)
+            iobuf_write (a, ski->iv, ski->ivlen);
 
-  if ( sk->protect.s2k.mode == 1001 )
-    ; /* GnuPG extension - don't write a secret key at all. */
-  else if ( sk->protect.s2k.mode == 1002 )
-    {
-      /* GnuPG extension - divert to OpenPGP smartcard. */
-      iobuf_put(a, sk->protect.ivlen ); /* Length of the serial number
-                                           or 0 for no serial
-                                           number. */
-      /* The serial number gets stored in the IV field. */
-      iobuf_write(a, sk->protect.iv, sk->protect.ivlen);
-    }
-  else if ( sk->is_protected && sk->version >= 4 )
-    {
-      /* The secret key is protected - write it out as it is.  */
-      byte *p;
-      unsigned int ndatabits;
+        }
+      else /* Not protected. */
+        iobuf_put (a, 0 );
 
-      assert (gcry_mpi_get_flag (sk->skey[npkey], GCRYMPI_FLAG_OPAQUE));
-      p = gcry_mpi_get_opaque (sk->skey[npkey], &ndatabits );
-      if (p)
-        iobuf_write (a, p, (ndatabits+7)/8 );
-    }
-  else if ( sk->is_protected )
-    {
-      /* The secret key is protected the old v4 way. */
-      for ( ; i < nskey; i++ )
+      if (ski->s2k.mode == 1001)
+        ; /* GnuPG extension - don't write a secret key at all. */
+      else if (ski->s2k.mode == 1002)
         {
+          /* GnuPG extension - divert to OpenPGP smartcard. */
+          /* Length of the serial number or 0 for no serial number. */
+          iobuf_put (a, ski->ivlen );
+          /* The serial number gets stored in the IV field.  */
+          iobuf_write (a, ski->iv, ski->ivlen);
+        }
+      else if (ski->is_protected)
+        {
+          /* The secret key is protected - write it out as it is.  */
           byte *p;
           unsigned int ndatabits;
 
-          assert (gcry_mpi_get_flag (sk->skey[i], GCRYMPI_FLAG_OPAQUE));
-          p = gcry_mpi_get_opaque (sk->skey[i], &ndatabits);
+          assert (gcry_mpi_get_flag (pk->pkey[npkey], GCRYMPI_FLAG_OPAQUE));
+          p = gcry_mpi_get_opaque (pk->pkey[npkey], &ndatabits);
           if (p)
-            iobuf_write (a, p, (ndatabits+7)/8);
+            iobuf_write (a, p, (ndatabits+7)/8 );
         }
-      write_16(a, sk->csum );
-    }
-  else
-    {
-      /* Non-protected key. */
-      for ( ; i < nskey; i++ )
-        if ( (rc = mpi_write (a, sk->skey[i])))
-          goto leave;
-      write_16 (a, sk->csum );
+      else
+        {
+          /* Non-protected key. */
+          for ( ; i < nskey; i++ )
+            if ( (err = gpg_mpi_write (a, pk->pkey[i])))
+              goto leave;
+          write_16 (a, ski->csum );
+        }
     }
 
  leave:
-  if (!rc)
+  if (!err)
     {
       /* Build the header of the packet - which we must do after
          writing all the other stuff, so that we know the length of
          the packet */
-      write_header2(out, ctb, iobuf_get_temp_length(a), sk->hdrbytes);
-      /* And finally write it out the real stream */
-      rc = iobuf_write_temp( out, a );
+      write_header2 (out, ctb, iobuf_get_temp_length(a), pk->hdrbytes);
+      /* And finally write it out to the real stream. */
+      err = iobuf_write_temp (out, a);
     }
 
-  iobuf_close(a); /* Close the remporary buffer */
-  return rc;
+  iobuf_close (a); /* Close the temporary buffer */
+  return err;
 }
 
 static int
@@ -478,7 +477,8 @@ do_pubkey_enc( IOBUF out, int ctb, PKT_pubkey_enc *enc )
   int n, i;
   IOBUF a = iobuf_temp();
 
-  write_version( a, ctb );
+  iobuf_put (a, 3); /* Version.  */
+
   if ( enc->throw_keyid )
     {
       write_32(a, 0 );  /* Don't tell Eve who can decrypt the message.  */
@@ -493,13 +493,19 @@ do_pubkey_enc( IOBUF out, int ctb, PKT_pubkey_enc *enc )
   n = pubkey_get_nenc( enc->pubkey_algo );
   if ( !n )
     write_fake_data( a, enc->data[0] );
+
   for (i=0; i < n && !rc ; i++ )
-    rc = mpi_write(a, enc->data[i] );
+    {
+      if (enc->pubkey_algo == PUBKEY_ALGO_ECDH && i == 1)
+        rc = gpg_mpi_write_nohdr (a, enc->data[i]);
+      else
+        rc = gpg_mpi_write (a, enc->data[i]);
+    }
 
   if (!rc)
     {
-      write_header(out, ctb, iobuf_get_temp_length(a) );
-      rc = iobuf_write_temp( out, a );
+      write_header (out, ctb, iobuf_get_temp_length(a) );
+      rc = iobuf_write_temp (out, a);
     }
   iobuf_close(a);
   return rc;
@@ -758,7 +764,7 @@ build_sig_subpkt (PKT_signature *sig, sigsubpkttype_t type,
 	/* This should never happen since we don't currently allow
 	   creating such a subpacket, but just in case... */
       case SIGSUBPKT_SIG_EXPIRE:
-	if (buf32_to_u32 (buffer) + sig->timestamp <= make_timestamp())
+	if(buf32_to_u32(buffer)+sig->timestamp<=make_timestamp())
 	  sig->flags.expired=1;
 	else
 	  sig->flags.expired=0;
@@ -1151,7 +1157,7 @@ do_signature( IOBUF out, int ctb, PKT_signature *sig )
   if ( !n )
     write_fake_data( a, sig->data[0] );
   for (i=0; i < n && !rc ; i++ )
-    rc = mpi_write(a, sig->data[i] );
+    rc = gpg_mpi_write (a, sig->data[i] );
 
   if (!rc)
     {
@@ -1173,7 +1179,7 @@ do_onepass_sig( IOBUF out, int ctb, PKT_onepass_sig *ops )
     int rc = 0;
     IOBUF a = iobuf_temp();
 
-    write_version( a, ctb );
+    iobuf_put (a, 3);  /* Version.  */
     iobuf_put(a, ops->sig_class );
     iobuf_put(a, ops->digest_algo );
     iobuf_put(a, ops->pubkey_algo );
@@ -1352,14 +1358,4 @@ write_new_header( IOBUF out, int ctb, u32 len, int hdrlen )
 	}
     }
     return 0;
-}
-
-static int
-write_version (IOBUF out, int ctb)
-{
-  (void)ctb;
-
-  if (iobuf_put (out, 3))
-    return -1;
-  return 0;
 }

@@ -22,8 +22,6 @@
 
 #include <ksba.h>
 
-#include "estream.h"
-
 struct audit_ctx_s;
 typedef struct audit_ctx_s *audit_ctx_t;
 
@@ -56,7 +54,7 @@ typedef enum
     /* Indicates whether the gpg-agent is available.  For some
        operations the agent is not required and thus no such event
        will be logged.  */
-    
+
     AUDIT_DIRMNGR_READY,   /* err */
     /* Indicates whether the Dirmngr is available.  For some
        operations the Dirmngr is not required and thus no such event
@@ -67,6 +65,9 @@ typedef enum
 
     AUDIT_GPGSM_READY, /* err */
     /* Indicates whether the Gpgsm engine is available. */
+
+    AUDIT_G13_READY, /* err */
+    /* Indicates whether the G13 engine is available. */
 
     AUDIT_GOT_DATA,
     /* Data to be processed has been seen.  */
@@ -112,7 +113,7 @@ typedef enum
     /* The program was used in an inappropriate way; For example by
        passing a data object while the signature does not expect one
        or vice versa.  */
-    
+
     AUDIT_SAVE_CERT,       /* cert, ok_err */
     /* Save the certificate received in a message. */
 
@@ -120,7 +121,7 @@ typedef enum
     /* Start the verification of a new signature for the last data
        object.  The argument is the signature number as used
        internally by the program.  */
-    
+
     AUDIT_SIG_NAME,        /* string */
     /* The name of a signer.  This is the name or other identification
        data as known from the signature and not the name from the
@@ -132,7 +133,7 @@ typedef enum
        audit information for one signature.  STRING gives the status:
 
          "error"       - there was a problem checking this or any signature.
-         "unsupported" - the signature type is not supported. 
+         "unsupported" - the signature type is not supported.
          "no-cert"     - The certificate of the signer was not found (the
                          S/N+issuer of the signer is already in the log).
          "bad"         - bad signature
@@ -142,7 +143,7 @@ typedef enum
     AUDIT_NEW_RECP,        /* int */
     /* A new recipient has been seen during decryption.  The argument
        is the recipient number as used internally by the program.  */
-    
+
     AUDIT_RECP_NAME,       /* string */
     /* The name of a recipient.  This is the name or other identification
        data as known from the decryption and not the name from the
@@ -166,14 +167,14 @@ typedef enum
     AUDIT_CHAIN_END,
     /* These 4 events are used to log the certificates making up a
        certificate chain.  ROOTCERT is used for the trustanchor and
-       CERT for all other certificates.  */ 
+       CERT for all other certificates.  */
 
     AUDIT_CHAIN_STATUS,  /* err */
     /* Tells the final status of the chain validation.  */
 
     AUDIT_ROOT_TRUSTED,  /* cert, err */
     /* Tells whether the root certificate is trusted.  This event is
-       emmited durcing chain validation.  */
+       emitted during chain validation.  */
 
     AUDIT_CRL_CHECK, /* err */
     /* Tells the status of a CRL or OCSP check.  */
@@ -214,7 +215,7 @@ void audit_log (audit_ctx_t ctx, audit_event_t event);
 void audit_log_ok (audit_ctx_t ctx, audit_event_t event, gpg_error_t err);
 void audit_log_i (audit_ctx_t ctx, audit_event_t event, int value);
 void audit_log_s (audit_ctx_t ctx, audit_event_t event, const char *value);
-void audit_log_cert (audit_ctx_t ctx, audit_event_t event, 
+void audit_log_cert (audit_ctx_t ctx, audit_event_t event,
                      ksba_cert_t cert, gpg_error_t err);
 
 void audit_print_result (audit_ctx_t ctx, estream_t stream, int use_html);

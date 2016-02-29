@@ -1,14 +1,24 @@
-/* se4ssiobn-env.c - session environment helper functions.
+/* session-env.c - Session environment helper functions.
  * Copyright (C) 2009 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -46,11 +56,11 @@ struct session_environment_s
 };
 
 
-/* A list of environment vribales we pass from the acual user
+/* A list of environment variables we pass from the actual user
   (e.g. gpgme) down to the pinentry.  We do not handle the locale
   settings because they do not only depend on envvars.  */
-static struct 
-{ 
+static struct
+{
   const char *name;
   const char *assname;  /* Name used by Assuan or NULL.  */
 } stdenvnames[] = {
@@ -62,9 +72,13 @@ static struct
                                       modules (eg "@im=SCIM").  */
   { "GTK_IM_MODULE" },           /* Used by gtk to select gtk input
                                     modules (eg "scim-bridge").  */
+  { "DBUS_SESSION_BUS_ADDRESS" },/* Used by GNOME3 to talk to gcr over
+                                    dbus */
   { "QT_IM_MODULE" },            /* Used by Qt to select qt input
                                       modules (eg "xim").  */
-  { "PINENTRY_USER_DATA", "pinentry-user-data"} 
+  { "INSIDE_EMACS" },            /* Set by Emacs before running a
+                                    process.  */
+  { "PINENTRY_USER_DATA", "pinentry-user-data"}
                                  /* Used for communication with
                                     non-standard Pinentries.  */
 };
@@ -83,7 +97,7 @@ static size_t lastallocatedarraysize;
 
 /* Return the names of standard environment variables one after the
    other.  The caller needs to set the value at the address of
-   ITERATOR initally to 0 and then call this function until it returns
+   ITERATOR initially to 0 and then call this function until it returns
    NULL.  */
 const char *
 session_env_list_stdenvnames (int *iterator, const char **r_assname)
@@ -109,7 +123,7 @@ session_env_new (void)
   se = xtrycalloc (1, sizeof *se);
   if (se)
     {
-      se->arraysize = (lastallocatedarraysize? 
+      se->arraysize = (lastallocatedarraysize?
                        lastallocatedarraysize : INITIAL_ARRAYSIZE);
       se->array = xtrycalloc (se->arraysize, sizeof *se->array);
       if (!se->array)
@@ -132,7 +146,7 @@ session_env_release (session_env_t se)
   if (!se)
     return;
 
-  if (se->arraysize > INITIAL_ARRAYSIZE 
+  if (se->arraysize > INITIAL_ARRAYSIZE
       && se->arraysize <= MAXDEFAULT_ARRAYSIZE
       && se->arraysize > lastallocatedarraysize)
     lastallocatedarraysize = se->arraysize;
@@ -249,7 +263,7 @@ gpg_error_t
 session_env_putenv (session_env_t se, const char *string)
 {
   const char *s;
-  
+
   if (!string || !*string)
     return gpg_error (GPG_ERR_INV_VALUE);
   s = strchr (string, '=');
@@ -301,7 +315,7 @@ session_env_getenv (session_env_t se, const char *name)
 /* Return the value of the environment variable NAME from the SE
    object.  The returned value is valid as long as SE is valid and as
    long it has not been removed or updated by a call to
-   session_env_putenv.  If the variable does not exist, the fucntion
+   session_env_putenv.  If the variable does not exist, the function
    tries to return the value trough a call to getenv; if that returns
    a value, this value is recorded and and used.  If no value could be
    found, returns NULL.  The caller must not change the returned
@@ -325,11 +339,14 @@ session_env_getenv_or_default (session_env_t se, const char *name,
           *r_default = 1;
         return se->array[idx]->value;
       }
-  
-  /* Get the default value with and additional fallback for GPG_TTY.  */
+
+  /* Get the default value with an additional fallback for GPG_TTY.  */
   defvalue = getenv (name);
-  if ((!defvalue || !*defvalue) && !strcmp (name, "GPG_TTY") && ttyname (0))
-    defvalue = ttyname (0);
+  if ((!defvalue || !*defvalue) && !strcmp (name, "GPG_TTY")
+      && gnupg_ttyname (0))
+    {
+      defvalue = gnupg_ttyname (0);
+    }
   if (defvalue)
     {
       /* Record the default value for later use so that we are safe
@@ -339,7 +356,7 @@ session_env_getenv_or_default (session_env_t se, const char *name,
          explicit error anyway and the following scan would then fail
          anyway. */
       update_var (se, name, strlen (name), defvalue, 1);
-      
+
       for (idx=0; idx < se->arrayused; idx++)
         if (se->array[idx] && !strcmp (se->array[idx]->name, name))
           {
@@ -359,7 +376,7 @@ session_env_getenv_or_default (session_env_t se, const char *name,
    R_DEFAULT is not NULL, the default flag is stored on return.  The
    default flag indicates that the value has been taken from the
    process' environment.  The caller must not change the returned
-   name or value.  */ 
+   name or value.  */
 char *
 session_env_listenv (session_env_t se, int *iterator,
                      const char **r_value, int *r_default)
@@ -381,5 +398,3 @@ session_env_listenv (session_env_t se, int *iterator,
       }
   return NULL;
 }
-
-

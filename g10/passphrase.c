@@ -1,6 +1,6 @@
 /* passphrase.c -  Get a passphrase
  * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004,
- *               2005, 2006, 2007, 2009 Free Software Foundation, Inc.
+ *               2005, 2006, 2007, 2009, 2011 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -37,13 +37,12 @@
 #include "util.h"
 #include "options.h"
 #include "ttyio.h"
-#include "cipher.h"
 #include "keydb.h"
 #include "main.h"
 #include "i18n.h"
 #include "status.h"
 #include "call-agent.h"
-
+#include "../common/shareddefs.h"
 
 static char *fd_passwd = NULL;
 static char *next_pw = NULL;
@@ -101,86 +100,23 @@ encode_s2k_iterations (int iterations)
 }
 
 
-
-/* Hash a passphrase using the supplied s2k.
-   Always needs: dek->algo, s2k->mode, s2k->hash_algo.  */
-static void
-hash_passphrase ( DEK *dek, char *pw, STRING2KEY *s2k)
-{
-  gcry_md_hd_t md;
-  int pass, i;
-  int used = 0;
-  int pwlen = strlen(pw);
-
-  assert ( s2k->hash_algo );
-  dek->keylen = openpgp_cipher_get_algo_keylen (dek->algo);
-  if ( !(dek->keylen > 0 && dek->keylen <= DIM(dek->key)) )
-    BUG();
-
-  if (gcry_md_open (&md, s2k->hash_algo, 1))
-    BUG ();
-  for (pass=0; used < dek->keylen ; pass++ )
-    {
-      if ( pass )
-        {
-          gcry_md_reset (md);
-          for (i=0; i < pass; i++ ) /* Preset the hash context.  */
-            gcry_md_putc (md, 0 );
-	}
-
-      if ( s2k->mode == 1 || s2k->mode == 3 )
-        {
-          int len2 = pwlen + 8;
-          ulong count = len2;
-
-          if ( s2k->mode == 3 )
-            {
-              count = S2K_DECODE_COUNT(s2k->count);
-              if ( count < len2 )
-                count = len2;
-	    }
-
-          /* Fixme: To avoid DoS attacks by sending an sym-encrypted
-             packet with a very high S2K count, we should either cap
-             the iteration count or CPU seconds based timeout.  */
-
-          /* A little bit complicated because we need a ulong for count. */
-          while ( count > len2 )  /* maybe iterated+salted */
-            {
-              gcry_md_write ( md, s2k->salt, 8 );
-              gcry_md_write ( md, pw, pwlen );
-              count -= len2;
-	    }
-          if ( count < 8 )
-            gcry_md_write ( md, s2k->salt, count );
-          else
-            {
-              gcry_md_write ( md, s2k->salt, 8 );
-              count -= 8;
-              gcry_md_write ( md, pw, count );
-	    }
-	}
-      else
-        gcry_md_write ( md, pw, pwlen );
-      gcry_md_final( md );
-
-      i = gcry_md_get_algo_dlen ( s2k->hash_algo );
-      if ( i > dek->keylen - used )
-        i = dek->keylen - used;
-
-      memcpy (dek->key+used, gcry_md_read (md, s2k->hash_algo), i);
-      used += i;
-    }
-  gcry_md_close(md);
-}
-
-
-
 int
 have_static_passphrase()
 {
-  return !!fd_passwd && opt.batch;
+  return (!!fd_passwd
+          && (opt.batch || opt.pinentry_mode == PINENTRY_MODE_LOOPBACK));
 }
+
+/* Return a static passphrase.  The returned value is only valid as
+   long as no other passphrase related function is called.  NULL may
+   be returned if no passphrase has been set; better use
+   have_static_passphrase first.  */
+const char *
+get_static_passphrase (void)
+{
+  return fd_passwd;
+}
+
 
 /****************
  * Set the passphrase to be used for the next query and only for the next
@@ -211,17 +147,6 @@ get_last_passphrase()
   return p;
 }
 
-/* As if we had used the passphrase - make it the last_pw. */
-void
-next_to_last_passphrase(void)
-{
-  if (next_pw)
-    {
-      last_pw=next_pw;
-      next_pw=NULL;
-    }
-}
-
 /* Here's an interesting question: since this passphrase was passed in
    on the command line, is there really any point in using secure
    memory for it?  I'm going with 'yes', since it doesn't hurt, and
@@ -242,7 +167,7 @@ read_passphrase_from_fd( int fd )
   int i, len;
   char *pw;
 
-  if ( !opt.batch )
+  if ( !opt.batch && opt.pinentry_mode != PINENTRY_MODE_LOOPBACK)
     { /* Not used but we have to do a dummy read, so that it won't end
          up at the begin of the message if the quite usual trick to
          prepend the passphtrase to the message is used. */
@@ -273,7 +198,7 @@ read_passphrase_from_fd( int fd )
         break;
     }
   pw[i] = 0;
-  if (!opt.batch)
+  if (!opt.batch && opt.pinentry_mode != PINENTRY_MODE_LOOPBACK)
     tty_printf("\b\b\b   \n" );
 
   xfree ( fd_passwd );
@@ -321,8 +246,7 @@ passphrase_get ( u32 *keyid, int mode, const char *cacheid, int repeat,
   memset (fpr, 0, MAX_FINGERPRINT_LEN );
   if( keyid && get_pubkey( pk, keyid ) )
     {
-      if (pk)
-        free_public_key( pk );
+      free_public_key (pk);
       pk = NULL; /* oops: no key for some reason */
     }
 
@@ -334,7 +258,7 @@ passphrase_get ( u32 *keyid, int mode, const char *cacheid, int repeat,
     {
       char *uid;
       size_t uidlen;
-      const char *algo_name = openpgp_pk_algo_name (pk->pubkey_algo);
+      const char *algo_name = openpgp_pk_algo_name ( pk->pubkey_algo );
       const char *timestr;
       char *maink;
 
@@ -396,7 +320,8 @@ passphrase_get ( u32 *keyid, int mode, const char *cacheid, int repeat,
 
   if (!rc)
     ;
-  else if ( gpg_err_code (rc) == GPG_ERR_CANCELED )
+  else if (gpg_err_code (rc) == GPG_ERR_CANCELED
+            || gpg_err_code (rc) == GPG_ERR_FULLY_CANCELED)
     {
       log_info (_("cancelled by user\n") );
       if (canceled)
@@ -415,11 +340,10 @@ passphrase_get ( u32 *keyid, int mode, const char *cacheid, int repeat,
       if (canceled)
         *canceled = 1;
 
-      write_status_error ("get_passphrase", rc);
+      write_status_errcode ("get_passphrase", rc);
     }
 
-  if (pk)
-    free_public_key( pk );
+  free_public_key (pk);
   if (rc)
     {
       xfree (pw);
@@ -471,7 +395,7 @@ passphrase_clear_cache ( u32 *keyid, const char *cacheid, int algo )
 }
 
 
-/* Return a new DEK object Using the string-to-key sepcifier S2K.  Use
+/* Return a new DEK object using the string-to-key specifier S2K.  Use
    KEYID and PUBKEY_ALGO to prompt the user.  Returns NULL is the user
    selected to cancel the passphrase entry and if CANCELED is not
    NULL, sets it to true.
@@ -534,30 +458,9 @@ passphrase_to_dek_ext (u32 *keyid, int pubkey_algo,
 
       if ( keyid )
         {
-          u32 used_kid[2];
-          char *us;
-
-          if ( keyid[2] && keyid[3] )
-            {
-              used_kid[0] = keyid[2];
-              used_kid[1] = keyid[3];
-            }
-          else
-            {
-              used_kid[0] = keyid[0];
-              used_kid[1] = keyid[1];
-            }
-
-          us = get_long_user_id_string ( keyid );
-          write_status_text ( STATUS_USERID_HINT, us );
-          xfree(us);
-
-          snprintf (buf, sizeof buf -1, "%08lX%08lX %08lX%08lX %d 0",
-                    (ulong)keyid[0], (ulong)keyid[1],
-                    (ulong)used_kid[0], (ulong)used_kid[1],
-                    pubkey_algo );
-
-          write_status_text ( STATUS_NEED_PASSPHRASE, buf );
+          emit_status_need_passphrase (keyid,
+                                       keyid[2] && keyid[3]? keyid+2:NULL,
+                                       pubkey_algo);
 	}
       else
         {
@@ -584,7 +487,7 @@ passphrase_to_dek_ext (u32 *keyid, int pubkey_algo,
 
       if ( !get_pubkey( pk, keyid ) )
         {
-          const char *s = openpgp_pk_algo_name (pk->pubkey_algo);
+          const char *s = openpgp_pk_algo_name ( pk->pubkey_algo );
 
           tty_printf (_("%u-bit %s key, ID %s, created %s"),
                       nbits_from_pk( pk ), s?s:"?", keystr(keyid),
@@ -605,8 +508,7 @@ passphrase_to_dek_ext (u32 *keyid, int pubkey_algo,
 	}
 
       tty_printf("\n");
-      if (pk)
-        free_public_key( pk );
+      free_public_key (pk);
     }
 
   if ( next_pw )
@@ -631,6 +533,14 @@ passphrase_to_dek_ext (u32 *keyid, int pubkey_algo,
 	  s2k_cacheid = s2k_cacheidbuf;
 	}
 
+      if (opt.pinentry_mode == PINENTRY_MODE_LOOPBACK)
+        {
+          char buf[32];
+
+          snprintf (buf, sizeof (buf), "%u", 100);
+          write_status_text (STATUS_INQUIRE_MAXLEN, buf);
+        }
+
       /* Divert to the gpg-agent. */
       pw = passphrase_get (keyid, mode == 2, s2k_cacheid,
                            (mode == 2 || mode == 4)? opt.passphrase_repeat : 0,
@@ -654,7 +564,28 @@ passphrase_to_dek_ext (u32 *keyid, int pubkey_algo,
   if ( (!pw || !*pw) && (mode == 2 || mode == 4))
     dek->keylen = 0;
   else
-    hash_passphrase (dek, pw, s2k);
+    {
+      gpg_error_t err;
+
+      dek->keylen = openpgp_cipher_get_algo_keylen (dek->algo);
+      if (!(dek->keylen > 0 && dek->keylen <= DIM(dek->key)))
+        BUG ();
+      err = gcry_kdf_derive (pw, strlen (pw),
+                             s2k->mode == 3? GCRY_KDF_ITERSALTED_S2K :
+                             s2k->mode == 1? GCRY_KDF_SALTED_S2K :
+                             /* */           GCRY_KDF_SIMPLE_S2K,
+                             s2k->hash_algo, s2k->salt, 8,
+                             S2K_DECODE_COUNT(s2k->count),
+                             dek->keylen, dek->key);
+      if (err)
+        {
+          log_error ("gcry_kdf_derive failed: %s", gpg_strerror (err));
+          xfree (pw);
+          xfree (dek);
+	  write_status( STATUS_MISSING_PASSPHRASE );
+          return NULL;
+        }
+    }
   if (s2k_cacheid)
     memcpy (dek->s2k_cacheid, s2k_cacheid, sizeof dek->s2k_cacheid);
   xfree(last_pw);
@@ -671,4 +602,116 @@ passphrase_to_dek (u32 *keyid, int pubkey_algo,
   return passphrase_to_dek_ext (keyid, pubkey_algo, cipher_algo,
                                 s2k, mode, tryagain_text, NULL, NULL,
                                 canceled);
+}
+
+
+/* Emit the USERID_HINT and the NEED_PASSPHRASE status messages.
+   MAINKEYID may be NULL. */
+void
+emit_status_need_passphrase (u32 *keyid, u32 *mainkeyid, int pubkey_algo)
+{
+  char buf[50];
+  char *us;
+
+  us = get_long_user_id_string (keyid);
+  write_status_text (STATUS_USERID_HINT, us);
+  xfree (us);
+
+  snprintf (buf, sizeof buf -1, "%08lX%08lX %08lX%08lX %d 0",
+            (ulong)keyid[0],
+            (ulong)keyid[1],
+            (ulong)(mainkeyid? mainkeyid[0]:keyid[0]),
+            (ulong)(mainkeyid? mainkeyid[1]:keyid[1]),
+            pubkey_algo);
+
+  write_status_text (STATUS_NEED_PASSPHRASE, buf);
+}
+
+
+/* Return an allocated utf-8 string describing the key PK.  If ESCAPED
+   is true spaces and control characters are percent or plus escaped.
+   MODE describes the use of the key description; use one of the
+   FORMAT_KEYDESC_ macros. */
+char *
+gpg_format_keydesc (PKT_public_key *pk, int mode, int escaped)
+{
+  char *uid;
+  size_t uidlen;
+  const char *algo_name;
+  const char *timestr;
+  char *orig_codeset;
+  char *maink;
+  char *desc;
+  const char *prompt;
+  const char *trailer = "";
+  int is_subkey;
+
+  is_subkey = (pk->main_keyid[0] && pk->main_keyid[1]
+               && pk->keyid[0] != pk->main_keyid[0]
+               && pk->keyid[1] != pk->main_keyid[1]);
+  algo_name = openpgp_pk_algo_name (pk->pubkey_algo);
+  timestr = strtimestamp (pk->timestamp);
+  uid = get_user_id (is_subkey? pk->main_keyid:pk->keyid, &uidlen);
+
+  orig_codeset = i18n_switchto_utf8 ();
+
+  if (is_subkey)
+    maink = xtryasprintf (_(" (main key ID %s)"), keystr (pk->main_keyid));
+  else
+    maink = NULL;
+
+  switch (mode)
+    {
+    case FORMAT_KEYDESC_NORMAL:
+      prompt = _("Please enter the passphrase to unlock the"
+                 " OpenPGP secret key:");
+      break;
+    case FORMAT_KEYDESC_IMPORT:
+      prompt = _("Please enter the passphrase to import the"
+                 " OpenPGP secret key:");
+      break;
+    case FORMAT_KEYDESC_EXPORT:
+      if (is_subkey)
+        prompt = _("Please enter the passphrase to export the"
+                   " OpenPGP secret subkey:");
+      else
+        prompt = _("Please enter the passphrase to export the"
+                   " OpenPGP secret key:");
+      break;
+    case FORMAT_KEYDESC_DELKEY:
+      if (is_subkey)
+        prompt = _("Do you really want to permanently delete the"
+                   " OpenPGP secret subkey key:");
+      else
+        prompt = _("Do you really want to permanently delete the"
+                   " OpenPGP secret key:");
+      trailer = "?";
+      break;
+    default:
+      prompt = "?";
+      break;
+    }
+
+  desc = xtryasprintf (_("%s\n"
+                         "\"%.*s\"\n"
+                         "%u-bit %s key, ID %s,\n"
+                         "created %s%s.\n%s"),
+                       prompt,
+                       (int)uidlen, uid,
+                       nbits_from_pk (pk), algo_name,
+                       keystr (pk->keyid), timestr,
+                       maink?maink:"", trailer);
+  xfree (maink);
+  xfree (uid);
+
+  i18n_switchback (orig_codeset);
+
+  if (escaped)
+    {
+      char *tmp = percent_plus_escape (desc);
+      xfree (desc);
+      desc = tmp;
+    }
+
+  return desc;
 }

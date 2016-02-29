@@ -18,14 +18,22 @@
 
 ## Process this file with automake to produce Makefile.in
 
+EXTRA_DIST = mkerrors
 
-EXTRA_DIST = mkerrors ChangeLog-2011
-AM_CPPFLAGS = -I$(top_srcdir)/gl -I$(top_srcdir)/common -I$(top_srcdir)/intl \
-	       $(LIBGCRYPT_CFLAGS) $(KSBA_CFLAGS)
+AM_CPPFLAGS = -I$(top_srcdir)/common
+
 include $(top_srcdir)/am/cmacros.am
 
-noinst_LIBRARIES = libkeybox.a
+AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(KSBA_CFLAGS)
+
+noinst_LIBRARIES = libkeybox.a libkeybox509.a
 bin_PROGRAMS = kbxutil
+
+if HAVE_W32CE_SYSTEM
+extra_libs =  $(LIBASSUAN_LIBS)
+else
+extra_libs =
+endif
 
 common_sources = \
 	keybox.h keybox-defs.h keybox-search-desc.h \
@@ -40,13 +48,19 @@ common_sources = \
 
 
 libkeybox_a_SOURCES = $(common_sources)
+libkeybox509_a_SOURCES = $(common_sources)
+
+libkeybox_a_CFLAGS = $(AM_CFLAGS)
+libkeybox509_a_CFLAGS = $(AM_CFLAGS) -DKEYBOX_WITH_X509=1
+
 
 # We need W32SOCKLIBS because the init subsystem code in libcommon
 # requires it - although we don't actually need it.  It is easier
 # to do it this way.
 kbxutil_SOURCES = kbxutil.c $(common_sources)
-kbxutil_LDADD   = ../common/libcommon.a ../jnlib/libjnlib.a ../gl/libgnu.a \
-                  $(KSBA_LIBS) $(LIBGCRYPT_LIBS) \
+kbxutil_CFLAGS = $(AM_CFLAGS) -DKEYBOX_WITH_X509=1
+kbxutil_LDADD   = ../common/libcommon.a \
+                  $(KSBA_LIBS) $(LIBGCRYPT_LIBS) $(extra_libs) \
                   $(GPG_ERROR_LIBS) $(LIBINTL) $(LIBICONV) $(W32SOCKLIBS)
 
-$(PROGRAMS) : ../common/libcommon.a ../jnlib/libjnlib.a ../gl/libgnu.a
+$(PROGRAMS) : ../common/libcommon.a

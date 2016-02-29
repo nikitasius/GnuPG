@@ -1,4 +1,4 @@
-/* keybox-util.c - Utility functions for Keybox 
+/* keybox-util.c - Utility functions for Keybox
  *	Copyright (C) 2001 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
@@ -21,6 +21,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef  HAVE_DOSISH_SYSTEM
+# define WIN32_LEAN_AND_MEAN  /* We only need the OS core stuff.  */
+# include <windows.h>
+#endif
 
 #include "keybox-defs.h"
 
@@ -69,3 +73,131 @@ _keybox_free (void *p)
     free_func (p);
 }
 
+
+/* Store the two malloced temporary file names used for keybox updates
+   of file FILENAME at R_BAKNAME and R_TMPNAME.  On error an error
+   code is returned and NULL stored at R_BAKNAME and R_TMPNAME.  If
+   FOR_KEYRING is true the returned names match those used by GnuPG's
+   keyring code.  */
+gpg_error_t
+keybox_tmp_names (const char *filename, int for_keyring,
+                  char **r_bakname, char **r_tmpname)
+{
+  gpg_error_t err;
+  char *bak_name, *tmp_name;
+
+  *r_bakname = NULL;
+  *r_tmpname = NULL;
+
+# ifdef USE_ONLY_8DOT3
+  /* Here is another Windoze bug?:
+   * you can't rename("pubring.kbx.tmp", "pubring.kbx");
+   * but	rename("pubring.kbx.tmp", "pubring.aaa");
+   * works.  So we replace ".kbx" by ".kb_" or ".k__".  Note that we
+   * can't use ".bak" and ".tmp", because these suffixes are used by
+   * gpg's keyrings and would lead to a sharing violation or data
+   * corruption.  If the name does not end in ".kbx" we assume working
+   * on a modern file system and append the suffix.  */
+  {
+    const char *ext   = for_keyring? EXTSEP_S GPGEXT_GPG : EXTSEP_S "kbx";
+    const char *b_ext = for_keyring? EXTSEP_S "bak"      : EXTSEP_S "kb_";
+    const char *t_ext = for_keyring? EXTSEP_S "tmp"      : EXTSEP_S "k__";
+    int repl;
+
+    if (strlen (ext) != 4 || strlen (b_ext) != 4)
+      BUG ();
+    repl = (strlen (filename) > 4
+            && !strcmp (filename + strlen (filename) - 4, ext));
+    bak_name = xtrymalloc (strlen (filename) + (repl?0:4) + 1);
+    if (!bak_name)
+      return gpg_error_from_syserror ();
+    strcpy (bak_name, filename);
+    strcpy (bak_name + strlen (filename) - (repl?4:0), b_ext);
+
+    tmp_name = xtrymalloc (strlen (filename) + (repl?0:4) + 1);
+    if (!tmp_name)
+      {
+        err = gpg_error_from_syserror ();
+        xfree (bak_name);
+        return err;
+      }
+    strcpy (tmp_name, filename);
+    strcpy (tmp_name + strlen (filename) - (repl?4:0), t_ext);
+  }
+# else /* Posix file names */
+  (void)for_keyring;
+  bak_name = xtrymalloc (strlen (filename) + 2);
+  if (!bak_name)
+    return gpg_error_from_syserror ();
+  strcpy (stpcpy (bak_name, filename), "~");
+
+  tmp_name = xtrymalloc (strlen (filename) + 5);
+  if (!tmp_name)
+    {
+      err = gpg_error_from_syserror ();
+      xfree (bak_name);
+      return err;
+    }
+  strcpy (stpcpy (tmp_name,filename), EXTSEP_S "tmp");
+# endif /* Posix filename */
+
+  *r_bakname = bak_name;
+  *r_tmpname = tmp_name;
+  return 0;
+}
+
+
+/* Wrapper for rename(2) to handle Windows peculiarities.  */
+gpg_error_t
+keybox_file_rename (const char *oldname, const char *newname)
+{
+  gpg_error_t err = 0;
+
+#ifdef HAVE_DOSISH_SYSTEM
+  int wtime = 0;
+
+  gnupg_remove (newname);
+ again:
+  if (rename (oldname, newname))
+    {
+      if (GetLastError () == ERROR_SHARING_VIOLATION)
+        {
+          /* Another process has the file open.  We do not use a lock
+           * for read but instead we wait until the other process has
+           * closed the file.  This may take long but that would also
+           * be the case with a dotlock approach for read and write.
+           * Note that we don't need this on Unix due to the inode
+           * concept.
+           *
+           * So let's wait until the rename has worked.  The retry
+           * intervals are 50, 100, 200, 400, 800, 50ms, ...  */
+          if (!wtime || wtime >= 800)
+            wtime = 50;
+          else
+            wtime *= 2;
+
+          if (wtime >= 800)
+            log_info ("waiting for file '%s' to become accessible ...\n",
+                      oldname);
+
+          Sleep (wtime);
+          goto again;
+        }
+      err = gpg_error_from_syserror ();
+    }
+
+#else /* Unix */
+
+#ifdef __riscos__
+  gnupg_remove (newname);
+#endif
+  if (rename (oldname, newname) )
+    err = gpg_error_from_syserror ();
+
+#endif /* Unix */
+
+  if (err)
+    log_error ("renaming '%s' to '%s' failed: %s\n",
+               oldname, newname, gpg_strerror (err));
+  return err;
+}

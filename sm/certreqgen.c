@@ -1,5 +1,6 @@
-/* certreqgen.c - Generate a key and a certification request
- * Copyright (C) 2002, 2003, 2005, 2007 Free Software Foundation, Inc.
+/* certreqgen.c - Generate a key and a certification [request]
+ * Copyright (C) 2002, 2003, 2005, 2007, 2010,
+ *               2011 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -18,78 +19,36 @@
  */
 
 /*
-The format of the native parameter file is follows:
-  o Text only, line length is limited to about 1000 chars.
-  o You must use UTF-8 encoding to specify non-ascii characters.
-  o Empty lines are ignored.
-  o Leading and trailing spaces are ignored.
-  o A hash sign as the first non white space character is a comment line.
-  o Control statements are indicated by a leading percent sign, the
-    arguments are separated by white space from the keyword.
-  o Parameters are specified by a keyword, followed by a colon.  Arguments
-    are separated by white space.
-  o The first parameter must be "Key-Type", control statements
-    may be placed anywhere.
-  o Key generation takes place when either the end of the parameter file
-    is reached, the next "Key-Type" parameter is encountered or at the
-    controlstatement "%commit"
-  o Control statements:
-    %echo <text>
-	Print <text>.
-    %dry-run
-	Suppress actual key generation (useful for syntax checking).
-    %commit
-	Perform the key generation.  Note that an implicit commit is done
-	at the next "Key-Type" parameter.
-    %certfile <filename>
-	Do not write the certificate to the keyDB but to <filename>.
-        This must be given before the first
-	commit to take place, duplicate specification of the same filename
-	is ignored, the last filename before a commit is used.
-	The filename is used until a new filename is used (at commit points)
-	and all keys are written to that file.	If a new filename is given,
-	this file is created (and overwrites an existing one).
-	Both control statements must be given.
-   o The order of the parameters does not matter except for "Key-Type"
-     which must be the first parameter.  The parameters are only for the
-     generated keyblock and parameters from previous key generations are not
-     used. Some syntactically checks may be performed.
-     The currently defined parameters are:
-     Key-Type: <algo>
-	Starts a new parameter block by giving the type of the
-	primary key. The algorithm must be capable of signing.
-	This is a required parameter.  For now the only supported
-        algorithm is "rsa".
-     Key-Length: <length-in-bits>
-	Length of the key in bits.  Default is 2048.
-     Key-Grip: hexstring
-        This is optional and used to generate a request for an already
-        existing key.  Key-Length will be ignored when given,
-     Key-Usage: <usage-list>
-        Space or comma delimited list of key usage, allowed values are
-        "encrypt" and "sign".  This is used to generate the KeyUsage extension.
-        Please make sure that the algorithm is capable of this usage.  Default
-        is to allow encrypt and sign.
-     Name-DN: subject name
-        This is the DN name of the subject in rfc2253 format.
-     Name-Email: <string>
-	The is an email address for the altSubjectName
-     Name-DNS: <string>
-	The is an DNS name for the altSubjectName
-     Name-URI: <string>
-	The is an URI for the altSubjectName
+   The format of the parameter file is described in the manual under
+   "Unattended Usage".
 
-Here is an example:
-$ cat >foo <<EOF
-%echo Generating a standard key
-Key-Type: RSA
-Key-Length: 2048
-Name-DN: CN=test cert 1,OU=Aegypten Project,O=g10 Code GmbH,L=Düsseldorf,C=DE
-Name-Email: joe@foo.bar
-# Do a commit here, so that we can later print "done" :-)
-%commit
-%echo done
-EOF
+   Here is an example:
+     $ cat >foo <<EOF
+     %echo Generating a standard key
+     Key-Type: RSA
+     Key-Length: 2048
+     Name-DN: CN=test cert 1,OU=Aegypten Project,O=g10 Code GmbH,L=Ddorf,C=DE
+     Name-Email: joe@foo.bar
+     # Do a commit here, so that we can later print a "done"
+     %commit
+     %echo done
+     EOF
+
+   This parameter file was used to create the STEED CA:
+     Key-Type: RSA
+     Key-Length: 1024
+     Key-Grip: 68A638998DFABAC510EA645CE34F9686B2EDF7EA
+     Key-Usage: cert
+     Serial: 1
+     Name-DN: CN=The STEED Self-Signing Nonthority
+     Not-Before: 2011-11-11
+     Not-After: 2106-02-06
+     Subject-Key-Id: 68A638998DFABAC510EA645CE34F9686B2EDF7EA
+     Extension: 2.5.29.19 c 30060101ff020101
+     Extension: 1.3.6.1.4.1.11591.2.2.2 n 0101ff
+     Signing-Key: 68A638998DFABAC510EA645CE34F9686B2EDF7EA
+     %commit
+
 */
 
 
@@ -110,18 +69,29 @@ EOF
 #include "i18n.h"
 
 
-enum para_name {
-  pKEYTYPE,
-  pKEYLENGTH,
-  pKEYGRIP,
-  pKEYUSAGE,
-  pNAMEDN,
-  pNAMEEMAIL,
-  pNAMEDNS,
-  pNAMEURI
-};
+enum para_name
+  {
+    pKEYTYPE,
+    pKEYLENGTH,
+    pKEYGRIP,
+    pKEYUSAGE,
+    pNAMEDN,
+    pNAMEEMAIL,
+    pNAMEDNS,
+    pNAMEURI,
+    pSERIAL,
+    pISSUERDN,
+    pNOTBEFORE,
+    pNOTAFTER,
+    pSIGNINGKEY,
+    pHASHALGO,
+    pAUTHKEYID,
+    pSUBJKEYID,
+    pEXTENSION
+  };
 
-struct para_data_s {
+struct para_data_s
+{
   struct para_data_s *next;
   int lnr;
   enum para_name key;
@@ -131,24 +101,30 @@ struct para_data_s {
   } u;
 };
 
-struct reqgen_ctrl_s {
+struct reqgen_ctrl_s
+{
   int lnr;
   int dryrun;
-  ksba_writer_t writer;
 };
 
 
+static const char oidstr_authorityKeyIdentifier[] = "2.5.29.35";
+static const char oidstr_subjectKeyIdentifier[] = "2.5.29.14";
 static const char oidstr_keyUsage[] = "2.5.29.15";
+static const char oidstr_basicConstraints[] = "2.5.29.19";
+static const char oidstr_standaloneCertificate[] = "1.3.6.1.4.1.11591.2.2.1";
 
 
 static int proc_parameters (ctrl_t ctrl,
                             struct para_data_s *para,
+                            estream_t out_fp,
                             struct reqgen_ctrl_s *outctrl);
 static int create_request (ctrl_t ctrl,
                            struct para_data_s *para,
                            const char *carddirect,
                            ksba_const_sexp_t public,
-                           struct reqgen_ctrl_s *outctrl);
+                           ksba_const_sexp_t sigkey,
+                           ksba_writer_t writer);
 
 
 
@@ -215,8 +191,11 @@ parse_parameter_usage (struct para_data_s *para, enum para_name key)
         ;
       else if ( !ascii_strcasecmp (p, "sign") )
         use |= GCRY_PK_USAGE_SIGN;
-      else if ( !ascii_strcasecmp (p, "encrypt") )
+      else if ( !ascii_strcasecmp (p, "encrypt")
+                || !ascii_strcasecmp (p, "encr") )
         use |= GCRY_PK_USAGE_ENCR;
+      else if ( !ascii_strcasecmp (p, "cert") )
+        use |= GCRY_PK_USAGE_CERT;
       else
         {
           log_error ("line %d: invalid usage list\n", r->lnr);
@@ -247,7 +226,7 @@ get_parameter_uint (struct para_data_s *para, enum para_name key)
 /* Read the certificate generation parameters from FP and generate
    (all) certificate requests.  */
 static int
-read_parameters (ctrl_t ctrl, estream_t fp, ksba_writer_t writer)
+read_parameters (ctrl_t ctrl, estream_t fp, estream_t out_fp)
 {
   static struct {
     const char *name;
@@ -262,6 +241,17 @@ read_parameters (ctrl_t ctrl, estream_t fp, ksba_writer_t writer)
     { "Name-Email",     pNAMEEMAIL, 1 },
     { "Name-DNS",       pNAMEDNS, 1 },
     { "Name-URI",       pNAMEURI, 1 },
+    { "Serial",         pSERIAL },
+    { "Issuer-DN",      pISSUERDN },
+    { "Creation-Date",  pNOTBEFORE },
+    { "Not-Before",     pNOTBEFORE },
+    { "Expire-Date",    pNOTAFTER },
+    { "Not-After",      pNOTAFTER },
+    { "Signing-Key",    pSIGNINGKEY },
+    { "Hash-Algo",      pHASHALGO },
+    { "Authority-Key-Id", pAUTHKEYID },
+    { "Subject-Key-Id", pSUBJKEYID },
+    { "Extension",      pEXTENSION, 1 },
     { NULL, 0 }
   };
   char line[1024], *p;
@@ -271,7 +261,6 @@ read_parameters (ctrl_t ctrl, estream_t fp, ksba_writer_t writer)
   struct reqgen_ctrl_s outctrl;
 
   memset (&outctrl, 0, sizeof (outctrl));
-  outctrl.writer = writer;
 
   err = NULL;
   para = NULL;
@@ -293,11 +282,11 @@ read_parameters (ctrl_t ctrl, estream_t fp, ksba_writer_t writer)
       keyword = p;
       if (*keyword == '%')
         {
-          for (; *p && !spacep (p); p++)
+          for (; *p && !ascii_isspace (*p); p++)
             ;
           if (*p)
             *p++ = 0;
-          for (; spacep (p); p++)
+          for (; ascii_isspace (*p); p++)
             ;
           value = p;
           trim_trailing_spaces (value);
@@ -308,7 +297,7 @@ read_parameters (ctrl_t ctrl, estream_t fp, ksba_writer_t writer)
             outctrl.dryrun = 1;
           else if (!ascii_strcasecmp( keyword, "%commit"))
             {
-              rc = proc_parameters (ctrl, para, &outctrl);
+              rc = proc_parameters (ctrl, para, out_fp, &outctrl);
               if (rc)
                 goto leave;
               any = 1;
@@ -316,7 +305,7 @@ read_parameters (ctrl_t ctrl, estream_t fp, ksba_writer_t writer)
               para = NULL;
 	    }
           else
-            log_info ("skipping control `%s' (%s)\n", keyword, value);
+            log_info ("skipping control '%s' (%s)\n", keyword, value);
 
           continue;
 	}
@@ -355,7 +344,7 @@ read_parameters (ctrl_t ctrl, estream_t fp, ksba_writer_t writer)
 
       if (keywords[i].key == pKEYTYPE && para)
         {
-          rc = proc_parameters (ctrl, para, &outctrl);
+          rc = proc_parameters (ctrl, para, out_fp, &outctrl);
           if (rc)
             goto leave;
           any = 1;
@@ -398,7 +387,7 @@ read_parameters (ctrl_t ctrl, estream_t fp, ksba_writer_t writer)
     }
   else if (para)
     {
-      rc = proc_parameters (ctrl, para, &outctrl);
+      rc = proc_parameters (ctrl, para, out_fp, &outctrl);
       if (rc)
         goto leave;
       any = 1;
@@ -437,18 +426,19 @@ has_invalid_email_chars (const char *s)
 
 /* Check that all required parameters are given and perform the action */
 static int
-proc_parameters (ctrl_t ctrl,
-                 struct para_data_s *para, struct reqgen_ctrl_s *outctrl)
+proc_parameters (ctrl_t ctrl, struct para_data_s *para,
+                 estream_t out_fp, struct reqgen_ctrl_s *outctrl)
 {
   gpg_error_t err;
   struct para_data_s *r;
-  const char *s;
+  const char *s, *string;
   int i;
   unsigned int nbits;
   char numbuf[20];
   unsigned char keyparms[100];
-  int rc;
-  ksba_sexp_t public;
+  int rc = 0;
+  ksba_sexp_t public = NULL;
+  ksba_sexp_t sigkey = NULL;
   int seq;
   size_t erroff, errlen;
   char *cardkeyid = NULL;
@@ -475,7 +465,8 @@ proc_parameters (ctrl_t ctrl,
       return gpg_error (GPG_ERR_INV_PARAMETER);
     }
 
-  /* Check the keylength. */
+  /* Check the keylength.  NOTE: If you change this make sure that it
+     macthes the gpgconflist item in gpgsm.c  */
   if (!get_parameter (para, pKEYLENGTH, 0))
     nbits = 2048;
   else
@@ -511,10 +502,10 @@ proc_parameters (ctrl_t ctrl,
     {
       r = get_parameter (para, pNAMEDN, 0);
       if (gpg_err_code (err) == GPG_ERR_UNKNOWN_NAME)
-        log_error (_("line %d: invalid subject name label `%.*s'\n"),
+        log_error (_("line %d: invalid subject name label '%.*s'\n"),
                    r->lnr, (int)errlen, s+erroff);
       else
-        log_error (_("line %d: invalid subject name `%s' at pos %d\n"),
+        log_error (_("line %d: invalid subject name '%s' at pos %d\n"),
                    r->lnr, s, (int)erroff);
 
       xfree (cardkeyid);
@@ -537,14 +528,177 @@ proc_parameters (ctrl_t ctrl,
         }
     }
 
+  /* Check the optional serial number.  */
+  string = get_parameter_value (para, pSERIAL, 0);
+  if (string)
+    {
+      if (!strcmp (string, "random"))
+        ; /* Okay.  */
+      else
+        {
+          for (s=string, i=0; hexdigitp (s); s++, i++)
+            ;
+          if (*s)
+            {
+              r = get_parameter (para, pSERIAL, 0);
+              log_error (_("line %d: invalid serial number\n"), r->lnr);
+              xfree (cardkeyid);
+              return gpg_error (GPG_ERR_INV_PARAMETER);
+            }
+        }
+    }
+
+  /* Check the optional issuer DN.  */
+  string = get_parameter_value (para, pISSUERDN, 0);
+  if (string)
+    {
+      err = ksba_dn_teststr (string, 0, &erroff, &errlen);
+      if (err)
+        {
+          r = get_parameter (para, pISSUERDN, 0);
+          if (gpg_err_code (err) == GPG_ERR_UNKNOWN_NAME)
+            log_error (_("line %d: invalid issuer name label '%.*s'\n"),
+                       r->lnr, (int)errlen, string+erroff);
+          else
+            log_error (_("line %d: invalid issuer name '%s' at pos %d\n"),
+                       r->lnr, string, (int)erroff);
+          xfree (cardkeyid);
+          return gpg_error (GPG_ERR_INV_PARAMETER);
+        }
+    }
+
+  /* Check the optional creation date.  */
+  string = get_parameter_value (para, pNOTBEFORE, 0);
+  if (string && !string2isotime (NULL, string))
+    {
+      r = get_parameter (para, pNOTBEFORE, 0);
+      log_error (_("line %d: invalid date given\n"), r->lnr);
+      xfree (cardkeyid);
+      return gpg_error (GPG_ERR_INV_PARAMETER);
+    }
+
+
+  /* Check the optional expire date.  */
+  string = get_parameter_value (para, pNOTAFTER, 0);
+  if (string && !string2isotime (NULL, string))
+    {
+      r = get_parameter (para, pNOTAFTER, 0);
+      log_error (_("line %d: invalid date given\n"), r->lnr);
+      xfree (cardkeyid);
+      return gpg_error (GPG_ERR_INV_PARAMETER);
+    }
+
+  /* Get the optional signing key.  */
+  string = get_parameter_value (para, pSIGNINGKEY, 0);
+  if (string)
+    {
+      rc = gpgsm_agent_readkey (ctrl, 0, string, &sigkey);
+      if (rc)
+        {
+          r = get_parameter (para, pKEYTYPE, 0);
+          log_error (_("line %d: error getting signing key by keygrip '%s'"
+                       ": %s\n"), r->lnr, s, gpg_strerror (rc));
+          xfree (cardkeyid);
+          return rc;
+        }
+    }
+
+  /* Check the optional hash-algo.  */
+  {
+    int mdalgo;
+
+    string = get_parameter_value (para, pHASHALGO, 0);
+    if (string && !((mdalgo = gcry_md_map_name (string))
+                    && (mdalgo == GCRY_MD_SHA1
+                        || mdalgo == GCRY_MD_SHA256
+                        || mdalgo == GCRY_MD_SHA384
+                        || mdalgo == GCRY_MD_SHA512)))
+      {
+        r = get_parameter (para, pHASHALGO, 0);
+        log_error (_("line %d: invalid hash algorithm given\n"), r->lnr);
+        xfree (cardkeyid);
+        return gpg_error (GPG_ERR_INV_PARAMETER);
+      }
+  }
+
+  /* Check the optional AuthorityKeyId.  */
+  string = get_parameter_value (para, pAUTHKEYID, 0);
+  if (string)
+    {
+      for (s=string, i=0; hexdigitp (s); s++, i++)
+        ;
+      if (*s || (i&1))
+        {
+          r = get_parameter (para, pAUTHKEYID, 0);
+          log_error (_("line %d: invalid authority-key-id\n"), r->lnr);
+          xfree (cardkeyid);
+          return gpg_error (GPG_ERR_INV_PARAMETER);
+        }
+    }
+
+  /* Check the optional SubjectKeyId.  */
+  string = get_parameter_value (para, pSUBJKEYID, 0);
+  if (string)
+    {
+      for (s=string, i=0; hexdigitp (s); s++, i++)
+        ;
+      if (*s || (i&1))
+        {
+          r = get_parameter (para, pSUBJKEYID, 0);
+          log_error (_("line %d: invalid subject-key-id\n"), r->lnr);
+          xfree (cardkeyid);
+          return gpg_error (GPG_ERR_INV_PARAMETER);
+        }
+    }
+
+  /* Check the optional extensions. */
+  for (seq=0; (string=get_parameter_value (para, pEXTENSION, seq)); seq++)
+    {
+      int okay = 0;
+
+      s = strpbrk (string, " \t:");
+      if (s)
+        {
+          s++;
+          while (spacep (s))
+            s++;
+          if (*s && strchr ("nNcC", *s))
+            {
+              s++;
+              while (spacep (s))
+                s++;
+              if (*s == ':')
+                s++;
+              if (*s)
+                {
+                  while (spacep (s))
+                    s++;
+                  for (i=0; hexdigitp (s); s++, i++)
+                    ;
+                  if (!((*s && *s != ':') || !i || (i&1)))
+                    okay = 1;
+                }
+            }
+        }
+      if (!okay)
+        {
+          r = get_parameter (para, pEXTENSION, seq);
+          log_error (_("line %d: invalid extension syntax\n"), r->lnr);
+          xfree (cardkeyid);
+          return gpg_error (GPG_ERR_INV_PARAMETER);
+        }
+    }
+
+  /* Create or retrieve the public key.  */
   if (cardkeyid) /* Take the key from the current smart card. */
     {
       rc = gpgsm_agent_readkey (ctrl, 1, cardkeyid, &public);
       if (rc)
         {
           r = get_parameter (para, pKEYTYPE, 0);
-          log_error (_("line %d: error reading key `%s' from card: %s\n"),
+          log_error (_("line %d: error reading key '%s' from card: %s\n"),
                      r->lnr, cardkeyid, gpg_strerror (rc));
+          xfree (sigkey);
           xfree (cardkeyid);
           return rc;
         }
@@ -555,13 +709,14 @@ proc_parameters (ctrl_t ctrl,
       if (rc)
         {
           r = get_parameter (para, pKEYTYPE, 0);
-          log_error (_("line %d: error getting key by keygrip `%s': %s\n"),
+          log_error (_("line %d: error getting key by keygrip '%s': %s\n"),
                      r->lnr, s, gpg_strerror (rc));
+          xfree (sigkey);
           xfree (cardkeyid);
           return rc;
         }
     }
-  else /* Generate new key.  */
+  else if (!outctrl->dryrun) /* Generate new key.  */
     {
       sprintf (numbuf, "%u", nbits);
       snprintf ((char*)keyparms, DIM (keyparms)-1,
@@ -573,12 +728,45 @@ proc_parameters (ctrl_t ctrl,
           r = get_parameter (para, pKEYTYPE, 0);
           log_error (_("line %d: key generation failed: %s <%s>\n"),
                      r->lnr, gpg_strerror (rc), gpg_strsource (rc));
+          xfree (sigkey);
           xfree (cardkeyid);
           return rc;
         }
     }
 
-  rc = create_request (ctrl, para, cardkeyid, public, outctrl);
+
+  if (!outctrl->dryrun)
+    {
+      Base64Context b64writer = NULL;
+      ksba_writer_t writer;
+      int create_cert ;
+
+      create_cert = !!get_parameter_value (para, pSERIAL, 0);
+
+      ctrl->pem_name = create_cert? "CERTIFICATE" : "CERTIFICATE REQUEST";
+      rc = gpgsm_create_writer (&b64writer, ctrl, out_fp, &writer);
+      if (rc)
+        log_error ("can't create writer: %s\n", gpg_strerror (rc));
+      else
+        {
+          rc = create_request (ctrl, para, cardkeyid, public, sigkey, writer);
+          if (!rc)
+            {
+              rc = gpgsm_finish_writer (b64writer);
+              if (rc)
+                log_error ("write failed: %s\n", gpg_strerror (rc));
+              else
+                {
+                  gpgsm_status (ctrl, STATUS_KEY_CREATED, "P");
+                  log_info ("certificate%s created\n",
+                            create_cert?"":" request");
+                }
+            }
+          gpgsm_destroy_writer (b64writer);
+        }
+    }
+
+  xfree (sigkey);
   xfree (public);
   xfree (cardkeyid);
 
@@ -587,38 +775,40 @@ proc_parameters (ctrl_t ctrl,
 
 
 /* Parameters are checked, the key pair has been created.  Now
-   generate the request and write it out.
-
-   Note: We use SHA-1 here because Libksba hash a shortcut to use
-   assume that if SIG_VAL uses as algo the string "rsa".  To fix that
-   we would need to replace that string by an appropriate OID.  We
-   leave this change for 2.1.
- */
+   generate the request and write it out */
 static int
 create_request (ctrl_t ctrl,
                 struct para_data_s *para,
                 const char *carddirect,
                 ksba_const_sexp_t public,
-                struct reqgen_ctrl_s *outctrl)
+                ksba_const_sexp_t sigkey,
+                ksba_writer_t writer)
 {
   ksba_certreq_t cr;
   gpg_error_t err;
-  int hashalgo = GCRY_MD_SHA1;
   gcry_md_hd_t md;
   ksba_stop_reason_t stopreason;
   int rc = 0;
-  const char *s;
+  const char *s, *string;
   unsigned int use;
   int seq;
   char *buf, *p;
   size_t len;
   char numbuf[30];
+  ksba_isotime_t atime;
+  int certmode = 0;
+  int mdalgo;
 
   err = ksba_certreq_new (&cr);
   if (err)
     return err;
 
-  rc = gcry_md_open (&md, hashalgo, 0);
+  string = get_parameter_value (para, pHASHALGO, 0);
+  if (string)
+    mdalgo = gcry_md_map_name (string);
+  else
+    mdalgo = GCRY_MD_SHA256;
+  rc = gcry_md_open (&md, mdalgo, 0);
   if (rc)
     {
       log_error ("md_open failed: %s\n", gpg_strerror (rc));
@@ -628,7 +818,7 @@ create_request (ctrl_t ctrl,
     gcry_md_debug (md, "cr.cri");
 
   ksba_certreq_set_hash_function (cr, HASH_FNC, md);
-  ksba_certreq_set_writer (cr, outctrl->writer);
+  ksba_certreq_set_writer (cr, writer);
 
   err = ksba_certreq_add_subject (cr, get_parameter_value (para, pNAMEDN, 0));
   if (err)
@@ -725,34 +915,354 @@ create_request (ctrl_t ctrl,
       goto leave;
     }
 
-
+  /* Set key usage flags.  */
   use = get_parameter_uint (para, pKEYUSAGE);
-  if (use == GCRY_PK_USAGE_SIGN)
+  if (use)
     {
-      /* For signing only we encode the bits:
-         KSBA_KEYUSAGE_DIGITAL_SIGNATURE
-         KSBA_KEYUSAGE_NON_REPUDIATION */
-      err = ksba_certreq_add_extension (cr, oidstr_keyUsage, 1,
-                                        "\x03\x02\x06\xC0", 4);
+      unsigned int mask, pos;
+      unsigned char der[4];
+
+      der[0] = 0x03;
+      der[1] = 0x02;
+      der[2] = 0;
+      der[3] = 0;
+      if ((use & GCRY_PK_USAGE_SIGN))
+        {
+          /* For signing only we encode the bits:
+             KSBA_KEYUSAGE_DIGITAL_SIGNATURE
+             KSBA_KEYUSAGE_NON_REPUDIATION  = 0b11 -> 0b11000000 */
+          der[3] |= 0xc0;
+        }
+      if ((use & GCRY_PK_USAGE_ENCR))
+        {
+          /* For encrypt only we encode the bits:
+             KSBA_KEYUSAGE_KEY_ENCIPHERMENT
+             KSBA_KEYUSAGE_DATA_ENCIPHERMENT = 0b1100 -> 0b00110000 */
+          der[3] |= 0x30;
+        }
+      if ((use & GCRY_PK_USAGE_CERT))
+        {
+          /* For certify only we encode the bits:
+             KSBA_KEYUSAGE_KEY_CERT_SIGN
+             KSBA_KEYUSAGE_CRL_SIGN      = 0b1100000 -> 0b00000110 */
+          der[3] |= 0x06;
+        }
+
+      /* Count number of unused bits.  */
+      for (mask=1, pos=0; pos < 8 * sizeof mask; pos++, mask <<= 1)
+        {
+          if ((der[3] & mask))
+            break;
+          der[2]++;
+        }
+
+      err = ksba_certreq_add_extension (cr, oidstr_keyUsage, 1, der, 4);
+      if (err)
+        {
+          log_error ("error setting the key usage: %s\n",
+                     gpg_strerror (err));
+          rc = err;
+          goto leave;
+        }
     }
-  else if (use == GCRY_PK_USAGE_ENCR)
+
+
+  /* See whether we want to create an X.509 certificate.  */
+  string = get_parameter_value (para, pSERIAL, 0);
+  if (string)
     {
-      /* For encrypt only we encode the bits:
-         KSBA_KEYUSAGE_KEY_ENCIPHERMENT
-         KSBA_KEYUSAGE_DATA_ENCIPHERMENT */
-      err = ksba_certreq_add_extension (cr, oidstr_keyUsage, 1,
-                                        "\x03\x02\x04\x30", 4);
+      certmode = 1;
+
+      /* Store the serial number.  */
+      if (!strcmp (string, "random"))
+        {
+          char snbuf[3+8+1];
+
+          memcpy (snbuf, "(8:", 3);
+          gcry_create_nonce (snbuf+3, 8);
+          /* Clear high bit to guarantee a positive integer.  */
+          snbuf[3] &= 0x7f;
+          snbuf[3+8] = ')';
+          err = ksba_certreq_set_serial (cr, snbuf);
+        }
+      else
+        {
+          char *hexbuf;
+
+          /* Allocate a buffer large enough to prefix the string with
+             a '0' so to have an even number of digits.  Prepend two
+             further '0' so that the binary result will have a leading
+             0 byte and thus can't be the representation of a negative
+             number.  Note that ksba_certreq_set_serial strips all
+             unneeded leading 0 bytes.  */
+          hexbuf = p = xtrymalloc (2 + 1 + strlen (string) + 1);
+          if (!hexbuf)
+            {
+              err = gpg_error_from_syserror ();
+              goto leave;
+            }
+          if ((strlen (string) & 1))
+            *p++ = '0';
+          *p++ = '0';
+          *p++ = '0';
+          strcpy (p, string);
+          for (p=hexbuf, len=0; p[0] && p[1]; p += 2)
+            ((unsigned char*)hexbuf)[len++] = xtoi_2 (p);
+          /* Now build the S-expression.  */
+          snprintf (numbuf, DIM(numbuf), "%u:", (unsigned int)len);
+          buf = p = xtrymalloc (1 + strlen (numbuf) + len + 1 + 1);
+          if (!buf)
+            {
+              err = gpg_error_from_syserror ();
+              xfree (hexbuf);
+              goto leave;
+            }
+          p = stpcpy (stpcpy (buf, "("), numbuf);
+          memcpy (p, hexbuf, len);
+          p += len;
+          strcpy (p, ")");
+          xfree (hexbuf);
+          err = ksba_certreq_set_serial (cr, buf);
+          xfree (buf);
+        }
+      if (err)
+        {
+          log_error ("error setting the serial number: %s\n",
+                     gpg_strerror (err));
+          goto leave;
+        }
+
+
+      /* Store the issuer DN.  If no issuer DN is given and no signing
+         key has been set we add the standalone extension and the
+         basic constraints to mark it as a self-signed CA
+         certificate.  */
+      string = get_parameter_value (para, pISSUERDN, 0);
+      if (string)
+        {
+          /* Issuer DN given.  Note that this may be the same as the
+             subject DN and thus this could as well be a self-signed
+             certificate.  However the caller needs to explicitly
+             specify basicConstraints and so forth.  */
+          err = ksba_certreq_set_issuer (cr, string);
+          if (err)
+            {
+              log_error ("error setting the issuer DN: %s\n",
+                         gpg_strerror (err));
+              goto leave;
+            }
+
+        }
+      else if (!string && !sigkey)
+        {
+          /* Self-signed certificate requested.  Add basicConstraints
+             and the custom GnuPG standalone extension.  */
+          err = ksba_certreq_add_extension (cr, oidstr_basicConstraints, 1,
+                                            "\x30\x03\x01\x01\xff", 5);
+          if (err)
+            goto leave;
+          err = ksba_certreq_add_extension (cr, oidstr_standaloneCertificate, 0,
+                                            "\x01\x01\xff", 3);
+          if (err)
+            goto leave;
+        }
+
+      /* Store the creation date.  */
+      string = get_parameter_value (para, pNOTBEFORE, 0);
+      if (string)
+        {
+          if (!string2isotime (atime, string))
+            BUG (); /* We already checked the value.  */
+        }
+      else
+        gnupg_get_isotime (atime);
+      err = ksba_certreq_set_validity (cr, 0, atime);
+      if (err)
+        {
+          log_error ("error setting the creation date: %s\n",
+                     gpg_strerror (err));
+          goto leave;
+        }
+
+
+      /* Store the expire date.  If it is not given, libksba inserts a
+         default value.  */
+      string = get_parameter_value (para, pNOTAFTER, 0);
+      if (string)
+        {
+          if (!string2isotime (atime, string))
+            BUG (); /* We already checked the value.  */
+          err = ksba_certreq_set_validity (cr, 1, atime);
+          if (err)
+            {
+              log_error ("error setting the expire date: %s\n",
+                         gpg_strerror (err));
+              goto leave;
+            }
+        }
+
+
+      /* Figure out the signing algorithm.  If no sigkey has been
+         given we set it to the public key to create a self-signed
+         certificate. */
+      if (!sigkey)
+        sigkey = public;
+
+      {
+        unsigned char *siginfo;
+
+        err = transform_sigval (sigkey,
+                                gcry_sexp_canon_len (sigkey, 0, NULL, NULL),
+                                mdalgo, &siginfo, NULL);
+        if (!err)
+          {
+            err = ksba_certreq_set_siginfo (cr, siginfo);
+            xfree (siginfo);
+          }
+        if (err)
+          {
+            log_error ("error setting the siginfo: %s\n",
+                       gpg_strerror (err));
+            rc = err;
+            goto leave;
+          }
+      }
+
+      /* Insert the AuthorityKeyId.  */
+      string = get_parameter_value (para, pAUTHKEYID, 0);
+      if (string)
+        {
+          char *hexbuf;
+
+          /* Allocate a buffer for in-place conversion.  We also add 4
+             extra bytes space for the tags and lengths fields.  */
+          hexbuf = xtrymalloc (4 + strlen (string) + 1);
+          if (!hexbuf)
+            {
+              err = gpg_error_from_syserror ();
+              goto leave;
+            }
+          strcpy (hexbuf+4, string);
+          for (p=hexbuf+4, len=0; p[0] && p[1]; p += 2)
+            ((unsigned char*)hexbuf)[4+len++] = xtoi_2 (p);
+          if (len > 125)
+            {
+              err = gpg_error (GPG_ERR_TOO_LARGE);
+              xfree (hexbuf);
+              goto leave;
+            }
+          hexbuf[0] = 0x30;  /* Tag for a Sequence.  */
+          hexbuf[1] = len+2;
+          hexbuf[2] = 0x80;  /* Context tag for an implicit Octet string.  */
+          hexbuf[3] = len;
+          err = ksba_certreq_add_extension (cr, oidstr_authorityKeyIdentifier,
+                                            0,
+                                            hexbuf, 4+len);
+          xfree (hexbuf);
+          if (err)
+            {
+              log_error ("error setting the authority-key-id: %s\n",
+                         gpg_strerror (err));
+              goto leave;
+            }
+        }
+
+      /* Insert the SubjectKeyId.  */
+      string = get_parameter_value (para, pSUBJKEYID, 0);
+      if (string)
+        {
+          char *hexbuf;
+
+          /* Allocate a buffer for in-place conversion.  We also add 2
+             extra bytes space for the tag and length field.  */
+          hexbuf = xtrymalloc (2 + strlen (string) + 1);
+          if (!hexbuf)
+            {
+              err = gpg_error_from_syserror ();
+              goto leave;
+            }
+          strcpy (hexbuf+2, string);
+          for (p=hexbuf+2, len=0; p[0] && p[1]; p += 2)
+            ((unsigned char*)hexbuf)[2+len++] = xtoi_2 (p);
+          if (len > 127)
+            {
+              err = gpg_error (GPG_ERR_TOO_LARGE);
+              xfree (hexbuf);
+              goto leave;
+            }
+          hexbuf[0] = 0x04;  /* Tag for an Octet string.  */
+          hexbuf[1] = len;
+          err = ksba_certreq_add_extension (cr, oidstr_subjectKeyIdentifier, 0,
+                                            hexbuf, 2+len);
+          xfree (hexbuf);
+          if (err)
+            {
+              log_error ("error setting the subject-key-id: %s\n",
+                         gpg_strerror (err));
+              goto leave;
+            }
+        }
+
+      /* Insert additional extensions.  */
+      for (seq=0; (string = get_parameter_value (para, pEXTENSION, seq)); seq++)
+        {
+          char *hexbuf;
+          char *oidstr;
+          int crit = 0;
+
+          s = strpbrk (string, " \t:");
+          if (!s)
+            {
+              err = gpg_error (GPG_ERR_INTERNAL);
+              goto leave;
+            }
+
+          oidstr = xtrymalloc (s - string + 1);
+          if (!oidstr)
+            {
+              err = gpg_error_from_syserror ();
+              goto leave;
+            }
+          memcpy (oidstr, string, (s-string));
+          oidstr[(s-string)] = 0;
+
+          s++;
+          while (spacep (s))
+            s++;
+          if (!*s)
+            {
+              err = gpg_error (GPG_ERR_INTERNAL);
+              xfree (oidstr);
+              goto leave;
+            }
+
+          if (strchr ("cC", *s))
+            crit = 1;
+          s++;
+          while (spacep (s))
+            s++;
+          if (*s == ':')
+            s++;
+          while (spacep (s))
+            s++;
+
+          hexbuf = xtrystrdup (s);
+          if (!hexbuf)
+            {
+              err = gpg_error_from_syserror ();
+              xfree (oidstr);
+              goto leave;
+            }
+          for (p=hexbuf, len=0; p[0] && p[1]; p += 2)
+            ((unsigned char*)hexbuf)[len++] = xtoi_2 (p);
+          err = ksba_certreq_add_extension (cr, oidstr, crit,
+                                            hexbuf, len);
+          xfree (oidstr);
+          xfree (hexbuf);
+        }
     }
   else
-    err = 0; /* Both or none given: don't request one. */
-  if (err)
-    {
-      log_error ("error setting the key usage: %s\n",
-                 gpg_strerror (err));
-      rc = err;
-      goto leave;
-    }
-
+    sigkey = public;
 
   do
     {
@@ -769,17 +1279,17 @@ create_request (ctrl_t ctrl,
           size_t n;
           unsigned char grip[20];
           char hexgrip[41];
-          unsigned char *sigval;
+          unsigned char *sigval, *newsigval;
           size_t siglen;
 
-          n = gcry_sexp_canon_len (public, 0, NULL, NULL);
+          n = gcry_sexp_canon_len (sigkey, 0, NULL, NULL);
           if (!n)
             {
               log_error ("libksba did not return a proper S-Exp\n");
               rc = gpg_error (GPG_ERR_BUG);
               goto leave;
             }
-          rc = gcry_sexp_sscan (&s_pkey, NULL, (const char*)public, n);
+          rc = gcry_sexp_sscan (&s_pkey, NULL, (const char*)sigkey, n);
           if (rc)
             {
               log_error ("gcry_sexp_scan failed: %s\n", gpg_strerror (rc));
@@ -795,13 +1305,14 @@ create_request (ctrl_t ctrl,
           gcry_sexp_release (s_pkey);
           bin2hex (grip, 20, hexgrip);
 
-          log_info ("about to sign CSR for key: &%s\n", hexgrip);
+          log_info ("about to sign the %s for key: &%s\n",
+                    certmode? "certificate":"CSR", hexgrip);
 
           if (carddirect)
             rc = gpgsm_scd_pksign (ctrl, carddirect, NULL,
-                                   gcry_md_read (md, hashalgo),
-                                   gcry_md_get_algo_dlen (hashalgo),
-                                   hashalgo,
+                                   gcry_md_read (md, mdalgo),
+                                   gcry_md_get_algo_dlen (mdalgo),
+                                   mdalgo,
                                    &sigval, &siglen);
           else
             {
@@ -815,9 +1326,9 @@ create_request (ctrl_t ctrl,
                    " more.\n"));
               i18n_switchback (orig_codeset);
               rc = gpgsm_agent_pksign (ctrl, hexgrip, desc,
-                                       gcry_md_read(md, hashalgo),
-                                       gcry_md_get_algo_dlen (hashalgo),
-                                       hashalgo,
+                                       gcry_md_read(md, mdalgo),
+                                       gcry_md_get_algo_dlen (mdalgo),
+                                       mdalgo,
                                        &sigval, &siglen);
               xfree (desc);
             }
@@ -827,8 +1338,14 @@ create_request (ctrl_t ctrl,
               goto leave;
             }
 
-          err = ksba_certreq_set_sig_val (cr, sigval);
+          err = transform_sigval (sigval, siglen, mdalgo,
+                                  &newsigval, NULL);
           xfree (sigval);
+          if (!err)
+            {
+              err = ksba_certreq_set_sig_val (cr, newsigval);
+              xfree (newsigval);
+            }
           if (err)
             {
               log_error ("failed to store the sig_val: %s\n",
@@ -852,21 +1369,11 @@ create_request (ctrl_t ctrl,
 /* Create a new key by reading the parameters from IN_FP.  Multiple
    keys may be created */
 int
-gpgsm_genkey (ctrl_t ctrl, estream_t in_stream, FILE *out_fp)
+gpgsm_genkey (ctrl_t ctrl, estream_t in_stream, estream_t out_stream)
 {
   int rc;
-  Base64Context b64writer = NULL;
-  ksba_writer_t writer;
 
-  ctrl->pem_name = "CERTIFICATE REQUEST";
-  rc = gpgsm_create_writer (&b64writer, ctrl, out_fp, NULL, &writer);
-  if (rc)
-    {
-      log_error ("can't create writer: %s\n", gpg_strerror (rc));
-      goto leave;
-    }
-
-  rc = read_parameters (ctrl, in_stream, writer);
+  rc = read_parameters (ctrl, in_stream, out_stream);
   if (rc)
     {
       log_error ("error creating certificate request: %s <%s>\n",
@@ -874,18 +1381,6 @@ gpgsm_genkey (ctrl_t ctrl, estream_t in_stream, FILE *out_fp)
       goto leave;
     }
 
-  rc = gpgsm_finish_writer (b64writer);
-  if (rc)
-    {
-      log_error ("write failed: %s\n", gpg_strerror (rc));
-      goto leave;
-    }
-
-  gpgsm_status (ctrl, STATUS_KEY_CREATED, "P");
-  log_info ("certificate request created\n");
-
  leave:
-  gpgsm_destroy_writer (b64writer);
   return rc;
 }
-

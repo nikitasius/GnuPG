@@ -149,7 +149,7 @@ test_close_all_fds (void)
             print_open_fds (array);
           free (array);
         }
-      
+
       /* Check whether the except list works.  */
       close_all_fds (3, except);
       array = xget_all_open_fds ();
@@ -180,9 +180,8 @@ main (int argc, char **argv)
       verbose = 1;
       argc--; argv++;
     }
-  
+
   test_close_all_fds ();
 
   return 0;
 }
-

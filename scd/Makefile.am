@@ -17,15 +17,11 @@
 
 ## Process this file with automake to produce Makefile.in
 
-if HAVE_W32_SYSTEM
-libexec_PROGRAMS = scdaemon
-else
-libexec_PROGRAMS = scdaemon gnupg-pcsc-wrapper
-endif
-
 EXTRA_DIST = ChangeLog-2011 scdaemon-w32info.rc
 
-AM_CPPFLAGS = -I$(top_srcdir)/gl -I$(top_srcdir)/intl -I$(top_srcdir)/common
+libexec_PROGRAMS = scdaemon
+
+AM_CPPFLAGS = -I$(top_srcdir)/common
 
 include $(top_srcdir)/am/cmacros.am
 
@@ -33,44 +29,23 @@ if HAVE_W32_SYSTEM
 resource_objs += scdaemon-w32info.o
 endif
 
-AM_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS) \
-	    $(KSBA_CFLAGS) $(LIBASSUAN_CFLAGS) $(PTH_CFLAGS)
+AM_CFLAGS =  $(LIBGCRYPT_CFLAGS) \
+	     $(KSBA_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS)
 
 
-card_apps = app-openpgp.c app-nks.c app-dinsig.c app-p15.c app-geldkarte.c
+card_apps = app-openpgp.c app-nks.c app-dinsig.c app-p15.c app-geldkarte.c app-sc-hsm.c
 
 scdaemon_SOURCES = \
 	scdaemon.c scdaemon.h \
 	command.c \
+	atr.c atr.h \
 	apdu.c apdu.h \
 	ccid-driver.c ccid-driver.h \
 	iso7816.c iso7816.h \
 	app.c app-common.h app-help.c $(card_apps)
 
 
-scdaemon_LDADD = $(libcommonpth) ../jnlib/libjnlib.a ../gl/libgnu.a \
-	$(LIBGCRYPT_LIBS) $(KSBA_LIBS) $(LIBASSUAN_LIBS) $(PTH_LIBS) \
+scdaemon_LDADD = $(libcommonpth) \
+	$(LIBGCRYPT_LIBS) $(KSBA_LIBS) $(LIBASSUAN_LIBS) $(NPTH_LIBS) \
 	$(LIBUSB_LIBS) $(GPG_ERROR_LIBS) \
         $(LIBINTL) $(DL_LIBS) $(NETLIBS) $(LIBICONV) $(resource_objs)
-
-# Removed for now: We need to decide whether it makes sense to
-# continue it at all, given that gpg has now all required
-# functionality.
-#sc_copykeys_SOURCES = \
-#	sc-copykeys.c scdaemon.h \
-#	apdu.c apdu.h \
-#	ccid-driver.c ccid-driver.h \
-#	iso7816.c iso7816.h \
-#	atr.c atr.h \
-#	app.c app-common.h app-help.c $(card_apps)
-#
-#sc_copykeys_LDADD = \
-#	../jnlib/libjnlib.a ../common/libcommon.a \
-#	../common/libsimple-pwquery.a \
-#	$(LIBGCRYPT_LIBS) $(KSBA_LIBS) $(LIBASSUAN_LIBS) $(PTH_LIBS) \
-#	 $(LIBUSB_LIBS) \
-#        -lgpg-error @LIBINTL@ @DL_LIBS@
-#
-gnupg_pcsc_wrapper_SOURCES = pcsc-wrapper.c
-gnupg_pcsc_wrapper_LDADD = $(DL_LIBS)
-gnupg_pcsc_wrapper_CFLAGS =

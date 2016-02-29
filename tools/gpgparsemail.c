@@ -18,7 +18,7 @@
  */
 
 
-/* This utility prints an RFC8222, possible MIME structured, message
+/* This utility prints an RFC822, possible MIME structured, message
    in an annotated format with the first column having an indicator
    for the content of the line.  Several options are available to
    scrutinize the message.  S/MIME and OpenPGP support is included. */
@@ -64,12 +64,12 @@ struct parse_info_s {
 
   int is_pkcs7;                /* Old style S/MIME message. */
 
-  int moss_state;              /* State of PGP/MIME or S/MIME parsing.  */
+  int smfm_state;              /* State of PGP/MIME or S/MIME parsing.  */
   int is_smime;                /* This is S/MIME and not PGP/MIME. */
 
   char *signing_protocol;
   int hashing_level;           /* The nesting level we are hashing. */
-  int hashing;                 
+  int hashing;
   FILE *hash_file;
 
   FILE *sig_file;              /* Signature part with MIME or full
@@ -156,7 +156,7 @@ stpcpy (char *a,const char *b)
   while (*b)
     *a++ = *b++;
   *a = 0;
-  
+
   return (char*)a;
 }
 #endif
@@ -189,7 +189,7 @@ run_gnupg (int smime, int sig_fd, int data_fd, int *close_list)
           if (dup2 (sig_fd, 0) == -1)
             die ("dup2 stdin failed: %s", strerror (errno));
         }
-      
+
       /* Keep our data fd and format it for gpg/gpgsm use. */
       if (data_fd == -1)
         *data_fd_buf = 0;
@@ -199,13 +199,13 @@ run_gnupg (int smime, int sig_fd, int data_fd, int *close_list)
       /* Send stdout to the bit bucket. */
       fd = open ("/dev/null", O_WRONLY);
       if (fd == -1)
-        die ("can't open `/dev/null': %s", strerror (errno));
+        die ("can't open '/dev/null': %s", strerror (errno));
       if (fd != 1)
 	{
           if (dup2 (fd, 1) == -1)
             die ("dup2 stderr failed: %s", strerror (errno));
         }
-      
+
       /* Connect stderr to our pipe. */
       if (rp[1] != 2)
 	{
@@ -237,11 +237,11 @@ run_gnupg (int smime, int sig_fd, int data_fd, int *close_list)
                 "--",
                 "-", data_fd == -1? NULL : data_fd_buf,
                 NULL);
-      
+
       die ("failed to exec the crypto command: %s", strerror (errno));
     }
 
-  /* Parent. */ 
+  /* Parent. */
   close (rp[1]);
 
   fp = fdopen (rp[0], "r");
@@ -255,7 +255,7 @@ run_gnupg (int smime, int sig_fd, int data_fd, int *close_list)
     {
       if (pos < 9)
         status_buf[pos] = c;
-      else 
+      else
         {
           if (pos == 9)
             {
@@ -342,7 +342,7 @@ verify_signature (struct parse_info_s *info)
 
 
 
-/* Prepare for a multipart/signed. 
+/* Prepare for a multipart/signed.
    FIELD_CTX is the parsed context of the content-type header.*/
 static void
 mime_signed_begin (struct parse_info_s *info, rfc822parse_t msg,
@@ -358,11 +358,11 @@ mime_signed_begin (struct parse_info_s *info, rfc822parse_t msg,
       printf ("h signed.protocol: %s\n", s);
       if (!strcmp (s, "application/pgp-signature"))
         {
-          if (info->moss_state)
+          if (info->smfm_state)
             err ("note: ignoring nested PGP/MIME or S/MIME signature");
           else
             {
-              info->moss_state = 1;
+              info->smfm_state = 1;
               info->is_smime = 0;
               free (info->signing_protocol);
               info->signing_protocol = xstrdup (s);
@@ -371,11 +371,11 @@ mime_signed_begin (struct parse_info_s *info, rfc822parse_t msg,
       else if (!strcmp (s, "application/pkcs7-signature")
                || !strcmp (s, "application/x-pkcs7-signature"))
         {
-          if (info->moss_state)
+          if (info->smfm_state)
             err ("note: ignoring nested PGP/MIME or S/MIME signature");
           else
             {
-              info->moss_state = 1;
+              info->smfm_state = 1;
               info->is_smime = 1;
               free (info->signing_protocol);
               info->signing_protocol = xstrdup (s);
@@ -387,7 +387,7 @@ mime_signed_begin (struct parse_info_s *info, rfc822parse_t msg,
 }
 
 
-/* Prepare for a multipart/encrypted. 
+/* Prepare for a multipart/encrypted.
    FIELD_CTX is the parsed context of the content-type header.*/
 static void
 mime_encrypted_begin (struct parse_info_s *info, rfc822parse_t msg,
@@ -410,7 +410,7 @@ pkcs7_begin (struct parse_info_s *info, rfc822parse_t msg,
              rfc822parse_field_t field_ctx)
 {
   const char *s;
-  
+
   (void)msg;
 
   s = rfc822parse_query_parameter (field_ctx, "name", 0);
@@ -475,12 +475,12 @@ message_cb (void *opaque, rfc822parse_event_t event, rfc822parse_t msg)
       /* We need to check here whether to start collecting signed data
          because attachments might come without header lines and thus
          we won't see the BEGIN_HEADER event.  */
-      if (info->moss_state == 1)
+      if (info->smfm_state == 1)
         {
           printf ("c begin_hash\n");
           info->hashing = 1;
           info->hashing_level = info->nesting_level;
-          info->moss_state++;
+          info->smfm_state++;
 
           if (opt_crypto)
             {
@@ -509,21 +509,21 @@ message_cb (void *opaque, rfc822parse_event_t event, rfc822parse_t msg)
           s1 = rfc822parse_query_media_type (ctx, &s2);
           if (s1)
             {
-              printf ("h media: %*s%s %s\n", 
+              printf ("h media: %*s%s %s\n",
                       info->nesting_level*2, "", s1, s2);
-              if (info->moss_state == 3)
+              if (info->smfm_state == 3)
                 {
                   char *buf = xmalloc (strlen (s1) + strlen (s2) + 2);
                   strcpy (stpcpy (stpcpy (buf, s1), "/"), s2);
                   assert (info->signing_protocol);
                   if (strcmp (buf, info->signing_protocol))
-                    err ("invalid %s structure; expected `%s', found `%s'",
+                    err ("invalid %s structure; expected '%s', found '%s'",
                          info->is_smime? "S/MIME":"PGP/MIME",
                          info->signing_protocol, buf);
                   else
                     {
                       printf ("c begin_signature\n");
-                      info->moss_state++;
+                      info->smfm_state++;
                       if (opt_crypto)
                         {
                           assert (!info->sig_file);
@@ -549,7 +549,7 @@ message_cb (void *opaque, rfc822parse_event_t event, rfc822parse_t msg)
             }
           else
             printf ("h media: %*s none\n", info->nesting_level*2, "");
-              
+
           rfc822parse_release_field (ctx);
         }
       else
@@ -573,7 +573,7 @@ message_cb (void *opaque, rfc822parse_event_t event, rfc822parse_t msg)
       printf ("b up\n");
       if (info->nesting_level)
         info->nesting_level--;
-      else 
+      else
         err ("invalid structure (bad nesting level)");
     }
   else if (event == RFC822PARSE_BOUNDARY || event == RFC822PARSE_LAST_BOUNDARY)
@@ -586,16 +586,16 @@ message_cb (void *opaque, rfc822parse_event_t event, rfc822parse_t msg)
           info->skip_show = 1;
           printf ("b part\n");
         }
-      else 
+      else
         printf ("b last\n");
 
-      if (info->moss_state == 2 && info->nesting_level == info->hashing_level)
+      if (info->smfm_state == 2 && info->nesting_level == info->hashing_level)
         {
           printf ("c end_hash\n");
-          info->moss_state++;
+          info->smfm_state++;
           info->hashing = 0;
         }
-      else if (info->moss_state == 4)
+      else if (info->smfm_state == 4)
         {
           printf ("c end_signature\n");
           info->verify_now = 1;
@@ -624,7 +624,7 @@ parse_message (FILE *fp)
   if (!msg)
     die ("can't open parser: %s", strerror (errno));
 
-  /* Fixme: We should not use fgets becuase it can't cope with
+  /* Fixme: We should not use fgets because it can't cope with
      embedded nul characters. */
   while (fgets (line, sizeof (line), fp))
     {
@@ -648,13 +648,13 @@ parse_message (FILE *fp)
 
       if (rfc822parse_insert (msg, line, length))
 	die ("parser failed: %s", strerror (errno));
-      
+
       if (info.hashing)
         {
           /* Delay hashing of the CR/LF because the last line ending
              belongs to the next boundary. */
           if (debug)
-            printf ("# hashing %s`%s'\n", info.hashing==2?"CR,LF+":"", line);
+            printf ("# hashing %s'%s'\n", info.hashing==2?"CR,LF+":"", line);
           if (opt_crypto)
             {
               if (info.hashing == 2)
@@ -677,7 +677,7 @@ parse_message (FILE *fp)
               info.hash_file = NULL;
               fclose (info.sig_file);
               info.sig_file = NULL;
-              info.moss_state = 0;
+              info.smfm_state = 0;
               info.is_smime = 0;
               info.is_pkcs7 = 0;
             }
@@ -689,7 +689,7 @@ parse_message (FILE *fp)
                 die ("error writing to temporary file: %s", strerror (errno));
             }
         }
-      
+
       if (info.show_boundary)
         {
           if (!opt_no_header)
@@ -727,11 +727,11 @@ parse_message (FILE *fp)
 }
 
 
-int 
+int
 main (int argc, char **argv)
 {
   int last_argc = -1;
- 
+
   if (argc)
     {
       argc--; argv++;
@@ -780,8 +780,8 @@ main (int argc, char **argv)
           opt_no_header = 1;
           argc--; argv++;
         }
-    }          
- 
+    }
+
   if (argc > 1)
     die ("usage: " PGM " [OPTION] [FILE] (try --help for more information)\n");
 
@@ -791,7 +791,7 @@ main (int argc, char **argv)
     {
       FILE *fp = fopen (*argv, "rb");
       if (!fp)
-        die ("can't open `%s': %s", *argv, strerror (errno));
+        die ("can't open '%s': %s", *argv, strerror (errno));
       parse_message (fp);
       fclose (fp);
     }

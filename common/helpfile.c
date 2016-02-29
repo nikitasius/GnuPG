@@ -3,12 +3,22 @@
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -44,7 +54,7 @@ findkey_fname (const char *key, const char *fname)
       if (errno != ENOENT)
         {
           err = gpg_error_from_syserror ();
-          log_error (_("can't open `%s': %s\n"), fname, gpg_strerror (err));
+          log_error (_("can't open '%s': %s\n"), fname, gpg_strerror (err));
         }
       return NULL;
     }
@@ -52,7 +62,7 @@ findkey_fname (const char *key, const char *fname)
   while (fgets (line, DIM(line)-1, fp))
     {
       lnr++;
-      
+
       if (!*line || line[strlen(line)-1] != '\n')
         {
           /* Eat until end of line. */
@@ -60,12 +70,12 @@ findkey_fname (const char *key, const char *fname)
             ;
           err = gpg_error (*line? GPG_ERR_LINE_TOO_LONG
                            : GPG_ERR_INCOMPLETE_LINE);
-          log_error (_("file `%s', line %d: %s\n"),
+          log_error (_("file '%s', line %d: %s\n"),
                      fname, lnr, gpg_strerror (err));
         }
       else
         line[strlen(line)-1] = 0; /* Chop the LF. */
-      
+
     again:
       if (!in_item)
         {
@@ -76,7 +86,7 @@ findkey_fname (const char *key, const char *fname)
             continue;
           if (*line != '.' || spacep(line+1))
             {
-              log_info (_("file `%s', line %d: %s\n"),
+              log_info (_("file '%s', line %d: %s\n"),
                         fname, lnr, _("ignoring garbage line"));
               continue;
             }
@@ -96,7 +106,7 @@ findkey_fname (const char *key, const char *fname)
       if (*line == '#')
         continue;
       if (*line == '.')
-        { 
+        {
           if (spacep(line+1))
             p = line + 2;
           else
@@ -123,10 +133,10 @@ findkey_fname (const char *key, const char *fname)
   if ( !err && ferror (fp) )
     {
       err = gpg_error_from_syserror ();
-      log_error (_("error reading `%s', line %d: %s\n"),
+      log_error (_("error reading '%s', line %d: %s\n"),
                  fname, lnr, gpg_strerror (err));
     }
-  
+
   fclose (fp);
   if (is_membuf_ready (&mb))
     {
@@ -182,7 +192,7 @@ findkey_locale (const char *key, const char *locname,
       else
         result = NULL;
     }
-  
+
   if (!result && (!only_current_locale || !*locname) )
     {
       /* Last try: Search in file without any locale info.  ("help.txt") */
@@ -204,18 +214,18 @@ findkey_locale (const char *key, const char *locname,
      /etc/gnupg/help.txt
      /usr/share/gnupg/help.LL.txt
      /usr/share/gnupg/help.txt
-     
+
    Here LL denotes the two digit language code of the current locale.
-   If ONLY_CURRENT_LOCALE is set, the fucntion won;t fallback to the
+   If ONLY_CURRENT_LOCALE is set, the function won't fallback to the
    english valiant ("help.txt") unless that locale has been requested.
-   
+
    The help file needs to be encoded in UTF-8, lines with a '#' in the
    first column are comment lines and entirely ignored.  Help keys are
    identified by a key consisting of a single word with a single dot
    as the first character.  All key lines listed without any
    intervening lines (except for comment lines) lead to the same help
    text.  Lines following the key lines make up the actual hep texts.
-   
+
 */
 
 char *
@@ -249,7 +259,7 @@ gnupg_get_help_string (const char *key, int only_current_locale)
   if (!key || !*key)
     return NULL;
 
-  result = findkey_locale (key, locname, only_current_locale, 
+  result = findkey_locale (key, locname, only_current_locale,
                            gnupg_sysconfdir ());
   if (!result)
     result = findkey_locale (key, locname, only_current_locale,

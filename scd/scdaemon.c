@@ -1,6 +1,6 @@
 /* scdaemon.c  -  The GnuPG Smartcard Daemon
- * Copyright (C) 2001, 2002, 2004, 2005,
- *               2007, 2008, 2009 Free Software Foundation, Inc.
+ * Copyright (C) 2001-2002, 2004-2005, 2007-2009 Free Software Foundation, Inc.
+ * Copyright (C) 2001-2002, 2004-2005, 2007-2014 Werner Koch
  *
  * This file is part of GnuPG.
  *
@@ -35,10 +35,9 @@
 #endif /*HAVE_W32_SYSTEM*/
 #include <unistd.h>
 #include <signal.h>
-#include <pth.h>
+#include <npth.h>
 
-#define JNLIB_NEED_LOG_LOGV
-#define JNLIB_NEED_AFLOCAL
+#define GNUPG_COMMON_NEED_AFLOCAL
 #include "scdaemon.h"
 #include <ksba.h>
 #include <gcrypt.h>
@@ -51,8 +50,13 @@
 #include "iso7816.h"
 #include "apdu.h"
 #include "ccid-driver.h"
-#include "mkdtemp.h"
 #include "gc-opt-flags.h"
+#include "asshelp.h"
+#include "../common/init.h"
+
+#ifndef ENAMETOOLONG
+# define ENAMETOOLONG EINVAL
+#endif
 
 enum cmd_and_opt_values
 { aNull = 0,
@@ -72,6 +76,7 @@ enum cmd_and_opt_values
   oDebugAllowCoreDump,
   oDebugCCIDDriver,
   oDebugLogTid,
+  oDebugAssuanLogCats,
   oNoGreeting,
   oNoOptions,
   oHomedir,
@@ -113,7 +118,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oSh,	"sh", N_("sh-style command output")),
   ARGPARSE_s_n (oCsh,	"csh", N_("csh-style command output")),
   ARGPARSE_s_s (oOptions, "options", N_("|FILE|read options from FILE")),
-  ARGPARSE_p_u (oDebug,	"debug", "@"),
+  ARGPARSE_s_s (oDebug,	"debug", "@"),
   ARGPARSE_s_n (oDebugAll, "debug-all", "@"),
   ARGPARSE_s_s (oDebugLevel, "debug-level" ,
                 N_("|LEVEL|set the debugging level to LEVEL")),
@@ -122,6 +127,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oDebugCCIDDriver, "debug-ccid-driver", "@"),
   ARGPARSE_s_n (oDebugDisableTicker, "debug-disable-ticker", "@"),
   ARGPARSE_s_n (oDebugLogTid, "debug-log-tid", "@"),
+  ARGPARSE_p_u (oDebugAssuanLogCats, "debug-assuan-log-cats", "@"),
   ARGPARSE_s_n (oNoDetach, "no-detach", N_("do not detach from the console")),
   ARGPARSE_s_s (oLogFile,  "log-file", N_("|FILE|write a log to FILE")),
   ARGPARSE_s_s (oReaderPort, "reader-port",
@@ -155,6 +161,23 @@ static ARGPARSE_OPTS opts[] = {
 };
 
 
+/* The list of supported debug flags.  */
+static struct debug_flags_s debug_flags [] =
+  {
+    { DBG_COMMAND_VALUE, "command"  },
+    { DBG_MPI_VALUE    , "mpi"     },
+    { DBG_CRYPTO_VALUE , "crypto"  },
+    { DBG_MEMORY_VALUE , "memory"  },
+    { DBG_CACHE_VALUE  , "cache"   },
+    { DBG_MEMSTAT_VALUE, "memstat" },
+    { DBG_HASHING_VALUE, "hashing" },
+    { DBG_IPC_VALUE    , "ipc"     },
+    { DBG_CARD_IO_VALUE, "cardio"  },
+    { DBG_READER_VALUE , "reader"  },
+    { 0, NULL }
+  };
+
+
 /* The card driver we use by default for PC/SC.  */
 #if defined(HAVE_W32_SYSTEM) || defined(__CYGWIN__)
 #define DEFAULT_PCSC_DRIVER "winscard.dll"
@@ -173,7 +196,7 @@ static ARGPARSE_OPTS opts[] = {
    easy way to block on card status changes it is the best we can do.
    For PC/SC we could in theory use an extra thread to wait for status
    changes but that requires a native thread because there is no way
-   to make the underlying PC/SC card change function block using a Pth
+   to make the underlying PC/SC card change function block using a Npth
    mechanism.  Given that a native thread could only be used under W32
    we don't do that at all.  */
 #define TIMERTICK_INTERVAL_SEC     (0)
@@ -190,6 +213,8 @@ static int pipe_server;
 
 /* Name of the communication socket */
 static char *socket_name;
+/* Name of the redirected socket or NULL.  */
+static char *redir_socket_name;
 
 /* We need to keep track of the server's nonces (these are dummies for
    POSIX systems). */
@@ -201,26 +226,18 @@ static int ticker_disabled;
 
 
 
-static char *create_socket_name (int use_standard_socket,
-                                 char *standard_name, char *template);
-static gnupg_fd_t create_server_socket (int is_standard_name, const char *name,
+static char *create_socket_name (char *standard_name);
+static gnupg_fd_t create_server_socket (const char *name,
+                                        char **r_redir_name,
                                         assuan_sock_nonce_t *nonce);
 
 static void *start_connection_thread (void *arg);
 static void handle_connections (int listen_fd);
 
 /* Pth wrapper function definitions. */
-ASSUAN_SYSTEM_PTH_IMPL;
+ASSUAN_SYSTEM_NPTH_IMPL;
 
-#if GCRYPT_VERSION_NUMBER < 0x010600
-GCRY_THREAD_OPTION_PTH_IMPL;
-#if GCRY_THREAD_OPTION_VERSION < 1
-static int fixed_gcry_pth_init (void)
-{
-  return pth_self ()? 0 : (pth_init () == FALSE) ? errno : 0;
-}
-#endif
-#endif /*GCRYPT_VERSION_NUMBER < 0x010600*/
+static int active_connections;
 
 
 static char *
@@ -249,7 +266,7 @@ my_strusage (int level)
 
   switch (level)
     {
-    case 11: p = "scdaemon (GnuPG)";
+    case 11: p = "@SCDAEMON@ (@GNUPG@)";
       break;
     case 13: p = VERSION; break;
     case 17: p = PRINTABLE_OS_NAME; break;
@@ -266,10 +283,10 @@ my_strusage (int level)
       p = ver_ksba;
       break;
     case 1:
-    case 40: p =  _("Usage: scdaemon [options] (-h for help)");
+    case 40: p =  _("Usage: @SCDAEMON@ [options] (-h for help)");
       break;
     case 41: p =  _("Syntax: scdaemon [options] [command [args]]\n"
-                    "Smartcard daemon for GnuPG\n");
+                    "Smartcard daemon for @GNUPG@\n");
     break;
 
     default: p = NULL;
@@ -278,18 +295,19 @@ my_strusage (int level)
 }
 
 
-static unsigned long
-tid_log_callback (void)
+static int
+tid_log_callback (unsigned long *rvalue)
 {
-#ifdef PTH_HAVE_PTH_THREAD_ID
-  return pth_thread_id ();
-#else
-  return (unsigned long)pth_self ();
-#endif
+  int len = sizeof (*rvalue);
+  npth_t thread;
+
+  thread = npth_self ();
+  if (sizeof (thread) < len)
+    len = sizeof (thread);
+  memcpy (rvalue, &thread, len);
+
+  return 2; /* Use use hex representation.  */
 }
-
-
-
 
 
 /* Setup the debugging.  With a LEVEL of NULL only the active debug
@@ -307,11 +325,11 @@ set_debug (const char *level)
   else if (!strcmp (level, "none") || (numok && numlvl < 1))
     opt.debug = 0;
   else if (!strcmp (level, "basic") || (numok && numlvl <= 2))
-    opt.debug = DBG_ASSUAN_VALUE;
+    opt.debug = DBG_IPC_VALUE;
   else if (!strcmp (level, "advanced") || (numok && numlvl <= 5))
-    opt.debug = DBG_ASSUAN_VALUE|DBG_COMMAND_VALUE;
+    opt.debug = DBG_IPC_VALUE|DBG_COMMAND_VALUE;
   else if (!strcmp (level, "expert") || (numok && numlvl <= 8))
-    opt.debug = (DBG_ASSUAN_VALUE|DBG_COMMAND_VALUE
+    opt.debug = (DBG_IPC_VALUE|DBG_COMMAND_VALUE
                  |DBG_CACHE_VALUE|DBG_CARD_IO_VALUE);
   else if (!strcmp (level, "guru") || numok)
     {
@@ -325,7 +343,7 @@ set_debug (const char *level)
     }
   else
     {
-      log_error (_("invalid debug-level `%s' given\n"), level);
+      log_error (_("invalid debug-level '%s' given\n"), level);
       scd_exit(2);
     }
 
@@ -342,16 +360,7 @@ set_debug (const char *level)
   gcry_control (GCRYCTL_SET_VERBOSITY, (int)opt.verbose);
 
   if (opt.debug)
-    log_info ("enabled debug flags:%s%s%s%s%s%s%s%s%s\n",
-              (opt.debug & DBG_COMMAND_VALUE)? " command":"",
-              (opt.debug & DBG_MPI_VALUE    )? " mpi":"",
-              (opt.debug & DBG_CRYPTO_VALUE )? " crypto":"",
-              (opt.debug & DBG_MEMORY_VALUE )? " memory":"",
-              (opt.debug & DBG_CACHE_VALUE  )? " cache":"",
-              (opt.debug & DBG_MEMSTAT_VALUE)? " memstat":"",
-              (opt.debug & DBG_HASHING_VALUE)? " hashing":"",
-              (opt.debug & DBG_ASSUAN_VALUE )? " assuan":"",
-              (opt.debug & DBG_CARD_IO_VALUE)? " cardio":"");
+    parse_debug_flag (NULL, &opt.debug, debug_flags);
 }
 
 
@@ -361,14 +370,17 @@ cleanup (void)
 {
   if (socket_name && *socket_name)
     {
+      char *name;
       char *p;
 
-      remove (socket_name);
-      p = strrchr (socket_name, '/');
+      name = redir_socket_name? redir_socket_name : socket_name;
+
+      gnupg_remove (name);
+      p = strrchr (name, '/');
       if (p)
         {
           *p = 0;
-          rmdir (socket_name);
+          rmdir (name);
           *p = '/';
         }
       *socket_name = 0;
@@ -401,9 +413,11 @@ main (int argc, char **argv )
   int gpgconf_list = 0;
   const char *config_filename = NULL;
   int allow_coredump = 0;
-  int standard_socket = 0;
   struct assuan_malloc_hooks malloc_hooks;
+  int res;
+  npth_t pipecon_handler;
 
+  early_system_init ();
   set_strusage (my_strusage);
   gcry_control (GCRYCTL_SUSPEND_SECMEM_WARN);
   /* Please note that we may running SUID(ROOT), so be very CAREFUL
@@ -413,26 +427,9 @@ main (int argc, char **argv )
 
   /* Make sure that our subsystems are ready.  */
   i18n_init ();
-  init_common_subsystems ();
+  init_common_subsystems (&argc, &argv);
 
-
-#if GCRYPT_VERSION_NUMBER < 0x010600
-  /* Libgcrypt < 1.6 requires us to register the threading model first.
-     Note that this will also do the pth_init. */
-  {
-    gpg_error_t err;
-#if GCRY_THREAD_OPTION_VERSION < 1
-  gcry_threads_pth.init = fixed_gcry_pth_init;
-#endif
-
-  err = gcry_control (GCRYCTL_SET_THREAD_CBS, &gcry_threads_pth);
-  if (err)
-    {
-      log_fatal ("can't register GNU Pth with Libgcrypt: %s\n",
-                 gpg_strerror (err));
-    }
-  }
-#endif /*GCRYPT_VERSION_NUMBER < 0x010600*/
+  npth_init ();
 
   /* Check that the libraries are suitable.  Do it here because
      the option parsing may need services of the library */
@@ -448,10 +445,10 @@ main (int argc, char **argv )
   malloc_hooks.realloc = gcry_realloc;
   malloc_hooks.free = gcry_free;
   assuan_set_malloc_hooks (&malloc_hooks);
-  assuan_set_assuan_log_prefix (log_get_prefix (NULL));
   assuan_set_gpg_err_source (GPG_ERR_SOURCE_DEFAULT);
-  assuan_set_system_hooks (ASSUAN_SYSTEM_PTH);
+  assuan_set_system_hooks (ASSUAN_SYSTEM_NPTH);
   assuan_sock_init ();
+  setup_libassuan_logging (&opt.debug);
 
   setup_libgcrypt_logging ();
   gcry_control (GCRYCTL_USE_SECURE_RNDPOOL);
@@ -461,12 +458,6 @@ main (int argc, char **argv )
   /* Set default options. */
   opt.allow_admin = 1;
   opt.pcsc_driver = DEFAULT_PCSC_DRIVER;
-
-#ifdef HAVE_W32_SYSTEM
-  standard_socket = 1;  /* Under Windows we always use a standard
-                           socket.  */
-#endif
-
 
   shell = getenv ("SHELL");
   if (shell && strlen (shell) >= 3 && !strcmp (shell+strlen (shell)-3, "csh") )
@@ -506,7 +497,8 @@ main (int argc, char **argv )
 
 
   if (default_config)
-    configname = make_filename (opt.homedir, "scdaemon.conf", NULL );
+    configname = make_filename (opt.homedir, SCDAEMON_NAME EXTSEP_S "conf",
+                                NULL );
 
 
   argc = orig_argc;
@@ -524,12 +516,12 @@ main (int argc, char **argv )
           if (default_config)
             {
               if( parse_debug )
-                log_info (_("NOTE: no default option file `%s'\n"),
+                log_info (_("Note: no default option file '%s'\n"),
                           configname );
 	    }
           else
             {
-              log_error (_("option file `%s': %s\n"),
+              log_error (_("option file '%s': %s\n"),
                          configname, strerror(errno) );
               exit(2);
 	    }
@@ -537,7 +529,7 @@ main (int argc, char **argv )
           configname = NULL;
 	}
       if (parse_debug && configname )
-        log_info (_("reading options from `%s'\n"), configname );
+        log_info (_("reading options from '%s'\n"), configname );
       default_config = 0;
     }
 
@@ -551,7 +543,13 @@ main (int argc, char **argv )
         case oVerbose: opt.verbose++; break;
         case oBatch: opt.batch=1; break;
 
-        case oDebug: opt.debug |= pargs.r.ret_ulong; break;
+        case oDebug:
+          if (parse_debug_flag (pargs.r.ret_str, &opt.debug, debug_flags))
+            {
+              pargs.r_opt = ARGPARSE_INVALID_ARG;
+              pargs.err = ARGPARSE_PRINT_ERROR;
+            }
+          break;
         case oDebugAll: opt.debug = ~0; break;
         case oDebugLevel: debug_level = pargs.r.ret_str; break;
         case oDebugWait: debug_wait = pargs.r.ret_int; break;
@@ -566,7 +564,10 @@ main (int argc, char **argv )
           break;
         case oDebugDisableTicker: ticker_disabled = 1; break;
         case oDebugLogTid:
-          log_set_get_tid_callback (tid_log_callback);
+          log_set_pid_suffix_cb (tid_log_callback);
+          break;
+        case oDebugAssuanLogCats:
+          set_libassuan_log_cats (pargs.r.ret_ulong);
           break;
 
         case oOptions:
@@ -633,14 +634,23 @@ main (int argc, char **argv )
 
   if (greeting)
     {
-      fprintf (stderr, "%s %s; %s\n",
-                 strusage(11), strusage(13), strusage(14) );
-      fprintf (stderr, "%s\n", strusage(15) );
+      es_fprintf (es_stderr, "%s %s; %s\n",
+                  strusage(11), strusage(13), strusage(14) );
+      es_fprintf (es_stderr, "%s\n", strusage(15) );
     }
 #ifdef IS_DEVELOPMENT_VERSION
   log_info ("NOTE: this is a development version!\n");
 #endif
 
+  /* Print a warning if an argument looks like an option.  */
+  if (!opt.quiet && !(pargs.flags & ARGPARSE_FLAG_STOP_SEEN))
+    {
+      int i;
+
+      for (i=0; i < argc; i++)
+        if (argv[i][0] == '-' && argv[i][1] == '-')
+          log_info (_("Note: '%s' is not considered an option\n"), argv[i]);
+    }
 
   if (atexit (cleanup))
     {
@@ -664,34 +674,36 @@ main (int argc, char **argv )
       if (config_filename)
 	filename = xstrdup (config_filename);
       else
-        filename = make_filename (opt.homedir, "scdaemon.conf", NULL);
+        filename = make_filename (opt.homedir, SCDAEMON_NAME EXTSEP_S "conf",
+                                  NULL);
       filename_esc = percent_escape (filename, NULL);
 
-      printf ("gpgconf-scdaemon.conf:%lu:\"%s\n",
-              GC_OPT_FLAG_DEFAULT, filename_esc);
+      es_printf ("%s-%s.conf:%lu:\"%s\n",
+                 GPGCONF_NAME, SCDAEMON_NAME,
+                 GC_OPT_FLAG_DEFAULT, filename_esc);
       xfree (filename_esc);
       xfree (filename);
 
-      printf ("verbose:%lu:\n"
-              "quiet:%lu:\n"
-              "debug-level:%lu:\"none:\n"
-              "log-file:%lu:\n",
-              GC_OPT_FLAG_NONE,
-              GC_OPT_FLAG_NONE,
-              GC_OPT_FLAG_DEFAULT,
-              GC_OPT_FLAG_NONE );
+      es_printf ("verbose:%lu:\n"
+                 "quiet:%lu:\n"
+                 "debug-level:%lu:\"none:\n"
+                 "log-file:%lu:\n",
+                 GC_OPT_FLAG_NONE,
+                 GC_OPT_FLAG_NONE,
+                 GC_OPT_FLAG_DEFAULT,
+                 GC_OPT_FLAG_NONE );
 
-      printf ("reader-port:%lu:\n", GC_OPT_FLAG_NONE );
-      printf ("ctapi-driver:%lu:\n", GC_OPT_FLAG_NONE );
-      printf ("pcsc-driver:%lu:\"%s:\n",
+      es_printf ("reader-port:%lu:\n", GC_OPT_FLAG_NONE );
+      es_printf ("ctapi-driver:%lu:\n", GC_OPT_FLAG_NONE );
+      es_printf ("pcsc-driver:%lu:\"%s:\n",
               GC_OPT_FLAG_DEFAULT, DEFAULT_PCSC_DRIVER );
 #ifdef HAVE_LIBUSB
-      printf ("disable-ccid:%lu:\n", GC_OPT_FLAG_NONE );
+      es_printf ("disable-ccid:%lu:\n", GC_OPT_FLAG_NONE );
 #endif
-      printf ("deny-admin:%lu:\n", GC_OPT_FLAG_NONE );
-      printf ("disable-pinpad:%lu:\n", GC_OPT_FLAG_NONE );
-      printf ("card-timeout:%lu:%d:\n", GC_OPT_FLAG_DEFAULT, 0);
-      printf ("enable-pinpad-varlen:%lu:\n", GC_OPT_FLAG_NONE );
+      es_printf ("deny-admin:%lu:\n", GC_OPT_FLAG_NONE );
+      es_printf ("disable-pinpad:%lu:\n", GC_OPT_FLAG_NONE );
+      es_printf ("card-timeout:%lu:%d:\n", GC_OPT_FLAG_DEFAULT, 0);
+      es_printf ("enable-pinpad-varlen:%lu:\n", GC_OPT_FLAG_NONE );
 
       scd_exit (0);
     }
@@ -715,7 +727,7 @@ main (int argc, char **argv )
     {
       /* This is the simple pipe based server */
       ctrl_t ctrl;
-      pth_attr_t tattr;
+      npth_attr_t tattr;
       int fd = -1;
 
 #ifndef HAVE_W32_SYSTEM
@@ -735,9 +747,9 @@ main (int argc, char **argv )
       if (allow_coredump)
         {
           if (chdir("/tmp"))
-            log_debug ("chdir to `/tmp' failed: %s\n", strerror (errno));
+            log_debug ("chdir to '/tmp' failed: %s\n", strerror (errno));
           else
-            log_debug ("changed working directory to `/tmp'\n");
+            log_debug ("changed working directory to '/tmp'\n");
         }
 
       /* In multi server mode we need to listen on an additional
@@ -746,18 +758,19 @@ main (int argc, char **argv )
          back the name of that socket. */
       if (multi_server)
         {
-          socket_name = create_socket_name (standard_socket,
-                                            "S.scdaemon",
-                                            "/tmp/gpg-XXXXXX/S.scdaemon");
-
-          fd = FD2INT(create_server_socket (standard_socket,
-                                            socket_name, &socket_nonce));
+          socket_name = create_socket_name (SCDAEMON_SOCK_NAME);
+          fd = FD2INT(create_server_socket (socket_name,
+                                            &redir_socket_name, &socket_nonce));
         }
 
-      tattr = pth_attr_new();
-      pth_attr_set (tattr, PTH_ATTR_JOINABLE, 0);
-      pth_attr_set (tattr, PTH_ATTR_STACK_SIZE, 512*1024);
-      pth_attr_set (tattr, PTH_ATTR_NAME, "pipe-connection");
+      res = npth_attr_init (&tattr);
+      if (res)
+	{
+          log_error ("error allocating thread attributes: %s\n",
+                     strerror (res));
+          scd_exit (2);
+        }
+      npth_attr_setdetachstate (&tattr, NPTH_CREATE_DETACHED);
 
       ctrl = xtrycalloc (1, sizeof *ctrl);
       if ( !ctrl )
@@ -767,13 +780,16 @@ main (int argc, char **argv )
           scd_exit (2);
         }
       ctrl->thread_startup.fd = GNUPG_INVALID_FD;
-      if ( !pth_spawn (tattr, start_connection_thread, ctrl) )
+      res = npth_create (&pipecon_handler, &tattr, start_connection_thread, ctrl);
+      if (res)
         {
           log_error ("error spawning pipe connection handler: %s\n",
-                     strerror (errno) );
+                     strerror (res) );
           xfree (ctrl);
           scd_exit (2);
         }
+      npth_setname_np (pipecon_handler, "pipe-connection");
+      npth_attr_destroy (&tattr);
 
       /* We run handle_connection to wait for the shutdown signal and
          to run the ticker stuff.  */
@@ -783,7 +799,7 @@ main (int argc, char **argv )
     }
   else if (!is_daemon)
     {
-      log_info (_("please use the option `--daemon'"
+      log_info (_("please use the option '--daemon'"
                   " to run the program in the background\n"));
     }
   else
@@ -795,16 +811,16 @@ main (int argc, char **argv )
 #endif
 
       /* Create the socket.  */
-      socket_name = create_socket_name (standard_socket,
-                                        "S.scdaemon",
-                                        "/tmp/gpg-XXXXXX/S.scdaemon");
-
-      fd = FD2INT (create_server_socket (standard_socket,
-                                         socket_name, &socket_nonce));
+      socket_name = create_socket_name (SCDAEMON_SOCK_NAME);
+      fd = FD2INT (create_server_socket (socket_name,
+                                         &redir_socket_name, &socket_nonce));
 
 
       fflush (NULL);
-#ifndef HAVE_W32_SYSTEM
+#ifdef HAVE_W32_SYSTEM
+      (void)csh_style;
+      (void)nodetach;
+#else
       pid = fork ();
       if (pid == (pid_t)-1)
         {
@@ -818,8 +834,8 @@ main (int argc, char **argv )
           close (fd);
 
           /* create the info string: <name>:<pid>:<protocol_version> */
-          if (estream_asprintf (&infostr, "SCDAEMON_INFO=%s:%lu:1",
-				socket_name, (ulong) pid) < 0)
+          if (gpgrt_asprintf (&infostr, "SCDAEMON_INFO=%s:%lu:1",
+                              socket_name, (ulong) pid) < 0)
             {
               log_error ("out of core\n");
               kill (pid, SIGTERM);
@@ -848,11 +864,11 @@ main (int argc, char **argv )
               if (csh_style)
                 {
                   *strchr (infostr, '=') = ' ';
-                  printf ( "setenv %s;\n", infostr);
+                  es_printf ( "setenv %s;\n", infostr);
                 }
               else
                 {
-                  printf ( "%s; export SCDAEMON_INFO;\n", infostr);
+                  es_printf ( "%s; export SCDAEMON_INFO;\n", infostr);
                 }
               xfree (infostr);
               exit (0);
@@ -931,13 +947,17 @@ scd_exit (int rc)
 static void
 scd_init_default_ctrl (ctrl_t ctrl)
 {
-  ctrl->reader_slot = -1;
+  (void)ctrl;
 }
 
 static void
 scd_deinit_default_ctrl (ctrl_t ctrl)
 {
-  (void)ctrl;
+  if (!ctrl)
+    return;
+  xfree (ctrl->in_data.value);
+  ctrl->in_data.value = NULL;
+  ctrl->in_data.valuelen = 0;
 }
 
 
@@ -952,12 +972,12 @@ scd_get_socket_name ()
 }
 
 
+#ifndef HAVE_W32_SYSTEM
 static void
 handle_signal (int signo)
 {
   switch (signo)
     {
-#ifndef HAVE_W32_SYSTEM
     case SIGHUP:
       log_info ("SIGHUP received - "
                 "re-reading configuration and resetting cards\n");
@@ -966,7 +986,9 @@ handle_signal (int signo)
 
     case SIGUSR1:
       log_info ("SIGUSR1 received - printing internal information:\n");
-      pth_ctrl (PTH_CTRL_DUMPSTATE, log_get_stream ());
+      /* Fixme: We need to see how to integrate pth dumping into our
+         logging system.  */
+      /* pth_ctrl (PTH_CTRL_DUMPSTATE, log_get_stream ()); */
       app_dump_state ();
       break;
 
@@ -978,8 +1000,8 @@ handle_signal (int signo)
       if (!shutdown_pending)
         log_info ("SIGTERM received - shutting down ...\n");
       else
-        log_info ("SIGTERM received - still %ld running threads\n",
-                  pth_ctrl( PTH_CTRL_GETTHREADS ));
+        log_info ("SIGTERM received - still %i running threads\n",
+                  active_connections);
       shutdown_pending++;
       if (shutdown_pending > 2)
         {
@@ -996,12 +1018,12 @@ handle_signal (int signo)
       cleanup ();
       scd_exit (0);
       break;
-#endif /*!HAVE_W32_SYSTEM*/
 
     default:
       log_info ("signal %d received - no action defined\n", signo);
     }
 }
+#endif /*!HAVE_W32_SYSTEM*/
 
 
 static void
@@ -1012,46 +1034,20 @@ handle_tick (void)
 }
 
 
-/* Create a name for the socket.  With USE_STANDARD_SOCKET given as
-   true using STANDARD_NAME in the home directory or if given has
-   false from the mkdir type name TEMPLATE.  In the latter case a
-   unique name in a unique new directory will be created.  In both
-   cases check for valid characters as well as against a maximum
-   allowed length for a unix domain socket is done.  The function
-   terminates the process in case of an error.  Retunrs: Pointer to an
-   allcoated string with the absolute name of the socket used.  */
+/* Create a name for the socket.  We check for valid characters as
+   well as against a maximum allowed length for a unix domain socket
+   is done.  The function terminates the process in case of an error.
+   Retunrs: Pointer to an allcoated string with the absolute name of
+   the socket used.  */
 static char *
-create_socket_name (int use_standard_socket,
-		    char *standard_name, char *template)
+create_socket_name (char *standard_name)
 {
-  char *name, *p;
+  char *name;
 
-  if (use_standard_socket)
-    name = make_filename (opt.homedir, standard_name, NULL);
-  else
-    {
-      name = xstrdup (template);
-      p = strrchr (name, '/');
-      if (!p)
-	BUG ();
-      *p = 0;
-      if (!mkdtemp (name))
-	{
-	  log_error (_("can't create directory `%s': %s\n"),
-		     name, strerror (errno));
-	  scd_exit (2);
-	}
-      *p = '/';
-    }
-
+  name = make_filename (opt.homedir, standard_name, NULL);
   if (strchr (name, PATHSEP_C))
     {
-      log_error (("`%s' are not allowed in the socket name\n"), PATHSEP_S);
-      scd_exit (2);
-    }
-  if (strlen (name) + 1 >= DIMof (struct sockaddr_un, sun_path) )
-    {
-      log_error (_("name of socket too long\n"));
+      log_error (("'%s' are not allowed in the socket name\n"), PATHSEP_S);
       scd_exit (2);
     }
   return name;
@@ -1059,17 +1055,22 @@ create_socket_name (int use_standard_socket,
 
 
 
-/* Create a Unix domain socket with NAME.  IS_STANDARD_NAME indicates
-   whether a non-random socket is used.  Returns the file descriptor
-   or terminates the process in case of an error. */
+/* Create a Unix domain socket with NAME.  Returns the file descriptor
+   or terminates the process in case of an error.  If the socket has
+   been redirected the name of the real socket is stored as a malloced
+   string at R_REDIR_NAME. */
 static gnupg_fd_t
-create_server_socket (int is_standard_name, const char *name,
+create_server_socket (const char *name, char **r_redir_name,
                       assuan_sock_nonce_t *nonce)
 {
-  struct sockaddr_un *serv_addr;
+  struct sockaddr *addr;
+  struct sockaddr_un *unaddr;
   socklen_t len;
   gnupg_fd_t fd;
   int rc;
+
+  xfree (*r_redir_name);
+  *r_redir_name = NULL;
 
   fd = assuan_sock_new (AF_UNIX, SOCK_STREAM, 0);
   if (fd == GNUPG_INVALID_FD)
@@ -1078,26 +1079,44 @@ create_server_socket (int is_standard_name, const char *name,
       scd_exit (2);
     }
 
-  serv_addr = xmalloc (sizeof (*serv_addr));
-  memset (serv_addr, 0, sizeof *serv_addr);
-  serv_addr->sun_family = AF_UNIX;
-  assert (strlen (name) + 1 < sizeof (serv_addr->sun_path));
-  strcpy (serv_addr->sun_path, name);
-  len = SUN_LEN (serv_addr);
+  unaddr = xmalloc (sizeof (*unaddr));
+  addr = (struct sockaddr*)unaddr;
 
-  rc = assuan_sock_bind (fd, (struct sockaddr*) serv_addr, len);
-  if (is_standard_name && rc == -1 && errno == EADDRINUSE)
+  {
+    int redirected;
+
+    if (assuan_sock_set_sockaddr_un (name, addr, &redirected))
+      {
+        if (errno == ENAMETOOLONG)
+          log_error (_("socket name '%s' is too long\n"), name);
+        else
+          log_error ("error preparing socket '%s': %s\n",
+                     name, gpg_strerror (gpg_error_from_syserror ()));
+        scd_exit (2);
+      }
+    if (redirected)
+      {
+        *r_redir_name = xstrdup (unaddr->sun_path);
+        if (opt.verbose)
+          log_info ("redirecting socket '%s' to '%s'\n", name, *r_redir_name);
+      }
+  }
+
+  len = SUN_LEN (unaddr);
+
+  rc = assuan_sock_bind (fd, addr, len);
+  if (rc == -1 && errno == EADDRINUSE)
     {
-      remove (name);
-      rc = assuan_sock_bind (fd, (struct sockaddr*) serv_addr, len);
+      gnupg_remove (unaddr->sun_path);
+      rc = assuan_sock_bind (fd, addr, len);
     }
   if (rc != -1
-      && (rc=assuan_sock_get_nonce ((struct sockaddr*)serv_addr, len, nonce)))
+      && (rc=assuan_sock_get_nonce (addr, len, nonce)))
     log_error (_("error getting nonce for the socket\n"));
  if (rc == -1)
     {
-      log_error (_("error binding socket to `%s': %s\n"),
-		 serv_addr->sun_path,
+      log_error (_("error binding socket to '%s': %s\n"),
+		 unaddr->sun_path,
                  gpg_strerror (gpg_error_from_syserror ()));
       assuan_sock_close (fd);
       scd_exit (2);
@@ -1112,7 +1131,7 @@ create_server_socket (int is_standard_name, const char *name,
     }
 
   if (opt.verbose)
-    log_info (_("listening on socket `%s'\n"), serv_addr->sun_path);
+    log_info (_("listening on socket '%s'\n"), unaddr->sun_path);
 
   return fd;
 }
@@ -1165,35 +1184,34 @@ start_connection_thread (void *arg)
 static void
 handle_connections (int listen_fd)
 {
-  pth_attr_t tattr;
-  pth_event_t ev, time_ev;
-  sigset_t sigs;
-  int signo;
+  npth_attr_t tattr;
   struct sockaddr_un paddr;
   socklen_t plen;
   fd_set fdset, read_fdset;
   int ret;
   int fd;
   int nfd;
-
-  tattr = pth_attr_new();
-  pth_attr_set (tattr, PTH_ATTR_JOINABLE, 0);
-  pth_attr_set (tattr, PTH_ATTR_STACK_SIZE, 512*1024);
-
-#ifndef HAVE_W32_SYSTEM /* fixme */
-  sigemptyset (&sigs );
-  sigaddset (&sigs, SIGHUP);
-  sigaddset (&sigs, SIGUSR1);
-  sigaddset (&sigs, SIGUSR2);
-  sigaddset (&sigs, SIGINT);
-  sigaddset (&sigs, SIGTERM);
-  pth_sigmask (SIG_UNBLOCK, &sigs, NULL);
-  ev = pth_event (PTH_EVENT_SIGS, &sigs, &signo);
-#else
-  sigs = 0;
-  ev = pth_event (PTH_EVENT_SIGS, &sigs, &signo);
+  struct timespec abstime;
+  struct timespec curtime;
+  struct timespec timeout;
+  int saved_errno;
+#ifndef HAVE_W32_SYSTEM
+  int signo;
 #endif
-  time_ev = NULL;
+
+  ret = npth_attr_init(&tattr);
+  /* FIXME: Check error.  */
+  npth_attr_setdetachstate (&tattr, NPTH_CREATE_DETACHED);
+
+#ifndef HAVE_W32_SYSTEM
+  npth_sigev_init ();
+  npth_sigev_add (SIGHUP);
+  npth_sigev_add (SIGUSR1);
+  npth_sigev_add (SIGUSR2);
+  npth_sigev_add (SIGINT);
+  npth_sigev_add (SIGTERM);
+  npth_sigev_fini ();
+#endif
 
   FD_ZERO (&fdset);
   nfd = 0;
@@ -1203,13 +1221,17 @@ handle_connections (int listen_fd)
       nfd = listen_fd;
     }
 
+  npth_clock_gettime (&curtime);
+  timeout.tv_sec = TIMERTICK_INTERVAL_SEC;
+  timeout.tv_nsec = TIMERTICK_INTERVAL_USEC * 1000;
+  npth_timeradd (&curtime, &timeout, &abstime);
+  /* We only require abstime here.  The others will be reused.  */
+
   for (;;)
     {
-      sigset_t oldsigs;
-
       if (shutdown_pending)
         {
-          if (pth_ctrl (PTH_CTRL_GETTHREADS) == 1)
+          if (active_connections == 0)
             break; /* ready */
 
           /* Do not accept anymore connections but wait for existing
@@ -1220,80 +1242,50 @@ handle_connections (int listen_fd)
           listen_fd = -1;
 	}
 
-      /* Create a timeout event if needed.  Round it up to the next
-         microsecond interval to help with power saving. */
-      if (!time_ev)
-        {
-          pth_time_t nexttick = pth_timeout (TIMERTICK_INTERVAL_SEC,
-                                             TIMERTICK_INTERVAL_USEC/2);
-          if ((nexttick.tv_usec % (TIMERTICK_INTERVAL_USEC/2)) > 10)
-            {
-              nexttick.tv_usec = ((nexttick.tv_usec
-                                   /(TIMERTICK_INTERVAL_USEC/2))
-                                  + 1) * (TIMERTICK_INTERVAL_USEC/2);
-              if (nexttick.tv_usec >= 1000000)
-                {
-                  nexttick.tv_sec++;
-                  nexttick.tv_usec = 0;
-                }
-            }
-          time_ev = pth_event (PTH_EVENT_TIME, nexttick);
-        }
+      npth_clock_gettime (&curtime);
+      if (!(npth_timercmp (&curtime, &abstime, <)))
+	{
+	  /* Timeout.  */
+	  handle_tick ();
+	  timeout.tv_sec = TIMERTICK_INTERVAL_SEC;
+	  timeout.tv_nsec = TIMERTICK_INTERVAL_USEC * 1000;
+	  npth_timeradd (&curtime, &timeout, &abstime);
+	}
+      npth_timersub (&abstime, &curtime, &timeout);
 
       /* POSIX says that fd_set should be implemented as a structure,
          thus a simple assignment is fine to copy the entire set.  */
       read_fdset = fdset;
 
-      if (time_ev)
-        pth_event_concat (ev, time_ev, NULL);
-      ret = pth_select_ev (nfd+1, &read_fdset, NULL, NULL, NULL, ev);
-      if (time_ev)
-        pth_event_isolate (time_ev);
+#ifndef HAVE_W32_SYSTEM
+      ret = npth_pselect (nfd+1, &read_fdset, NULL, NULL, &timeout, npth_sigev_sigmask());
+      saved_errno = errno;
 
-      if (ret == -1)
+      while (npth_sigev_get_pending(&signo))
+	handle_signal (signo);
+#else
+      ret = npth_eselect (nfd+1, &read_fdset, NULL, NULL, &timeout, NULL, NULL);
+      saved_errno = errno;
+#endif
+
+      if (ret == -1 && saved_errno != EINTR)
 	{
-          if (pth_event_occurred (ev)
-              || (time_ev && pth_event_occurred (time_ev)))
-            {
-              if (pth_event_occurred (ev))
-                handle_signal (signo);
-              if (time_ev && pth_event_occurred (time_ev))
-                {
-                  pth_event_free (time_ev, PTH_FREE_ALL);
-                  time_ev = NULL;
-                  handle_tick ();
-                }
-              continue;
-            }
-          log_error (_("pth_select failed: %s - waiting 1s\n"),
-                     strerror (errno));
-          pth_sleep (1);
+          log_error (_("npth_pselect failed: %s - waiting 1s\n"),
+                     strerror (saved_errno));
+          npth_sleep (1);
 	  continue;
 	}
 
-      if (pth_event_occurred (ev))
-        {
-          handle_signal (signo);
-        }
-
-      if (time_ev && pth_event_occurred (time_ev))
-        {
-          pth_event_free (time_ev, PTH_FREE_ALL);
-          time_ev = NULL;
-          handle_tick ();
-        }
-
-      /* We now might create new threads and because we don't want any
-         signals - we are handling here - to be delivered to a new
-         thread. Thus we need to block those signals. */
-      pth_sigmask (SIG_BLOCK, &sigs, &oldsigs);
+      if (ret <= 0)
+	/* Timeout.  Will be handled when calculating the next timeout.  */
+	continue;
 
       if (listen_fd != -1 && FD_ISSET (listen_fd, &read_fdset))
 	{
           ctrl_t ctrl;
 
           plen = sizeof paddr;
-	  fd = pth_accept (listen_fd, (struct sockaddr *)&paddr, &plen);
+	  fd = npth_accept (listen_fd, (struct sockaddr *)&paddr, &plen);
 	  if (fd == -1)
 	    {
 	      log_error ("accept failed: %s\n", strerror (errno));
@@ -1307,32 +1299,27 @@ handle_connections (int listen_fd)
           else
             {
               char threadname[50];
+	      npth_t thread;
 
               snprintf (threadname, sizeof threadname-1, "conn fd=%d", fd);
               threadname[sizeof threadname -1] = 0;
-              pth_attr_set (tattr, PTH_ATTR_NAME, threadname);
               ctrl->thread_startup.fd = INT2FD (fd);
-              if (!pth_spawn (tattr, start_connection_thread, ctrl))
+              ret = npth_create (&thread, &tattr, start_connection_thread, ctrl);
+	      if (ret)
                 {
                   log_error ("error spawning connection handler: %s\n",
-                             strerror (errno) );
+                             strerror (ret));
                   xfree (ctrl);
                   close (fd);
                 }
+              else
+		npth_setname_np (thread, threadname);
             }
           fd = -1;
 	}
-
-      /* Restore the signal mask. */
-      pth_sigmask (SIG_SETMASK, &oldsigs, NULL);
-
     }
 
-  pth_event_free (ev, PTH_FREE_ALL);
-  if (time_ev)
-    pth_event_free (time_ev, PTH_FREE_ALL);
   cleanup ();
   log_info (_("%s %s stopped\n"), strusage(11), strusage(13));
+  npth_attr_destroy (&tattr);
 }
-
-

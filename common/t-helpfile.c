@@ -52,16 +52,15 @@ main (int argc, char **argv)
   result = gnupg_get_help_string (argc? argv[0]:NULL, 0);
   if (!result)
     {
-      fprintf (stderr, 
-               "Error: nothing found for `%s'\n", argc?argv[0]:"(null)");
+      fprintf (stderr,
+               "Error: nothing found for '%s'\n", argc?argv[0]:"(null)");
       errcount++;
     }
   else
     {
-      printf ("key `%s' result=`%s'\n", argc?argv[0]:"(null)", result);
+      printf ("key '%s' result='%s'\n", argc?argv[0]:"(null)", result);
       xfree (result);
     }
 
   return !!errcount;
 }
-

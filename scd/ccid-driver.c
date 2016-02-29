@@ -40,7 +40,7 @@
  *    products derived from this software without specific prior
  *    written permission.
  *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
  * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
  * DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
@@ -51,8 +51,6 @@
  * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
  * OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * $Date$
  */
 
 
@@ -85,16 +83,16 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <time.h>
-#ifdef HAVE_PTH
-# include <pth.h>
-#endif /*HAVE_PTH*/
+#ifdef HAVE_NPTH
+# include <npth.h>
+#endif /*HAVE_NPTH*/
 
 #include <usb.h>
 
 #include "scdaemon.h"
 #include "iso7816.h"
+#define CCID_DRIVER_INCLUDE_USB_IDS 1
 #include "ccid-driver.h"
-#include "../include/host2net.h"
 
 #define DRVNAME "ccid-driver: "
 
@@ -109,13 +107,14 @@
 */
 #define CCID_MAX_BUF (2048+7+10)
 
+/* CCID command timeout.  OpenPGPcard v2.1 requires timeout of 13 seconds.  */
+#define CCID_CMD_TIMEOUT (13*1000)
+
 /* Depending on how this source is used we either define our error
-   output to go to stderr or to the jnlib based logging functions.  We
-   use the latter when GNUPG_MAJOR_VERSION is defines or when both,
-   GNUPG_SCD_MAIN_HEADER and HAVE_JNLIB_LOGGING are defined.
-*/
-#if defined(GNUPG_MAJOR_VERSION) \
-    || (defined(GNUPG_SCD_MAIN_HEADER) && defined(HAVE_JNLIB_LOGGING))
+   output to go to stderr or to the GnuPG based logging functions.  We
+   use the latter when GNUPG_MAJOR_VERSION or GNUPG_SCD_MAIN_HEADER
+   are defined.  */
+#if defined(GNUPG_MAJOR_VERSION) || defined(GNUPG_SCD_MAIN_HEADER)
 
 #if defined(GNUPG_SCD_MAIN_HEADER)
 #  include GNUPG_SCD_MAIN_HEADER
@@ -215,32 +214,6 @@ enum {
 #define CCID_COMMAND_FAILED(buf) ((buf)[7] & 0x40)
 #define CCID_ERROR_CODE(buf)     (((unsigned char *)(buf))[8])
 
-
-/* We need to know the vendor to do some hacks. */
-enum {
-  VENDOR_CHERRY = 0x046a,
-  VENDOR_SCM    = 0x04e6,
-  VENDOR_OMNIKEY= 0x076b,
-  VENDOR_GEMPC  = 0x08e6,
-  VENDOR_VEGA   = 0x0982,
-  VENDOR_REINER = 0x0c4b,
-  VENDOR_KAAN   = 0x0d46,
-  VENDOR_VASCO  = 0x1a44,
-  VENDOR_FSIJ   = 0x234b,
-};
-
-/* Some product ids.  */
-#define SCM_SCR331      0xe001
-#define SCM_SCR331DI    0x5111
-#define SCM_SCR335      0x5115
-#define SCM_SCR3320     0x5117
-#define SCM_SPR532      0xe003
-#define CHERRY_ST2000   0x003e
-#define VASCO_920       0x0920
-#define GEMPC_PINPAD    0x3478
-#define GEMPC_CT30      0x3437
-#define VEGA_ALPHA      0x0008
-#define CYBERJACK_GO    0x0504
 
 /* A list and a table with special transport descriptions. */
 enum {
@@ -353,18 +326,8 @@ set_msg_len (unsigned char *msg, unsigned int length)
 static void
 my_sleep (int seconds)
 {
-#ifdef HAVE_PTH
-  /* With Pth we also call the standard sleep(0) so that the process
-     may give up its timeslot.  */
-  if (!seconds)
-    {
-# ifdef HAVE_W32_SYSTEM
-      Sleep (0);
-# else
-      sleep (0);
-# endif
-    }
-  pth_sleep (seconds);
+#ifdef USE_NPTH
+  npth_sleep (seconds);
 #else
 # ifdef HAVE_W32_SYSTEM
   Sleep (seconds*1000);
@@ -966,12 +929,13 @@ parse_ccid_descriptor (ccid_driver_t handle,
 
   DEBUGOUT_1 ("  bMaxCCIDBusySlots   %5u\n", buf[53]);
 
-  if (buf[0] > 54) {
-    DEBUGOUT ("  junk             ");
-    for (i=54; i < buf[0]-54; i++)
-      DEBUGOUT_CONT_1 (" %02X", buf[i]);
-    DEBUGOUT_LF ();
-  }
+  if (buf[0] > 54)
+    {
+      DEBUGOUT ("  junk             ");
+      for (i=54; i < buf[0]-54; i++)
+        DEBUGOUT_CONT_1 (" %02X", buf[i]);
+      DEBUGOUT_LF ();
+    }
 
   if (!have_t1 || !(have_tpdu  || handle->apdu_level))
     {
@@ -1441,7 +1405,7 @@ scan_or_find_devices (int readerno, const char *readerid,
         }
       else if (fd == -1)
         {
-          DEBUGOUT_2 ("failed to open `%s': %s\n",
+          DEBUGOUT_2 ("failed to open '%s': %s\n",
                      transports[i].name, strerror (errno));
           continue;
         }
@@ -1578,7 +1542,8 @@ ccid_vendor_specific_init (ccid_driver_t handle)
 /* Open the reader with the internal number READERNO and return a
    pointer to be used as handle in HANDLE.  Returns 0 on success. */
 int
-ccid_open_reader (ccid_driver_t *handle, const char *readerid)
+ccid_open_reader (ccid_driver_t *handle, const char *readerid,
+                  const char **rdrname_p)
 {
   int rc = 0;
   struct usb_device *dev = NULL;
@@ -1697,6 +1662,9 @@ ccid_open_reader (ccid_driver_t *handle, const char *readerid)
       free (*handle);
       *handle = NULL;
     }
+  else
+    if (rdrname_p)
+      *rdrname_p = (*handle)->rid;
 
   return rc;
 }
@@ -1875,6 +1843,11 @@ writen (int fd, const void *buf, size_t nbytes)
   return 0;
 }
 
+#if defined(ENXIO) && !defined(LIBUSB_PATH_MAX) && defined(__GNU_LIBRARY__)
+#define LIBUSB_ERRNO_NO_SUCH_DEVICE ENXIO       /* libusb-compat */
+#elif defined(ENODEV)
+#define LIBUSB_ERRNO_NO_SUCH_DEVICE ENODEV      /* Original libusb */
+#endif
 
 /* Write a MSG of length MSGLEN to the designated bulk out endpoint.
    Returns 0 on success. */
@@ -1949,26 +1922,26 @@ bulk_out (ccid_driver_t handle, unsigned char *msg, size_t msglen,
                            5000 /* ms timeout */);
       if (rc == msglen)
         return 0;
-#ifdef ENODEV
-      if (rc == -(ENODEV))
+#ifdef LIBUSB_ERRNO_NO_SUCH_DEVICE
+      if (rc == -(LIBUSB_ERRNO_NO_SUCH_DEVICE))
         {
           /* The Linux libusb returns a negative error value.  Catch
              the most important one.  */
-          errno = ENODEV;
+          errno = LIBUSB_ERRNO_NO_SUCH_DEVICE;
           rc = -1;
         }
-#endif /*ENODEV*/
+#endif /*LIBUSB_ERRNO_NO_SUCH_DEVICE*/
 
       if (rc == -1)
         {
           DEBUGOUT_1 ("usb_bulk_write error: %s\n", strerror (errno));
-#ifdef ENODEV
-          if (errno == ENODEV)
+#ifdef LIBUSB_ERRNO_NO_SUCH_DEVICE
+          if (errno == LIBUSB_ERRNO_NO_SUCH_DEVICE)
             {
               handle->enodev_seen = 1;
               return CCID_DRIVER_ERR_NO_READER;
             }
-#endif /*ENODEV*/
+#endif /*LIBUSB_ERRNO_NO_SUCH_DEVICE*/
         }
       else
         DEBUGOUT_1 ("usb_bulk_write failed: %d\n", rc);
@@ -2348,7 +2321,7 @@ ccid_poll (ccid_driver_t handle)
     }
   else if (msg[0] == RDR_to_PC_HardwareError)
     {
-      DEBUGOUT ("hardware error occured\n");
+      DEBUGOUT ("hardware error occurred\n");
     }
   else
     {
@@ -2693,7 +2666,7 @@ ccid_get_atr (ccid_driver_t handle,
 
       if (msglen != 10 + 4)
         {
-          DEBUGOUT_1 ("Setting PPS failed: %d\n", (int)msglen);
+          DEBUGOUT_1 ("Setting PPS failed: %zu\n", msglen);
           return CCID_DRIVER_ERR_CARD_IO_ERROR;
         }
 
@@ -2885,7 +2858,7 @@ ccid_transceive_apdu_level (ccid_driver_t handle,
       apdu_len -= apdu_part_len;
 
       rc = bulk_in (handle, msg, sizeof msg, &msglen,
-                    RDR_to_PC_DataBlock, seqno, 5000, 0);
+                    RDR_to_PC_DataBlock, seqno, CCID_CMD_TIMEOUT, 0);
       if (rc)
         return rc;
 
@@ -2920,7 +2893,7 @@ ccid_transceive_apdu_level (ccid_driver_t handle,
         return rc;
 
       rc = bulk_in (handle, msg, sizeof msg, &msglen,
-                    RDR_to_PC_DataBlock, seqno, 5000, 0);
+                    RDR_to_PC_DataBlock, seqno, CCID_CMD_TIMEOUT, 0);
       if (rc)
         return rc;
     }
@@ -3129,7 +3102,7 @@ ccid_transceive (ccid_driver_t handle,
       msg = recv_buffer;
       rc = bulk_in (handle, msg, sizeof recv_buffer, &msglen,
                     via_escape? RDR_to_PC_Escape : RDR_to_PC_DataBlock,
-                    seqno, 5000, 0);
+                    seqno, CCID_CMD_TIMEOUT, 0);
       if (rc)
         return rc;
 
@@ -3163,7 +3136,7 @@ ccid_transceive (ccid_driver_t handle,
             }
 
           if (!!(tpdu[1] & 0x40) != handle->t1_nr)
-            { /* Reponse does not match our sequence number. */
+            { /* Response does not match our sequence number. */
               msg = send_buffer;
               tpdu = msg + hdrlen;
               tpdu[0] = nad_byte;
@@ -3392,7 +3365,7 @@ ccid_transceive_secure (ccid_driver_t handle,
       pininfo->maxlen = 25;
       enable_varlen = 1;
       break;
-    case VENDOR_REINER: /* Tested with cyberJack go */
+    case VENDOR_REINER:/* Tested with cyberJack go */
     case VENDOR_VASCO: /* Tested with DIGIPASS 920 */
       enable_varlen = 1;
       break;
@@ -3590,7 +3563,7 @@ ccid_transceive_secure (ccid_driver_t handle,
       handle->t1_ns ^= 1;
 
       if (!!(tpdu[1] & 0x40) != handle->t1_nr)
-        { /* Reponse does not match our sequence number. */
+        { /* Response does not match our sequence number. */
           DEBUGOUT ("I-block with wrong seqno received\n");
           return CCID_DRIVER_ERR_CARD_IO_ERROR;
         }
@@ -3630,7 +3603,7 @@ ccid_transceive_secure (ccid_driver_t handle,
           return CCID_DRIVER_ERR_CARD_IO_ERROR;
         }
       else if (!!(tpdu[1] & 0x10) == handle->t1_ns)
-        { /* Reponse does not match our sequence number. */
+        { /* Response does not match our sequence number. */
           DEBUGOUT ("R-block with wrong seqno received on more bit\n");
           return CCID_DRIVER_ERR_CARD_IO_ERROR;
         }
@@ -3766,7 +3739,7 @@ main (int argc, char **argv)
         break;
     }
 
-  rc = ccid_open_reader (&ccid, argc? *argv:NULL);
+  rc = ccid_open_reader (&ccid, argc? *argv:NULL, NULL);
   if (rc)
     return 1;
 

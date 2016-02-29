@@ -1,6 +1,6 @@
 /* certchain.c - certificate chain validation
  * Copyright (C) 2001, 2002, 2003, 2004, 2005,
- *               2006, 2007, 2008 Free Software Foundation, Inc.
+ *               2006, 2007, 2008, 2011 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -27,8 +27,6 @@
 #include <time.h>
 #include <stdarg.h>
 #include <assert.h>
-
-#define JNLIB_NEED_LOG_LOGV /* We need log_logv. */
 
 #include "gpgsm.h"
 #include <gcrypt.h>
@@ -121,7 +119,7 @@ do_list (int is_error, int listmode, estream_t fp, const char *format, ...)
     }
   else
     {
-      log_logv (is_error? JNLIB_LOG_ERROR: JNLIB_LOG_INFO, format, arg_ptr);
+      log_logv (is_error? GPGRT_LOG_ERROR: GPGRT_LOG_INFO, format, arg_ptr);
       log_printf ("\n");
     }
   va_end (arg_ptr);
@@ -241,9 +239,9 @@ unknown_criticals (ksba_cert_t cert, int listmode, estream_t fp)
         ;
       unsupported = !known[i];
 
-      /* If this critical extension is not supoported, check the list
-         of to be ignored extensions to se whether we claim that it is
-         supported.  */
+      /* If this critical extension is not supported.  Check the list
+         of to be ignored extensions to see whether we claim that it
+         is supported.  */
       if (unsupported && opt.ignored_cert_extensions)
         {
           for (sl=opt.ignored_cert_extensions;
@@ -342,7 +340,7 @@ check_cert_policy (ksba_cert_t cert, int listmode, estream_t fplist)
   if (!fp)
     {
       if (opt.verbose || errno != ENOENT)
-        log_info (_("failed to open `%s': %s\n"),
+        log_info (_("failed to open '%s': %s\n"),
                   opt.policy_file, strerror (errno));
       xfree (policies);
       /* With no critical policies this is only a warning */
@@ -350,7 +348,7 @@ check_cert_policy (ksba_cert_t cert, int listmode, estream_t fplist)
         {
           if (!opt.quiet)
             do_list (0, listmode, fplist,
-                     _("note: non-critical certificate policy not allowed"));
+                     _("Note: non-critical certificate policy not allowed"));
           return 0;
         }
       do_list (1, listmode, fplist,
@@ -379,7 +377,7 @@ check_cert_policy (ksba_cert_t cert, int listmode, estream_t fplist)
                   if (!any_critical)
                     {
                       do_list (0, listmode, fplist,
-                     _("note: non-critical certificate policy not allowed"));
+                     _("Note: non-critical certificate policy not allowed"));
                       return 0;
                     }
                   do_list (1, listmode, fplist,
@@ -407,7 +405,9 @@ check_cert_policy (ksba_cert_t cert, int listmode, estream_t fplist)
         }
       while (!*p || *p == '\n' || *p == '#');
 
-      /* parse line */
+      /* Parse line.  Note that the line has always a LF and spacep
+         does not consider a LF a space.  Thus strpbrk will always
+         succeed.  */
       for (allowed=line; spacep (allowed); allowed++)
         ;
       p = strpbrk (allowed, " :\n");
@@ -959,7 +959,7 @@ is_cert_still_valid (ctrl_t ctrl, int force_ocsp, int lm, estream_t fp,
 {
   gpg_error_t err;
 
-  if (opt.no_crl_check && !ctrl->use_ocsp)
+  if (ctrl->offline || (opt.no_crl_check && !ctrl->use_ocsp))
     {
       audit_log_ok (ctrl->audit, AUDIT_CRL_CHECK,
                     gpg_error (GPG_ERR_NOT_ENABLED));
@@ -1249,6 +1249,7 @@ ask_marktrusted (ctrl_t ctrl, ksba_cert_t cert, int listmode)
 
    VALIDATE_FLAG_NO_DIRMNGR  - Do not do any dirmngr isvalid checks.
    VALIDATE_FLAG_CHAIN_MODEL - Check according to chain model.
+   VALIDATE_FLAG_STEED       - Check according to the STEED model.
 */
 static int
 do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
@@ -1361,13 +1362,21 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
              We used to do this only later but changed it to call the
              check right here so that we can access special flags
              associated with that specific root certificate.  */
-          istrusted_rc = gpgsm_agent_istrusted (ctrl, subject_cert, NULL,
-                                                rootca_flags);
+          if (gpgsm_cert_has_well_known_private_key (subject_cert))
+            {
+              memset (rootca_flags, 0, sizeof *rootca_flags);
+              istrusted_rc = ((flags & VALIDATE_FLAG_STEED)
+                              ? 0 : gpg_error (GPG_ERR_NOT_TRUSTED));
+            }
+          else
+            istrusted_rc = gpgsm_agent_istrusted (ctrl, subject_cert, NULL,
+                                                  rootca_flags);
           audit_log_cert (ctrl->audit, AUDIT_ROOT_TRUSTED,
                           subject_cert, istrusted_rc);
           /* If the chain model extended attribute is used, make sure
              that our chain model flag is set. */
-          if (has_validation_model_chain (subject_cert, listmode, listfp))
+          if (!(flags & VALIDATE_FLAG_STEED)
+              && has_validation_model_chain (subject_cert, listmode, listfp))
             rootca_flags->chain_model = 1;
         }
 
@@ -1382,10 +1391,7 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
                                     exptime, listmode, listfp,
                                     (depth && is_root)? -1: depth);
       if (gpg_err_code (rc) == GPG_ERR_CERT_EXPIRED)
-        {
-          any_expired = 1;
-          rc = 0;
-        }
+        any_expired = 1;
       else if (rc)
         goto leave;
 
@@ -1402,7 +1408,7 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
           if (gpg_err_code (rc) == GPG_ERR_NO_POLICY_MATCH)
             {
               any_no_policy_match = 1;
-              rc = 1;
+              rc = 1;  /* Be on the safe side and set RC.  */
             }
           else if (rc)
             goto leave;
@@ -1439,7 +1445,7 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
           /* Set the flag for qualified signatures.  This flag is
              deduced from a list of root certificates allowed for
              qualified signatures. */
-          if (is_qualified == -1)
+          if (is_qualified == -1 && !(flags & VALIDATE_FLAG_STEED))
             {
               gpg_error_t err;
               size_t buflen;
@@ -1493,8 +1499,11 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
                  expired it does not make much sense to ask the user
                  whether we wants to trust the root certificate.  We
                  should do this only if the certificate under question
-                 will then be usable.  */
+                 will then be usable.  If the certificate has a well
+                 known private key asking the user does not make any
+                 sense.  */
               if ( !any_expired
+                   && !gpgsm_cert_has_well_known_private_key (subject_cert)
                    && (!listmode || !already_asked_marktrusted (subject_cert))
                    && ask_marktrusted (ctrl, subject_cert, listmode) )
                 rc = 0;
@@ -1511,6 +1520,8 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
           /* Check for revocations etc. */
           if ((flags & VALIDATE_FLAG_NO_DIRMNGR))
             ;
+          else if ((flags & VALIDATE_FLAG_STEED))
+            ; /* Fixme: check revocations via DNS.  */
           else if (opt.no_trusted_cert_crl_check || rootca_flags->relax)
             ;
           else
@@ -1600,7 +1611,8 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
                       /* The find next did not work or returned an
                          identical certificate.  We better stop here
                          to avoid infinite checks. */
-                      rc = gpg_error (GPG_ERR_BAD_SIGNATURE);
+                      /* No need to set RC because it is not used:
+                         rc = gpg_error (GPG_ERR_BAD_SIGNATURE);  */
                       ksba_cert_release (tmp_cert);
                     }
                   else
@@ -1642,8 +1654,16 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
                performance reasons. */
             if (is_root)
               {
-                istrusted_rc = gpgsm_agent_istrusted (ctrl, issuer_cert, NULL,
-                                                      rootca_flags);
+                if (gpgsm_cert_has_well_known_private_key (issuer_cert))
+                  {
+                    memset (rootca_flags, 0, sizeof *rootca_flags);
+                    istrusted_rc = ((flags & VALIDATE_FLAG_STEED)
+                                    ? 0 : gpg_error (GPG_ERR_NOT_TRUSTED));
+                  }
+                else
+                  istrusted_rc = gpgsm_agent_istrusted
+                    (ctrl, issuer_cert, NULL, rootca_flags);
+
                 if (!istrusted_rc && rootca_flags->relax)
                   {
                     /* Ignore the error due to the relax flag.  */
@@ -1683,6 +1703,8 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
          be fixed. */
       if ((flags & VALIDATE_FLAG_NO_DIRMNGR))
         rc = 0;
+      else if ((flags & VALIDATE_FLAG_STEED))
+        rc = 0; /* Fixme: XXX */
       else if (is_root && (opt.no_trusted_cert_crl_check
                            || (!istrusted_rc && rootca_flags->relax)))
         rc = 0;
@@ -1727,9 +1749,9 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
       if (opt.no_policy_check)
         log_info ("policies not checked due to %s option\n",
                   "--disable-policy-checks");
-      if (opt.no_crl_check && !ctrl->use_ocsp)
+      if (ctrl->offline || (opt.no_crl_check && !ctrl->use_ocsp))
         log_info ("CRLs not checked due to %s option\n",
-                  "--disable-crl-checks");
+                  ctrl->offline ? "offline" : "--disable-crl-checks");
     }
 
   if (!rc)
@@ -1762,7 +1784,7 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
           /* Note that it is possible for the last certificate in the
              chain (i.e. our target certificate) that it has not yet
              been stored in the keybox and thus the flag can't be set.
-             We ignore this error becuase it will later be stored
+             We ignore this error because it will later be stored
              anyway.  */
           err = keydb_set_cert_flags (ci->cert, 1, KEYBOX_FLAG_BLOB, 0,
                                       KEYBOX_FLAG_BLOB_EPHEMERAL, 0);
@@ -1778,7 +1800,7 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
      capability of the certificate under question, store the result as
      user data in all certificates of the chain.  We do this even if the
      validation itself failed.  */
-  if (is_qualified != -1)
+  if (is_qualified != -1 && !(flags & VALIDATE_FLAG_STEED))
     {
       gpg_error_t err;
       chain_item_t ci;
@@ -1836,8 +1858,8 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
    do_validate_chain.  This function is a wrapper to handle a root
    certificate with the chain_model flag set.  If RETFLAGS is not
    NULL, flags indicating now the verification was done are stored
-   there.  The only defined flag for RETFLAGS is
-   VALIDATE_FLAG_CHAIN_MODEL.
+   there.  The only defined vits for RETFLAGS are
+   VALIDATE_FLAG_CHAIN_MODEL and VALIDATE_FLAG_STEED.
 
    If you are verifying a signature you should set CHECKTIME to the
    creation time of the signature.  If your are verifying a
@@ -1857,16 +1879,27 @@ gpgsm_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime,
   if (!retflags)
     retflags = &dummy_retflags;
 
+  /* If the session requested a certain validation mode make sure the
+     corresponding flags are set.  */
   if (ctrl->validation_model == 1)
     flags |= VALIDATE_FLAG_CHAIN_MODEL;
+  else if (ctrl->validation_model == 2)
+    flags |= VALIDATE_FLAG_STEED;
 
+  /* If the chain model was forced, set this immediately into
+     RETFLAGS.  */
   *retflags = (flags & VALIDATE_FLAG_CHAIN_MODEL);
+
   memset (&rootca_flags, 0, sizeof rootca_flags);
 
   rc = do_validate_chain (ctrl, cert, checktime,
                           r_exptime, listmode, listfp, flags,
                           &rootca_flags);
-  if (gpg_err_code (rc) == GPG_ERR_CERT_EXPIRED
+  if (!rc && (flags & VALIDATE_FLAG_STEED))
+    {
+      *retflags |= VALIDATE_FLAG_STEED;
+    }
+  else if (gpg_err_code (rc) == GPG_ERR_CERT_EXPIRED
       && !(flags & VALIDATE_FLAG_CHAIN_MODEL)
       && (rootca_flags.valid && rootca_flags.chain_model))
     {
@@ -1880,6 +1913,8 @@ gpgsm_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime,
 
   if (opt.verbose)
     do_list (0, listmode, listfp, _("validation model used: %s"),
+             (*retflags & VALIDATE_FLAG_STEED)?
+             "steed" :
              (*retflags & VALIDATE_FLAG_CHAIN_MODEL)?
              _("chain"):_("shell"));
 
@@ -2044,7 +2079,7 @@ get_regtp_ca_info (ctrl_t ctrl, ksba_cert_t cert, int *chainlen)
      until we have found the root.  Because we are only interested in
      German Bundesnetzagentur (former RegTP) derived certificates 3
      levels are enough.  (The German signature law demands a 3 tier
-     hierachy; thus there is only one CA between the EE and the Root
+     hierarchy; thus there is only one CA between the EE and the Root
      CA.)  */
   memset (&array, 0, sizeof array);
 

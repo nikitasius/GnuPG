@@ -30,7 +30,7 @@ SUBDIRS = ${openpgp} . pkits
 GPGSM = ../sm/gpgsm
 
 # Note that we need to use /bin/pwd so that we don't get into trouble
-# if the shell used for inittests would use an internal version of
+# if the shell used for inittests would uses an internal version of
 # pwd which handles symlinks differently.
 TESTS_ENVIRONMENT = GNUPGHOME=`/bin/pwd` GPG_AGENT_INFO= LC_ALL=C \
                     GPGSM=$(GPGSM) $(srcdir)/runtest
@@ -41,14 +41,16 @@ EXTRA_DIST = runtest inittests $(testscripts) ChangeLog-2011 \
 	     text-1.txt text-2.txt text-3.txt \
 	     text-1.osig.pem text-1.dsig.pem text-1.osig-bad.pem \
 	     text-2.osig.pem text-2.osig-bad.pem \
+	     samplekeys/steed-self-signing-nonthority.pem \
+	     samplekeys/68A638998DFABAC510EA645CE34F9686B2EDF7EA.key \
              samplekeys/32100C27173EF6E9C4E9A25D3D69F86D37A4F939.key \
              samplekeys/cert_g10code_pete1.pem \
              samplekeys/cert_g10code_test1.pem \
              samplekeys/cert_g10code_theo1.pem
 
-# We used to run $(testscripts) here but these asschk scripts are not
+# We used to run $(testscripts) here but these asschk scripts ares not
 # completely reliable in all enviromnets and thus we better disable
-# them.  The tests are anyway way too minimal.  We will eventually
+# them.  The tests are anyway way to minimal.  We will eventually
 # write new tests based on gpg-connect-agent which has a full fledged
 # script language and thus makes it far easier to write tests than to
 # use the low--level asschk stuff.
@@ -72,4 +74,3 @@ clean-local:
 inittests.stamp: inittests
 	srcdir=$(srcdir) $(TESTS_ENVIRONMENT) $(srcdir)/inittests
 	echo timestamp >./inittests.stamp
-

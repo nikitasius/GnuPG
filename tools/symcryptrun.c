@@ -49,7 +49,7 @@
    The possible exit status codes:
 
    0	Success
-   1	Some error occured
+   1	Some error occurred
    2	No valid passphrase was provided
    3	The operation was canceled by the user
 
@@ -72,24 +72,24 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #ifdef HAVE_PTY_H
-# include <pty.h>
+#include <pty.h>
 #endif
 #ifdef HAVE_UTMP_H
-# include <utmp.h>
+#include <utmp.h>
 #endif
 #include <ctype.h>
 #ifdef HAVE_LOCALE_H
-# include <locale.h>
+#include <locale.h>
 #endif
 #ifdef HAVE_LANGINFO_CODESET
-# include <langinfo.h>
+#include <langinfo.h>
 #endif
 #include <gpg-error.h>
 
-#define JNLIB_NEED_LOG_LOGV
 #include "i18n.h"
 #include "../common/util.h"
-#include "mkdtemp.h"
+#include "../common/init.h"
+#include "../common/sysutils.h"
 
 /* FIXME: Bah.  For spwq_secure_free.  */
 #define SIMPLE_PWQUERY_IMPLEMENTATION 1
@@ -98,10 +98,10 @@
 
 /* From simple-gettext.c.  */
 
-/* We assume to have `unsigned long int' value with at least 32 bits.  */
+/* We assume to have 'unsigned long int' value with at least 32 bits.  */
 #define HASHWORDBITS 32
 
-/* The so called `hashpjw' function by P.J. Weinberger
+/* The so called 'hashpjw' function by P.J. Weinberger
    [see Aho/Sethi/Ullman, COMPILERS: Principles, Techniques and Tools,
    1986, 1987 Bell Telephone Laboratories, Inc.]  */
 
@@ -199,7 +199,7 @@ my_strusage (int level)
 
   switch (level)
     {
-    case 11: p = "symcryptrun (GnuPG)";
+    case 11: p = "symcryptrun (@GNUPG@)";
       break;
     case 13: p = VERSION; break;
     case 17: p = PRINTABLE_OS_NAME; break;
@@ -227,7 +227,7 @@ my_strusage (int level)
 /* This is in the GNU C library in unistd.h.  */
 
 #ifndef TEMP_FAILURE_RETRY
-/* Evaluate EXPRESSION, and repeat as long as it returns -1 with `errno'
+/* Evaluate EXPRESSION, and repeat as long as it returns -1 with 'errno'
    set to EINTR.  */
 
 # define TEMP_FAILURE_RETRY(expression) \
@@ -306,12 +306,18 @@ remove_file (char *name, int shred)
 static char *
 confucius_mktmpdir (void)
 {
-  char *name;
+  char *name, *p;
 
-  name = strdup ("/tmp/gpg-XXXXXX");
-  if (!name || !mkdtemp (name))
+  p = getenv ("TMPDIR");
+  if (!p || !*p)
+    p = "/tmp";
+  if (p[strlen (p) - 1] == '/')
+    name = xstrconcat (p, "gpg-XXXXXX", NULL);
+  else
+    name = xstrconcat (p, "/", "gpg-XXXXXX", NULL);
+  if (!name || !gnupg_mkdtemp (name))
     {
-      log_error (_("can't create temporary directory `%s': %s\n"),
+      log_error (_("can't create temporary directory '%s': %s\n"),
                  name?name:"", strerror (errno));
       return NULL;
     }
@@ -882,12 +888,13 @@ main (int argc, char **argv)
   char *logfile = NULL;
   int default_config = 1;
 
+  early_system_init ();
   set_strusage (my_strusage);
   log_set_prefix ("symcryptrun", 1);
 
   /* Make sure that our subsystems are ready.  */
   i18n_init();
-  init_common_subsystems ();
+  init_common_subsystems (&argc, &argv);
 
   opt.homedir = default_homedir ();
 
@@ -928,7 +935,7 @@ main (int argc, char **argv)
         {
           if (!default_config)
             {
-              log_error (_("option file `%s': %s\n"),
+              log_error (_("option file '%s': %s\n"),
                          configname, strerror(errno) );
               exit(1);
 	    }
@@ -1003,7 +1010,7 @@ main (int argc, char **argv)
 
   /* Tell simple-pwquery about the the standard socket name.  */
   {
-    char *tmp = make_filename (opt.homedir, "S.gpg-agent", NULL);
+    char *tmp = make_filename (opt.homedir, GPG_AGENT_SOCK_NAME, NULL);
     simple_pw_set_socket (tmp);
     xfree (tmp);
   }

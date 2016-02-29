@@ -5,12 +5,22 @@
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -30,7 +40,6 @@ static const char statusstr_msgstr[] =
   "BADSIG" "\0"
   "ERRSIG" "\0"
   "BADARMOR" "\0"
-  "RSA_OR_IDEA" "\0"
   "TRUST_UNDEFINED" "\0"
   "TRUST_NEVER" "\0"
   "TRUST_MARGINAL" "\0"
@@ -58,6 +67,8 @@ static const char statusstr_msgstr[] =
   "IMPORT_PROBLEM" "\0"
   "IMPORT_RES" "\0"
   "IMPORT_CHECK" "\0"
+  "EXPORTED" "\0"
+  "EXPORT_RES" "\0"
   "FILE_START" "\0"
   "FILE_DONE" "\0"
   "FILE_ERROR" "\0"
@@ -77,8 +88,6 @@ static const char statusstr_msgstr[] =
   "NOTATION_NAME" "\0"
   "NOTATION_DATA" "\0"
   "POLICY_URL" "\0"
-  "BEGIN_STREAM" "\0"
-  "END_STREAM" "\0"
   "KEY_CREATED" "\0"
   "USERID_HINT" "\0"
   "UNEXPECTED" "\0"
@@ -89,7 +98,6 @@ static const char statusstr_msgstr[] =
   "ALREADY_SIGNED" "\0"
   "KEYEXPIRED" "\0"
   "KEYREVOKED" "\0"
-  "SIGEXPIRED" "\0"
   "EXPSIG" "\0"
   "EXPKEYSIG" "\0"
   "ATTRIBUTE" "\0"
@@ -107,9 +115,14 @@ static const char statusstr_msgstr[] =
   "PKA_TRUST_BAD" "\0"
   "PKA_TRUST_GOOD" "\0"
   "TRUNCATED" "\0"
+  "MOUNTPOINT" "\0"
+  "PINENTRY_LAUNCHED" "\0"
+  "PLAINTEXT_FOLLOWS" "\0"
   "ERROR" "\0"
+  "WARNING" "\0"
+  "SUCCESS" "\0"
   "FAILURE" "\0"
-  "SUCCESS";
+  "INQUIRE_MAXLEN";
 
 static const int statusstr_msgidx[] =
   {
@@ -121,88 +134,91 @@ static const int statusstr_msgidx[] =
     33,
     40,
     49,
-    61,
+    65,
     77,
-    89,
+    92,
     104,
-    116,
-    131,
-    147,
-    156,
-    163,
-    170,
-    177,
-    192,
-    202,
-    212,
-    232,
-    248,
-    266,
-    282,
-    301,
-    317,
-    325,
-    332,
-    339,
-    348,
-    358,
-    373,
-    384,
-    397,
-    408,
-    418,
-    429,
-    446,
-    461,
-    478,
-    493,
-    507,
-    522,
-    531,
-    540,
-    551,
-    558,
-    567,
-    579,
-    591,
-    605,
-    619,
-    630,
-    643,
-    654,
-    666,
-    678,
-    689,
-    698,
+    119,
+    135,
+    144,
+    151,
+    158,
+    165,
+    180,
+    190,
+    200,
+    220,
+    236,
+    254,
+    270,
+    289,
+    305,
+    313,
+    320,
+    327,
+    336,
+    346,
+    361,
+    372,
+    385,
+    394,
+    405,
+    416,
+    426,
+    437,
+    454,
+    469,
+    486,
+    501,
+    515,
+    530,
+    539,
+    548,
+    559,
+    566,
+    575,
+    587,
+    599,
+    613,
+    627,
+    638,
+    650,
+    662,
+    673,
+    682,
+    691,
+    699,
     707,
-    715,
-    723,
-    738,
-    749,
-    760,
+    722,
+    733,
+    744,
+    751,
+    761,
     771,
-    778,
+    781,
     788,
-    798,
-    808,
-    815,
+    802,
+    812,
     829,
-    839,
-    856,
-    872,
-    892,
-    901,
-    915,
-    929,
-    948,
-    962,
-    977,
-    987,
-    993,
-    1001,
+    845,
+    865,
+    874,
+    888,
+    902,
+    921,
+    935,
+    950,
+    960,
+    971,
+    989,
+    1007,
+    1013,
+    1021,
+    1029,
+    1037,
     
   };
 
 #define statusstr_msgidxof(code) (0 ? -1 \
-  : ((code >= 0) && (code <= 86)) ? (code - 0) \
+  : ((code >= 0) && (code <= 89)) ? (code - 0) \
   : -1)

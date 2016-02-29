@@ -1,6 +1,6 @@
 /* status.c - Status message and command-fd interface
  * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003,
- *               2004, 2005, 2006 Free Software Foundation, Inc.
+ *               2004, 2005, 2006, 2010 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -24,7 +24,9 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
-#include <signal.h>
+#ifdef HAVE_SIGNAL_H
+# include <signal.h>
+#endif
 
 #include "gpg.h"
 #include "util.h"
@@ -33,13 +35,13 @@
 #include "options.h"
 #include "main.h"
 #include "i18n.h"
-#include "cipher.h" /* for progress functions */
 
 #define CONTROL_D ('D' - 'A' + 1)
 
 
-
-static FILE *statusfp;
+/* The stream to output the status information.  Output is disabled if
+   this is NULL.  */
+static estream_t statusfp;
 
 
 static void
@@ -92,39 +94,42 @@ status_currently_allowed (int no)
 
 
 void
-set_status_fd ( int fd )
+set_status_fd (int fd)
 {
-    static int last_fd = -1;
+  static int last_fd = -1;
 
-    if ( fd != -1 && last_fd == fd )
-        return;
+  if (fd != -1 && last_fd == fd)
+    return;
 
-    if ( statusfp && statusfp != stdout && statusfp != stderr )
-        fclose (statusfp);
-    statusfp = NULL;
-    if ( fd == -1 )
-        return;
+  if (statusfp && statusfp != es_stdout && statusfp != es_stderr )
+    es_fclose (statusfp);
+  statusfp = NULL;
+  if (fd == -1)
+    return;
 
-    if( fd == 1 )
-	statusfp = stdout;
-    else if( fd == 2 )
-	statusfp = stderr;
-    else
-	statusfp = fdopen( fd, "w" );
-    if( !statusfp ) {
-	log_fatal("can't open fd %d for status output: %s\n",
-                  fd, strerror(errno));
+  if (fd == 1)
+    statusfp = es_stdout;
+  else if (fd == 2)
+    statusfp = es_stderr;
+  else
+    statusfp = es_fdopen (fd, "w");
+  if (!statusfp)
+    {
+      log_fatal ("can't open fd %d for status output: %s\n",
+                 fd, strerror (errno));
     }
-    last_fd = fd;
+  last_fd = fd;
 
-    gcry_set_progress_handler ( progress_cb, NULL );
+  gcry_set_progress_handler (progress_cb, NULL);
 }
+
 
 int
-is_status_enabled()
+is_status_enabled ()
 {
-    return !!statusfp;
+  return !!statusfp;
 }
+
 
 void
 write_status ( int no )
@@ -144,11 +149,11 @@ write_status_strings (int no, const char *text, ...)
   if (!statusfp || !status_currently_allowed (no) )
     return;  /* Not enabled or allowed. */
 
-  fputs ("[GNUPG:] ", statusfp);
-  fputs (get_status_string (no), statusfp);
+  es_fputs ("[GNUPG:] ", statusfp);
+  es_fputs (get_status_string (no), statusfp);
   if ( text )
     {
-      putc ( ' ', statusfp);
+      es_putc ( ' ', statusfp);
       va_start (arg_ptr, text);
       s = text;
       do
@@ -156,18 +161,18 @@ write_status_strings (int no, const char *text, ...)
           for (; *s; s++)
             {
               if (*s == '\n')
-                fputs ("\\n", statusfp);
+                es_fputs ("\\n", statusfp);
               else if (*s == '\r')
-                fputs ("\\r", statusfp);
+                es_fputs ("\\r", statusfp);
               else
-                fputc (*(const byte *)s, statusfp);
+                es_fputc (*(const byte *)s, statusfp);
             }
         }
       while ((s = va_arg (arg_ptr, const char*)));
       va_end (arg_ptr);
     }
-  putc ('\n', statusfp);
-  if (fflush (statusfp) && opt.exit_on_status_write_error)
+  es_putc ('\n', statusfp);
+  if (es_fflush (statusfp) && opt.exit_on_status_write_error)
     g10_exit (0);
 }
 
@@ -178,16 +183,44 @@ write_status_text (int no, const char *text)
   write_status_strings (no, text, NULL);
 }
 
-
+/* Write an ERROR status line using a full gpg-error error value.  */
 void
-write_status_error (const char *where, int errcode)
+write_status_error (const char *where, gpg_error_t err)
 {
   if (!statusfp || !status_currently_allowed (STATUS_ERROR))
     return;  /* Not enabled or allowed. */
 
-  fprintf (statusfp, "[GNUPG:] %s %s %u\n",
-           get_status_string (STATUS_ERROR), where, gpg_err_code (errcode));
-  if (fflush (statusfp) && opt.exit_on_status_write_error)
+  es_fprintf (statusfp, "[GNUPG:] %s %s %u\n",
+              get_status_string (STATUS_ERROR), where, err);
+  if (es_fflush (statusfp) && opt.exit_on_status_write_error)
+    g10_exit (0);
+}
+
+
+/* Same as above but outputs the error code only.  */
+void
+write_status_errcode (const char *where, int errcode)
+{
+  if (!statusfp || !status_currently_allowed (STATUS_ERROR))
+    return;  /* Not enabled or allowed. */
+
+  es_fprintf (statusfp, "[GNUPG:] %s %s %u\n",
+              get_status_string (STATUS_ERROR), where, gpg_err_code (errcode));
+  if (es_fflush (statusfp) && opt.exit_on_status_write_error)
+    g10_exit (0);
+}
+
+
+/* Write a FAILURE status line.  */
+void
+write_status_failure (const char *where, gpg_error_t err)
+{
+  if (!statusfp || !status_currently_allowed (STATUS_FAILURE))
+    return;  /* Not enabled or allowed. */
+
+  es_fprintf (statusfp, "[GNUPG:] %s %s %u\n",
+              get_status_string (STATUS_FAILURE), where, err);
+  if (es_fflush (statusfp) && opt.exit_on_status_write_error)
     g10_exit (0);
 }
 
@@ -199,73 +232,83 @@ write_status_error (const char *where, int errcode)
  * A wrap of -1 forces spaces not to be encoded as %20.
  */
 void
-write_status_text_and_buffer ( int no, const char *string,
-                               const char *buffer, size_t len, int wrap )
+write_status_text_and_buffer (int no, const char *string,
+                              const char *buffer, size_t len, int wrap)
 {
-    const char *s, *text;
-    int esc, first;
-    int lower_limit = ' ';
-    size_t n, count, dowrap;
+  const char *s, *text;
+  int esc, first;
+  int lower_limit = ' ';
+  size_t n, count, dowrap;
 
-    if( !statusfp || !status_currently_allowed (no) )
-	return;  /* Not enabled or allowed. */
+  if (!statusfp || !status_currently_allowed (no))
+    return;  /* Not enabled or allowed. */
 
-    if (wrap == -1) {
-        lower_limit--;
-        wrap = 0;
+  if (wrap == -1)
+    {
+      lower_limit--;
+      wrap = 0;
     }
 
-    text = get_status_string (no);
-    count = dowrap = first = 1;
-    do {
-        if (dowrap) {
-            fprintf (statusfp, "[GNUPG:] %s ", text );
-            count = dowrap = 0;
-            if (first && string) {
-                fputs (string, statusfp);
-                count += strlen (string);
-                /* Make sure that there is space after the string.  */
-                if (*string && string[strlen (string)-1] != ' ')
-                  {
-                    putc (' ', statusfp);
-                    count++;
-                  }
+  text = get_status_string (no);
+  count = dowrap = first = 1;
+  do
+    {
+      if (dowrap)
+        {
+          es_fprintf (statusfp, "[GNUPG:] %s ", text);
+          count = dowrap = 0;
+          if (first && string)
+            {
+              es_fputs (string, statusfp);
+              count += strlen (string);
+              /* Make sure that there is a space after the string.  */
+              if (*string && string[strlen (string)-1] != ' ')
+                {
+                  es_putc (' ', statusfp);
+                  count++;
+                }
             }
-            first = 0;
+          first = 0;
         }
-        for (esc=0, s=buffer, n=len; n && !esc; s++, n-- ) {
-            if ( *s == '%' || *(const byte*)s <= lower_limit
-                           || *(const byte*)s == 127 )
-                esc = 1;
-            if ( wrap && ++count > wrap ) {
-                dowrap=1;
-                break;
+      for (esc=0, s=buffer, n=len; n && !esc; s++, n--)
+        {
+          if (*s == '%' || *(const byte*)s <= lower_limit
+              || *(const byte*)s == 127 )
+            esc = 1;
+          if (wrap && ++count > wrap)
+            {
+              dowrap=1;
+              break;
             }
         }
-        if (esc) {
-            s--; n++;
+      if (esc)
+        {
+          s--; n++;
         }
-        if (s != buffer)
-            fwrite (buffer, s-buffer, 1, statusfp );
-        if ( esc ) {
-            fprintf (statusfp, "%%%02X", *(const byte*)s );
-            s++; n--;
+      if (s != buffer)
+        es_fwrite (buffer, s-buffer, 1, statusfp);
+      if ( esc )
+        {
+          es_fprintf (statusfp, "%%%02X", *(const byte*)s );
+          s++; n--;
         }
-        buffer = s;
-        len = n;
-        if ( dowrap && len )
-            putc ( '\n', statusfp );
-    } while ( len );
+      buffer = s;
+      len = n;
+      if (dowrap && len)
+        es_putc ('\n', statusfp);
+    }
+  while (len);
 
-    putc ('\n',statusfp);
-    if ( fflush (statusfp) && opt.exit_on_status_write_error )
-      g10_exit (0);
+  es_putc ('\n',statusfp);
+  if (es_fflush (statusfp) && opt.exit_on_status_write_error)
+    g10_exit (0);
 }
 
+
 void
-write_status_buffer ( int no, const char *buffer, size_t len, int wrap )
+write_status_buffer (int no, const char *buffer, size_t len, int wrap)
 {
-    write_status_text_and_buffer (no, NULL, buffer, len, wrap);
+  write_status_text_and_buffer (no, NULL, buffer, len, wrap);
 }
 
 
@@ -278,68 +321,57 @@ write_status_begin_signing (gcry_md_hd_t md)
     {
       char buf[100];
       size_t buflen;
-      int i;
+      int i, ga;
 
-      /* We use a hard coded list of possible algorithms.  Using other
-         algorithms than specified by OpenPGP does not make sense
-         anyway.  We do this out of performance reasons: Walking all
-         the 110 allowed Ids is not a good idea given the way the
-         check is implemented in libgcrypt.  Recall that the only use
-         of this status code is to create the micalg algorithm for
-         PGP/MIME. */
       buflen = 0;
-      for (i=1; i <= 11; i++)
-        if (i < 4 || i > 7)
-          if ( gcry_md_is_enabled (md, i) && buflen < DIM(buf) )
+      for (i=1; i <= 110; i++)
+        {
+          ga = map_md_openpgp_to_gcry (i);
+          if (ga && gcry_md_is_enabled (md, ga) && buflen+10 < DIM(buf))
             {
               snprintf (buf+buflen, DIM(buf) - buflen - 1,
                         "%sH%d", buflen? " ":"",i);
               buflen += strlen (buf+buflen);
             }
-      write_status_text ( STATUS_BEGIN_SIGNING, buf );
+        }
+      write_status_text (STATUS_BEGIN_SIGNING, buf);
     }
   else
     write_status ( STATUS_BEGIN_SIGNING );
 }
 
 
-/* Write a FAILURE status line.  */
-void
-write_status_failure (const char *where, gpg_error_t err)
-{
-  if (!statusfp || !status_currently_allowed (STATUS_FAILURE))
-    return;  /* Not enabled or allowed. */
-
-  fprintf (statusfp, "[GNUPG:] %s %s %u\n",
-           get_status_string (STATUS_FAILURE), where, err);
-  if (fflush (statusfp) && opt.exit_on_status_write_error)
-    g10_exit (0);
-}
-
-
 static int
 myread(int fd, void *buf, size_t count)
 {
-    int rc;
-    do {
-        rc = read( fd, buf, count );
-    } while ( rc == -1 && errno == EINTR );
-    if ( !rc && count ) {
-        static int eof_emmited=0;
-        if ( eof_emmited < 3 ) {
-            *(char*)buf = CONTROL_D;
-            rc = 1;
-            eof_emmited++;
+  int rc;
+  do
+    {
+      rc = read( fd, buf, count );
+    }
+  while (rc == -1 && errno == EINTR);
+
+  if (!rc && count)
+    {
+      static int eof_emmited=0;
+      if ( eof_emmited < 3 )
+        {
+          *(char*)buf = CONTROL_D;
+          rc = 1;
+          eof_emmited++;
         }
-        else { /* Ctrl-D not caught - do something reasonable */
+      else /* Ctrl-D not caught - do something reasonable */
+        {
 #ifdef HAVE_DOSISH_SYSTEM
-            raise (SIGINT);  /* nothing to hangup under DOS */
+#ifndef HAVE_W32CE_SYSTEM
+          raise (SIGINT); /* Nothing to hangup under DOS.  */
+#endif
 #else
-            raise (SIGHUP); /* no more input data */
+          raise (SIGHUP); /* No more input data.  */
 #endif
         }
     }
-    return rc;
+  return rc;
 }
 
 
@@ -353,8 +385,8 @@ do_get_from_fd ( const char *keyword, int hidden, int getbool )
   int i, len;
   char *string;
 
-  if (statusfp != stdout)
-    fflush (stdout);
+  if (statusfp != es_stdout)
+    es_fflush (es_stdout);
 
   write_status_text (getbool? STATUS_GET_BOOL :
                      hidden? STATUS_GET_HIDDEN : STATUS_GET_LINE, keyword);
@@ -475,7 +507,7 @@ cpr_kill_prompt(void)
 }
 
 int
-cpr_get_answer_is_yes( const char *keyword, const char *prompt )
+cpr_get_answer_is_yes_def (const char *keyword, const char *prompt, int def_yes)
 {
     int yes;
     char *p;
@@ -491,11 +523,17 @@ cpr_get_answer_is_yes( const char *keyword, const char *prompt )
 	}
 	else {
 	    tty_kill_prompt();
-	    yes = answer_is_yes(p);
+	    yes = answer_is_yes_no_default (p, def_yes);
 	    xfree(p);
 	    return yes;
 	}
     }
+}
+
+int
+cpr_get_answer_is_yes (const char *keyword, const char *prompt)
+{
+  return cpr_get_answer_is_yes_def (keyword, prompt, 0);
 }
 
 int

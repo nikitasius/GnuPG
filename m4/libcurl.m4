@@ -192,9 +192,10 @@ x=CURLOPT_VERBOSE;
            AC_SUBST(LIBCURL_CPPFLAGS)
            AC_SUBST(LIBCURL)
 
-	   _libcurl_vernum=`echo $_libcurl_version | $_libcurl_vernum_parse`
+           _libcurl_vernum=`echo $_libcurl_version | $_libcurl_vernum_parse`
 
-	   AC_DEFINE_UNQUOTED(LIBCURL_VERNUM,$_libcurl_vernum,[The version of the libcurl library in packed hex form])
+           AC_DEFINE_UNQUOTED(LIBCURL_VERNUM, $_libcurl_vernum,
+                  [The version of the libcurl library in packed hex form])
 
            for _libcurl_feature in $_libcurl_features ; do
 	      AC_DEFINE_UNQUOTED(AS_TR_CPP(libcurl_feature_$_libcurl_feature),[1])

@@ -2,6 +2,8 @@
 @c This is part of the GnuPG manual.
 @c For copying conditions, see the file gnupg.texi.
 
+@include defs.inc
+
 @node Invoking GPGSM
 @chapter Invoking GPGSM
 @cindex GPGSM command options
@@ -165,20 +167,12 @@ use @samp{--help} to get a list of supported operations.
 @table @gnupgtabopt
 @item --gen-key
 @opindex gen-key
-@ifclear gpgtwoone
--This command allows the creation of a certificate signing request.  It
--is commonly used along with the @option{--output} option to save the
--created CSR into a file.  If used with the @option{--batch} a parameter
--file is used to create the CSR.
-@end ifclear
-@ifset gpgtwoone
 This command allows the creation of a certificate signing request or a
 self-signed certificate.  It is commonly used along with the
 @option{--output} option to save the created CSR or certificate into a
 file.  If used with the @option{--batch} a parameter file is used to
 create the CSR or certificate and it is further possible to create
 non-self-signed certificates.
-@end ifset
 
 @item --list-keys
 @itemx -k
@@ -266,7 +260,6 @@ informational lines are prepended to the output.  Note, that the PKCS#12
 format is not very secure and this command is only provided if there is
 no other way to exchange the private key. (@pxref{option --p12-charset})
 
-@ifset gpgtwoone
 @item --export-secret-key-p8 @var{key-id}
 @itemx --export-secret-key-raw @var{key-id}
 @opindex export-secret-key-p8
@@ -277,7 +270,6 @@ PKCS#1 format; the @code{...-p8} command exports in PKCS#8 format.
 When used with the @code{--armor} option a few informational lines are
 prepended to the output.  These commands are useful to prepare a key
 for use on a TLS server.
-@end ifset
 
 @item --import [@var{files}]
 @opindex import
@@ -358,14 +350,14 @@ Change the default name of the policy file to @var{filename}.
 @item --agent-program @var{file}
 @opindex agent-program
 Specify an agent program to be used for secret key operations.  The
-default value is the @file{/usr/local/bin/gpg-agent}.  This is only used
-as a fallback when the environment variable @code{GPG_AGENT_INFO} is not
-set or a running agent cannot be connected.
+default value is determined by running the command @command{gpgconf}.
+Note that the pipe symbol (@code{|}) is used for a regression test
+suite hack and may thus not be used in the file name.
 
 @item --dirmngr-program @var{file}
 @opindex dirmngr-program
 Specify a dirmngr program to be used for @acronym{CRL} checks.  The
-default value is @file{/usr/sbin/dirmngr}.  This is only used as a
+default value is @file{@value{BINDIR}/dirmngr}.  This is only used as a
 fallback when the environment variable @code{DIRMNGR_INFO} is not set or
 a running dirmngr cannot be connected.
 
@@ -378,6 +370,14 @@ always used.
 
 @item --disable-dirmngr
 Entirely disable the use of the Dirmngr.
+
+@item --no-autostart
+@opindex no-autostart
+Do not start the gpg-agent or the dirmngr if it has not yet been
+started and its service is required.  This option is mostly useful on
+machines where the connection to gpg-agent has been redirected to
+another machines.  If dirmngr is required on the remote machine, it
+may be started manually using @command{gpgconf --launch dirmngr}.
 
 @item --no-secmem-warning
 @opindex no-secmem-warning
@@ -462,6 +462,7 @@ will not have on your local keybox), the operator can tell both your IP
 address and the time when you verified the signature.
 
 
+@anchor{gpgsm-option --validation-model}
 @item --validation-model @var{name}
 @opindex validation-model
 This option changes the default validation model.  The only possible
@@ -554,6 +555,7 @@ may be given (@pxref{how-to-specify-a-user-id}).
 Write output to @var{file}.  The default is to write it to stdout.
 
 
+@anchor{gpgsm-option --with-key-data}
 @item --with-key-data
 @opindex with-key-data
 Displays extra information with the @code{--list-keys} commands.  Especially
@@ -561,6 +563,7 @@ a line tagged @code{grp} is printed which tells you the keygrip of a
 key.  This string is for example used as the file name of the
 secret key.
 
+@anchor{gpgsm-option --with-validation}
 @item --with-validation
 @opindex with-validation
 When doing a key listing, do a full validation check for each key and
@@ -581,12 +584,10 @@ certificate.
 Include the keygrip in standard key listings.  Note that the keygrip is
 always listed in --with-colons mode.
 
-@ifset gpgtwoone
 @item --with-secret
 @opindex with-secret
 Include info about the presence of a secret key in public key listings
 done with @code{--with-colons}.
-@end ifset
 
 @end table
 
@@ -823,7 +824,7 @@ mean that the certificate is trusted; in general the certificates listed
 in this file need to be listed also in @file{trustlist.txt}.
 
 This is a global file an installed in the data directory
-(e.g. @file{/usr/share/gnupg/qualified.txt}).  GnuPG installs a suitable
+(e.g. @file{@value{DATADIR}/qualified.txt}).  GnuPG installs a suitable
 file with root certificates as used in Germany.  As new Root-CA
 certificates may be issued over time, these entries may need to be
 updated; new distributions of this software should come with an updated
@@ -848,9 +849,9 @@ This is plain text file with a few help entries used with
 @command{gpg} and @command{gpgsm}.  The standard file has English help
 texts; to install localized versions use filenames like @file{help.LL.txt}
 with LL denoting the locale.  GnuPG comes with a set of predefined help
-files in the data directory (e.g. @file{/usr/share/gnupg/help.de.txt})
+files in the data directory (e.g. @file{@value{DATADIR}/gnupg/help.de.txt})
 and allows overriding of any help item by help files stored in the
-system configuration directory (e.g. @file{/etc/gnupg/help.de.txt}).
+system configuration directory (e.g. @file{@value{SYSCONFDIR}/help.de.txt}).
 For a reference of the help file's syntax, please see the installed
 @file{help.txt} file.
 
@@ -861,7 +862,7 @@ This file is a collection of common certificates used to populated a
 newly created @file{pubring.kbx}.  An administrator may replace this
 file with a custom one.  The format is a concatenation of PEM encoded
 X.509 certificates.  This global file is installed in the data directory
-(e.g. @file{/usr/share/gnupg/com-certs.pem}).
+(e.g. @file{@value{DATADIR}/com-certs.pem}).
 
 @end table
 
@@ -892,8 +893,8 @@ other programs of this software too.
 
 @item S.gpg-agent
 @cindex S.gpg-agent
-If this file exists and the environment variable @env{GPG_AGENT_INFO} is
-not set, @command{gpgsm} will first try to connect to this socket for
+If this file exists
+@command{gpgsm} will first try to connect to this socket for
 accessing @command{gpg-agent} before starting a new @command{gpg-agent}
 instance.  Under Windows this socket (which in reality be a plain file
 describing a regular TCP listening port) is the standard way of
@@ -983,15 +984,9 @@ this is a missing certificate.
 @node CSR and certificate creation
 @subsection CSR and certificate creation
 
-@ifclear gpgtwoone
-@strong{Please notice}: The immediate creation of certificates is only
-supported by GnuPG version 2.1 or later.  With a 2.0 version you may
-only create a CSR.
-@end ifclear
-
 The command @option{--gen-key} may be used along with the option
 @option{--batch} to either create a certificate signing request (CSR)
-or an X.509 certificate. The is controlled by a parameter file; the
+or an X.509 certificate.  This is controlled by a parameter file; the
 format of this file is as follows:
 
 @itemize @bullet
@@ -1160,7 +1155,9 @@ Assuan manual for details.
 * GPGSM EXPORT::          Export certificates.
 * GPGSM IMPORT::          Import certificates.
 * GPGSM DELETE::          Delete certificates.
+* GPGSM GETAUDITLOG::     Retrieve an audit log.
 * GPGSM GETINFO::         Information about the process
+* GPGSM OPTION::          Session options.
 @end menu
 
 
@@ -1350,6 +1347,7 @@ may be issued as a progress indicator.
 
 @node GPGSM LISTKEYS
 @subsection List available keys
+@anchor{gpgsm-cmd listkeys}
 
 To list the keys in the internal database or using an external key
 provider, the command:
@@ -1449,6 +1447,23 @@ this requires that the usual escape quoting rules are done.
 The certificates must be specified unambiguously otherwise an error is
 returned.
 
+@node GPGSM GETAUDITLOG
+@subsection Retrieve an audit log.
+@anchor{gpgsm-cmd getauditlog}
+
+This command is used to retrieve an audit log.
+
+@example
+GETAUDITLOG [--data] [--html]
+@end example
+
+If @option{--data} is used, the audit log is send using D-lines
+instead of being sent to the file descriptor given by an OUTPUT
+command.  If @option{--html} is used, the output is formated as an
+XHTML block. This is designed to be incorporated into a HTML
+document.
+
+
 @node GPGSM GETINFO
 @subsection  Return information about the process
 
@@ -1465,10 +1480,113 @@ Return the version of the program.
 @item pid
 Return the process id of the process.
 @item agent-check
-Return success if the agent is running.
+Return OK if the agent is running.
 @item cmd_has_option @var{cmd} @var{opt}
-Return success if the command @var{cmd} implements the option @var{opt}.
+Return OK if the command @var{cmd} implements the option @var{opt}.
 The leading two dashes usually used with @var{opt} shall not be given.
+@item offline
+Return OK if the connection is in offline mode.  This may be either
+due to a @code{OPTION offline=1} or due to @command{gpgsm} being
+started with option @option{--disable-dirmngr}.
+@end table
+
+@node GPGSM OPTION
+@subsection  Session options.
+
+The standard Assuan option handler supports these options.
+
+@example
+OPTION @var{name}[=@var{value}]
+@end example
+
+These @var{name}s are recognized:
+
+@table @code
+
+@item putenv
+Change the session's environment to be passed via gpg-agent to
+Pinentry.  @var{value} is a string of the form
+@code{<KEY>[=[<STRING>]]}.  If only @code{<KEY>} is given the
+environment variable @code{<KEY>} is removed from the session
+environment, if @code{<KEY>=} is given that environment variable is
+set to the empty string, and if @code{<STRING>} is given it is set to
+that string.
+
+@item display
+Set the session environment variable @code{DISPLAY} is set to @var{value}.
+@item ttyname
+Set the session environment variable @code{GPG_TTY} is set to @var{value}.
+@item ttytype
+Set the session environment variable @code{TERM} is set to @var{value}.
+@item lc-ctype
+Set the session environment variable @code{LC_CTYPE} is set to @var{value}.
+@item lc-messages
+Set the session environment variable @code{LC_MESSAGES} is set to @var{value}.
+@item xauthority
+Set the session environment variable @code{XAUTHORITY} is set to @var{value}.
+@item pinentry-user-data
+Set the session environment variable @code{PINENTRY_USER_DATA} is set
+to @var{value}.
+
+@item include-certs
+This option overrides the command line option
+@option{--include-certs}.  A @var{value} of -2 includes all
+certificates except for the root certificate, -1 includes all
+certicates, 0 does not include any certicates, 1 includes only the
+signers certicate and all other positive values include up to
+@var{value} certificates starting with the signer cert.
+
+@item list-mode
+@xref{gpgsm-cmd listkeys}.
+
+@item list-to-output
+If @var{value} is true the output of the list commands
+(@pxref{gpgsm-cmd listkeys}) is written to the file descriptor set
+with the last OUTPUT command.  If @var{value} is false the output is
+written via data lines; this is the default.
+
+@item with-validation
+If @var{value} is true for each listed certificate the validation
+status is printed.  This may result in the download of a CRL or the
+user being asked about the trustworthiness of a root certificate.  The
+default is given by a command line option (@pxref{gpgsm-option
+--with-validation}).
+
+
+@item with-secret
+If @var{value} is true certificates with a corresponding private key
+are marked by the list commands.
+
+@item validation-model
+This option overrides the command line option
+@option{validation-model} for the session.
+(@pxref{gpgsm-option --validation-model}.)
+
+@item with-key-data
+This option globally enables the command line option
+@option{--with-key-data}.  (@pxref{gpgsm-option --with-key-data}.)
+
+@item enable-audit-log
+If @var{value} is true data to write an audit log is gathered.
+(@pxref{gpgsm-cmd getauditlog}.)
+
+@item allow-pinentry-notify
+If this option is used notifications about the launch of a Pinentry
+are passed back to the client.
+
+@item with-ephemeral-keys
+If @var{value} is true ephemeral certificates are included in the
+output of the list commands.
+
+@item no-encrypt-to
+If this option is used all keys set by the command line option
+@option{--encrypt-to} are ignored.
+
+@item offline
+If @var{value} is true or @var{value} is not given all network access
+is disabled for this session.  This is the same as the command line
+option @option{--disable-dirmngr}.
+
 @end table
 
 @mansect see also

@@ -3,12 +3,22 @@
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -41,6 +51,7 @@ void trap_unaligned (void);
 int  disable_core_dumps (void);
 int  enable_core_dumps (void);
 const unsigned char *get_session_marker (size_t *rlen);
+unsigned int get_uint_nonce (void);
 /*int check_permissions (const char *path,int extension,int checkonly);*/
 void gnupg_sleep (unsigned int seconds);
 int translate_sys2libc_fd (gnupg_fd_t fd, int for_write);
@@ -48,12 +59,17 @@ int translate_sys2libc_fd_int (int fd, int for_write);
 FILE *gnupg_tmpfile (void);
 void gnupg_reopen_std (const char *pgmname);
 void gnupg_allow_set_foregound_window (pid_t pid);
-
+int  gnupg_remove (const char *fname);
+int  gnupg_mkdir (const char *name, const char *modestr);
+char *gnupg_mkdtemp (char *template);
+int  gnupg_setenv (const char *name, const char *value, int overwrite);
+int  gnupg_unsetenv (const char *name);
+char *gnupg_getcwd (void);
 
 #ifdef HAVE_W32_SYSTEM
 void *w32_get_user_sid (void);
 
-# include "../jnlib/w32help.h"
+#include "../common/w32help.h"
 
 #endif /*HAVE_W32_SYSTEM*/
 

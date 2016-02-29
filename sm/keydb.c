@@ -26,18 +26,12 @@
 #include <assert.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <fcntl.h>
 #include <unistd.h>
 
 #include "gpgsm.h"
 #include "../kbx/keybox.h"
 #include "keydb.h"
 #include "i18n.h"
-
-#ifdef MKDIR_TAKES_ONE_ARG
-#undef mkdir
-#define mkdir(a,b) mkdir(a)
-#endif
 
 static int active_handles;
 
@@ -54,7 +48,7 @@ struct resource_item {
   } u;
   void *token;
   int secret;
-  DOTLOCK lockhandle;
+  dotlock_t lockhandle;
 };
 
 static struct resource_item all_resources[MAX_KEYDB_RESOURCES];
@@ -99,11 +93,11 @@ try_make_homedir (const char *fname)
 #endif
       )
     {
-      if ( mkdir (fname, S_IRUSR|S_IWUSR|S_IXUSR) )
-        log_info (_("can't create directory `%s': %s\n"),
+      if (gnupg_mkdir (fname, "-rwx"))
+        log_info (_("can't create directory '%s': %s\n"),
                   fname, strerror(errno) );
       else if (!opt.quiet )
-        log_info (_("directory `%s' created\n"), fname);
+        log_info (_("directory '%s' created\n"), fname);
     }
 }
 
@@ -113,10 +107,10 @@ try_make_homedir (const char *fname)
    locked.  This lock check does not work if the directory itself is
    not yet available.  If R_CREATED is not NULL it will be set to true
    if the function created a new keybox.  */
-static int
+static gpg_error_t
 maybe_create_keybox (char *filename, int force, int *r_created)
 {
-  DOTLOCK lockhd = NULL;
+  dotlock_t lockhd = NULL;
   FILE *fp;
   int rc;
   mode_t oldmask;
@@ -175,7 +169,7 @@ maybe_create_keybox (char *filename, int force, int *r_created)
   /* To avoid races with other instances of gpg trying to create or
      update the keybox (it is removed during an update for a short
      time), we do the next stuff in a locked state. */
-  lockhd = create_dotlock (filename);
+  lockhd = dotlock_create (filename, 0);
   if (!lockhd)
     {
       /* A reason for this to fail is that the directory is not
@@ -183,7 +177,7 @@ maybe_create_keybox (char *filename, int force, int *r_created)
          sense if this is the case. An empty non-writable directory
          with no keyring is not really useful at all. */
       if (opt.verbose)
-        log_info ("can't allocate lock for `%s'\n", filename );
+        log_info ("can't allocate lock for '%s'\n", filename );
 
       if (!force)
         return gpg_error (GPG_ERR_ENOENT);
@@ -191,10 +185,10 @@ maybe_create_keybox (char *filename, int force, int *r_created)
         return gpg_error (GPG_ERR_GENERAL);
     }
 
-  if ( make_dotlock (lockhd, -1) )
+  if ( dotlock_take (lockhd, -1) )
     {
       /* This is something bad.  Probably a stale lockfile.  */
-      log_info ("can't lock `%s'\n", filename);
+      log_info ("can't lock '%s'\n", filename);
       rc = gpg_error (GPG_ERR_GENERAL);
       goto leave;
     }
@@ -213,14 +207,14 @@ maybe_create_keybox (char *filename, int force, int *r_created)
     {
       rc = gpg_error_from_syserror ();
       umask (oldmask);
-      log_error (_("error creating keybox `%s': %s\n"),
+      log_error (_("error creating keybox '%s': %s\n"),
                  filename, gpg_strerror (rc));
       goto leave;
     }
   umask (oldmask);
 
   if (!opt.quiet)
-    log_info (_("keybox `%s' created\n"), filename);
+    log_info (_("keybox '%s' created\n"), filename);
   if (r_created)
     *r_created = 1;
 
@@ -230,8 +224,8 @@ maybe_create_keybox (char *filename, int force, int *r_created)
  leave:
   if (lockhd)
     {
-      release_dotlock (lockhd);
-      destroy_dotlock (lockhd);
+      dotlock_release (lockhd);
+      dotlock_destroy (lockhd);
     }
   return rc;
 }
@@ -243,13 +237,13 @@ maybe_create_keybox (char *filename, int force, int *r_created)
  * does not exist.  If AUTO_CREATED is not NULL it will be set to true
  * if the function has created a new keybox.
  */
-int
+gpg_error_t
 keydb_add_resource (const char *url, int force, int secret, int *auto_created)
 {
   static int any_secret, any_public;
   const char *resname = url;
   char *filename = NULL;
-  int rc = 0;
+  gpg_error_t err = 0;
   KeydbResourceType rt = KEYDB_RESOURCE_TYPE_NONE;
 
   if (auto_created)
@@ -269,8 +263,8 @@ keydb_add_resource (const char *url, int force, int secret, int *auto_created)
 #if !defined(HAVE_DRIVE_LETTERS) && !defined(__riscos__)
       else if (strchr (resname, ':'))
         {
-          log_error ("invalid key resource URL `%s'\n", url );
-          rc = gpg_error (GPG_ERR_GENERAL);
+          log_error ("invalid key resource URL '%s'\n", url );
+          err = gpg_error (GPG_ERR_GENERAL);
           goto leave;
 	}
 #endif /* !HAVE_DRIVE_LETTERS && !__riscos__ */
@@ -292,23 +286,24 @@ keydb_add_resource (const char *url, int force, int secret, int *auto_created)
   /* see whether we can determine the filetype */
   if (rt == KEYDB_RESOURCE_TYPE_NONE)
     {
-      FILE *fp2 = fopen( filename, "rb" );
+      FILE *fp = fopen( filename, "rb" );
 
-      if (fp2) {
-        u32 magic;
+      if (fp)
+        {
+          u32 magic;
 
-        /* FIXME: check for the keybox magic */
-        if (fread( &magic, 4, 1, fp2) == 1 )
-          {
-            if (magic == 0x13579ace || magic == 0xce9a5713)
-              ; /* GDBM magic - no more support */
-            else
-              rt = KEYDB_RESOURCE_TYPE_KEYBOX;
-          }
-        else /* maybe empty: assume keybox */
-          rt = KEYDB_RESOURCE_TYPE_KEYBOX;
-        fclose (fp2);
-      }
+          /* FIXME: check for the keybox magic */
+          if (fread (&magic, 4, 1, fp) == 1 )
+            {
+              if (magic == 0x13579ace || magic == 0xce9a5713)
+                ; /* GDBM magic - no more support */
+              else
+                rt = KEYDB_RESOURCE_TYPE_KEYBOX;
+            }
+          else /* maybe empty: assume keybox */
+            rt = KEYDB_RESOURCE_TYPE_KEYBOX;
+          fclose (fp);
+        }
       else /* no file yet: create keybox */
         rt = KEYDB_RESOURCE_TYPE_KEYBOX;
     }
@@ -316,21 +311,25 @@ keydb_add_resource (const char *url, int force, int secret, int *auto_created)
   switch (rt)
     {
     case KEYDB_RESOURCE_TYPE_NONE:
-      log_error ("unknown type of key resource `%s'\n", url );
-      rc = gpg_error (GPG_ERR_GENERAL);
+      log_error ("unknown type of key resource '%s'\n", url );
+      err = gpg_error (GPG_ERR_GENERAL);
       goto leave;
 
     case KEYDB_RESOURCE_TYPE_KEYBOX:
-      rc = maybe_create_keybox (filename, force, auto_created);
-      if (rc)
+      err = maybe_create_keybox (filename, force, auto_created);
+      if (err)
         goto leave;
       /* Now register the file */
       {
-        void *token = keybox_register_file (filename, secret);
-        if (!token)
-          ; /* already registered - ignore it */
+        void *token;
+
+        err = keybox_register_file (filename, secret, &token);
+        if (gpg_err_code (err) == GPG_ERR_EEXIST)
+          ; /* Already registered - ignore.  */
+        else if (err)
+          ; /* Other error.  */
         else if (used_resources >= MAX_KEYDB_RESOURCES)
-          rc = gpg_error (GPG_ERR_RESOURCE_LIMIT);
+          err = gpg_error (GPG_ERR_RESOURCE_LIMIT);
         else
           {
             all_resources[used_resources].type = rt;
@@ -339,21 +338,21 @@ keydb_add_resource (const char *url, int force, int secret, int *auto_created)
             all_resources[used_resources].secret = secret;
 
             all_resources[used_resources].lockhandle
-              = create_dotlock (filename);
+              = dotlock_create (filename, 0);
             if (!all_resources[used_resources].lockhandle)
-              log_fatal ( _("can't create lock for `%s'\n"), filename);
+              log_fatal ( _("can't create lock for '%s'\n"), filename);
 
             /* Do a compress run if needed and the file is not locked. */
-            if (!make_dotlock (all_resources[used_resources].lockhandle, 0))
+            if (!dotlock_take (all_resources[used_resources].lockhandle, 0))
               {
-                KEYBOX_HANDLE kbxhd = keybox_new (token, secret);
+                KEYBOX_HANDLE kbxhd = keybox_new_x509 (token, secret);
 
                 if (kbxhd)
                   {
                     keybox_compress (kbxhd);
                     keybox_release (kbxhd);
                   }
-                release_dotlock (all_resources[used_resources].lockhandle);
+                dotlock_release (all_resources[used_resources].lockhandle);
               }
 
             used_resources++;
@@ -362,22 +361,22 @@ keydb_add_resource (const char *url, int force, int secret, int *auto_created)
       break;
 
     default:
-      log_error ("resource type of `%s' not supported\n", url);
-      rc = gpg_error (GPG_ERR_NOT_SUPPORTED);
+      log_error ("resource type of '%s' not supported\n", url);
+      err = gpg_error (GPG_ERR_NOT_SUPPORTED);
       goto leave;
     }
 
   /* fixme: check directory permissions and print a warning */
 
  leave:
-  if (rc)
-    log_error ("keyblock resource `%s': %s\n", filename, gpg_strerror(rc));
+  if (err)
+    log_error ("keyblock resource '%s': %s\n", filename, gpg_strerror (err));
   else if (secret)
     any_secret = 1;
   else
     any_public = 1;
   xfree (filename);
-  return rc;
+  return err;
 }
 
 
@@ -405,7 +404,7 @@ keydb_new (int secret)
           hd->active[j].token  = all_resources[i].token;
           hd->active[j].secret = all_resources[i].secret;
           hd->active[j].lockhandle = all_resources[i].lockhandle;
-          hd->active[j].u.kr = keybox_new (all_resources[i].token, secret);
+          hd->active[j].u.kr = keybox_new_x509 (all_resources[i].token, secret);
           if (!hd->active[j].u.kr)
             {
               xfree (hd);
@@ -483,7 +482,7 @@ keydb_get_resource_name (KEYDB_HANDLE hd)
   return s? s: "";
 }
 
-/* Switch the handle into ephemeral mode and return the orginal value. */
+/* Switch the handle into ephemeral mode and return the original value. */
 int
 keydb_set_ephemeral (KEYDB_HANDLE hd, int yes)
 {
@@ -546,7 +545,7 @@ lock_all (KEYDB_HANDLE hd)
           break;
         case KEYDB_RESOURCE_TYPE_KEYBOX:
           if (hd->active[i].lockhandle)
-            rc = make_dotlock (hd->active[i].lockhandle, -1);
+            rc = dotlock_take (hd->active[i].lockhandle, -1);
           break;
         }
       if (rc)
@@ -564,7 +563,7 @@ lock_all (KEYDB_HANDLE hd)
                 break;
               case KEYDB_RESOURCE_TYPE_KEYBOX:
                 if (hd->active[i].lockhandle)
-                  release_dotlock (hd->active[i].lockhandle);
+                  dotlock_release (hd->active[i].lockhandle);
                 break;
               }
           }
@@ -594,7 +593,7 @@ unlock_all (KEYDB_HANDLE hd)
           break;
         case KEYDB_RESOURCE_TYPE_KEYBOX:
           if (hd->active[i].lockhandle)
-            release_dotlock (hd->active[i].lockhandle);
+            dotlock_release (hd->active[i].lockhandle);
           break;
         }
     }
@@ -651,113 +650,6 @@ keydb_pop_found_state (KEYDB_HANDLE hd)
       break;
     }
 }
-
-
-
-#if 0
-/*
- * Return the last found keybox.  Caller must free it.
- * The returned keyblock has the kbode flag bit 0 set for the node with
- * the public key used to locate the keyblock or flag bit 1 set for
- * the user ID node.
- */
-int
-keydb_get_keyblock (KEYDB_HANDLE hd, KBNODE *ret_kb)
-{
-    int rc = 0;
-
-    if (!hd)
-        return G10ERR_INV_ARG;
-
-    if ( hd->found < 0 || hd->found >= hd->used)
-        return -1; /* nothing found */
-
-    switch (hd->active[hd->found].type) {
-      case KEYDB_RESOURCE_TYPE_NONE:
-        rc = G10ERR_GENERAL; /* oops */
-        break;
-      case KEYDB_RESOURCE_TYPE_KEYBOX:
-        rc = keybox_get_keyblock (hd->active[hd->found].u.kr, ret_kb);
-        break;
-    }
-
-    return rc;
-}
-
-/*
- * update the current keyblock with KB
- */
-int
-keydb_update_keyblock (KEYDB_HANDLE hd, KBNODE kb)
-{
-    int rc = 0;
-
-    if (!hd)
-        return G10ERR_INV_ARG;
-
-    if ( hd->found < 0 || hd->found >= hd->used)
-        return -1; /* nothing found */
-
-    if( opt.dry_run )
-	return 0;
-
-    if (!hd->locked)
-      return gpg_error (GPG_ERR_NOT_LOCKED);
-
-    switch (hd->active[hd->found].type) {
-      case KEYDB_RESOURCE_TYPE_NONE:
-        rc = G10ERR_GENERAL; /* oops */
-        break;
-      case KEYDB_RESOURCE_TYPE_KEYBOX:
-        rc = keybox_update_keyblock (hd->active[hd->found].u.kr, kb);
-        break;
-    }
-
-    unlock_all (hd);
-    return rc;
-}
-
-
-/*
- * Insert a new KB into one of the resources.
- */
-int
-keydb_insert_keyblock (KEYDB_HANDLE hd, KBNODE kb)
-{
-    int rc = -1;
-    int idx;
-
-    if (!hd)
-        return G10ERR_INV_ARG;
-
-    if( opt.dry_run )
-	return 0;
-
-    if ( hd->found >= 0 && hd->found < hd->used)
-        idx = hd->found;
-    else if ( hd->current >= 0 && hd->current < hd->used)
-        idx = hd->current;
-    else
-        return G10ERR_GENERAL;
-
-    rc = lock_all (hd);
-    if (rc)
-        return rc;
-
-    switch (hd->active[idx].type) {
-      case KEYDB_RESOURCE_TYPE_NONE:
-        rc = G10ERR_GENERAL; /* oops */
-        break;
-      case KEYDB_RESOURCE_TYPE_KEYBOX:
-        rc = keybox_insert_keyblock (hd->active[idx].u.kr, kb);
-        break;
-    }
-
-    unlock_all (hd);
-    return rc;
-}
-
-#endif /*disabled code*/
 
 
 
@@ -1036,10 +928,11 @@ keydb_rebuild_caches (void)
 /*
  * Start the next search on this handle right at the beginning
  */
-int
+gpg_error_t
 keydb_search_reset (KEYDB_HANDLE hd)
 {
-  int i, rc = 0;
+  int i;
+  gpg_error_t rc = 0;
 
   if (!hd)
     return gpg_error (GPG_ERR_INV_VALUE);
@@ -1058,8 +951,7 @@ keydb_search_reset (KEYDB_HANDLE hd)
           break;
         }
     }
-  return rc; /* fixme: we need to map error codes or share them with
-                all modules*/
+  return rc;
 }
 
 /*
@@ -1070,6 +962,7 @@ int
 keydb_search (KEYDB_HANDLE hd, KEYDB_SEARCH_DESC *desc, size_t ndesc)
 {
   int rc = -1;
+  unsigned long skipped;
 
   if (!hd)
     return gpg_error (GPG_ERR_INV_VALUE);
@@ -1082,11 +975,15 @@ keydb_search (KEYDB_HANDLE hd, KEYDB_SEARCH_DESC *desc, size_t ndesc)
           BUG(); /* we should never see it here */
           break;
         case KEYDB_RESOURCE_TYPE_KEYBOX:
-          rc = keybox_search (hd->active[hd->current].u.kr, desc, ndesc);
+          rc = keybox_search (hd->active[hd->current].u.kr, desc, ndesc,
+                              KEYBOX_BLOBTYPE_X509,
+                              NULL, &skipped);
           break;
         }
-      if (rc == -1) /* EOF -> switch to next resource */
-        hd->current++;
+      if (rc == -1 || gpg_err_code (rc) == GPG_ERR_EOF)
+        { /* EOF -> switch to next resource */
+          hd->current++;
+        }
       else if (!rc)
         hd->found = hd->current;
     }
@@ -1124,8 +1021,8 @@ keydb_search_kid (KEYDB_HANDLE hd, u32 *kid)
 
   memset (&desc, 0, sizeof desc);
   desc.mode = KEYDB_SEARCH_MODE_LONG_KID;
-/*    desc.u.kid[0] = kid[0]; */
-/*    desc.u.kid[1] = kid[1]; */
+  desc.u.kid[0] = kid[0];
+  desc.u.kid[1] = kid[1];
   return keydb_search (hd, &desc, 1);
 }
 
@@ -1191,284 +1088,6 @@ keydb_search_subject (KEYDB_HANDLE hd, const char *name)
 }
 
 
-static int
-classify_user_id (const char *name,
-                  KEYDB_SEARCH_DESC *desc,
-                  int *force_exact )
-{
-  const char *s;
-  int hexprefix = 0;
-  int hexlength;
-  int mode = 0;
-
-  /* clear the structure so that the mode field is set to zero unless
-   * we set it to the correct value right at the end of this function */
-  memset (desc, 0, sizeof *desc);
-  *force_exact = 0;
-  /* Skip leading spaces.  Fixme: what about trailing white space? */
-  for(s = name; *s && spacep (s); s++ )
-    ;
-
-  switch (*s)
-    {
-    case 0:  /* empty string is an error */
-      return 0;
-
-    case '.': /* an email address, compare from end */
-      mode = KEYDB_SEARCH_MODE_MAILEND;
-      s++;
-      desc->u.name = s;
-      break;
-
-    case '<': /* an email address */
-      mode = KEYDB_SEARCH_MODE_MAIL;
-      s++;
-      desc->u.name = s;
-      break;
-
-    case '@':  /* part of an email address */
-      mode = KEYDB_SEARCH_MODE_MAILSUB;
-      s++;
-      desc->u.name = s;
-      break;
-
-    case '=':  /* exact compare */
-      mode = KEYDB_SEARCH_MODE_EXACT;
-      s++;
-      desc->u.name = s;
-      break;
-
-    case '*':  /* case insensitive substring search */
-      mode = KEYDB_SEARCH_MODE_SUBSTR;
-      s++;
-      desc->u.name = s;
-      break;
-
-    case '+':  /* compare individual words */
-      mode = KEYDB_SEARCH_MODE_WORDS;
-      s++;
-      desc->u.name = s;
-      break;
-
-    case '/': /* subject's DN */
-      s++;
-      if (!*s || spacep (s))
-        return 0; /* no DN or prefixed with a space */
-      desc->u.name = s;
-      mode = KEYDB_SEARCH_MODE_SUBJECT;
-      break;
-
-    case '#':
-      {
-        const char *si;
-
-        s++;
-        if ( *s == '/')
-          { /* "#/" indicates an issuer's DN */
-            s++;
-            if (!*s || spacep (s))
-              return 0; /* no DN or prefixed with a space */
-            desc->u.name = s;
-            mode = KEYDB_SEARCH_MODE_ISSUER;
-          }
-        else
-          { /* serialnumber + optional issuer ID */
-            for (si=s; *si && *si != '/'; si++)
-              {
-                if (!strchr("01234567890abcdefABCDEF", *si))
-                  return 0; /* invalid digit in serial number*/
-              }
-            desc->sn = (const unsigned char*)s;
-            desc->snlen = -1;
-            if (!*si)
-              mode = KEYDB_SEARCH_MODE_SN;
-            else
-              {
-                s = si+1;
-                if (!*s || spacep (s))
-                  return 0; /* no DN or prefixed with a space */
-                desc->u.name = s;
-                mode = KEYDB_SEARCH_MODE_ISSUER_SN;
-              }
-          }
-      }
-      break;
-
-    case ':': /*Unified fingerprint */
-      {
-        const char *se, *si;
-        int i;
-
-        se = strchr (++s,':');
-        if (!se)
-          return 0;
-        for (i=0,si=s; si < se; si++, i++ )
-          {
-            if (!strchr("01234567890abcdefABCDEF", *si))
-              return 0; /* invalid digit */
-          }
-        if (i != 32 && i != 40)
-          return 0; /* invalid length of fpr*/
-        for (i=0,si=s; si < se; i++, si +=2)
-          desc->u.fpr[i] = hextobyte(si);
-        for (; i < 20; i++)
-          desc->u.fpr[i]= 0;
-        s = se + 1;
-        mode = KEYDB_SEARCH_MODE_FPR;
-      }
-      break;
-
-    case '&': /* Keygrip*/
-      {
-        if (hex2bin (s+1, desc->u.grip, 20) < 0)
-          return 0; /* Invalid. */
-        mode = KEYDB_SEARCH_MODE_KEYGRIP;
-      }
-      break;
-
-    default:
-      if (s[0] == '0' && s[1] == 'x')
-        {
-          hexprefix = 1;
-          s += 2;
-        }
-
-      hexlength = strspn(s, "0123456789abcdefABCDEF");
-      if (hexlength >= 8 && s[hexlength] =='!')
-        {
-          *force_exact = 1;
-          hexlength++; /* just for the following check */
-        }
-
-      /* check if a hexadecimal number is terminated by EOS or blank */
-      if (hexlength && s[hexlength] && !spacep (s+hexlength))
-        {
-          if (hexprefix) /* a "0x" prefix without correct */
-            return 0;	 /* termination is an error */
-          /* The first chars looked like a hex number, but really is
-             not */
-          hexlength = 0;
-        }
-
-      if (*force_exact)
-        hexlength--; /* remove the bang */
-
-      if (hexlength == 8
-          || (!hexprefix && hexlength == 9 && *s == '0'))
-        { /* short keyid */
-          unsigned long kid;
-          if (hexlength == 9)
-            s++;
-          kid = strtoul( s, NULL, 16 );
-          desc->u.kid[4] = kid >> 24;
-          desc->u.kid[5] = kid >> 16;
-          desc->u.kid[6] = kid >>  8;
-          desc->u.kid[7] = kid;
-          mode = KEYDB_SEARCH_MODE_SHORT_KID;
-        }
-      else if (hexlength == 16
-               || (!hexprefix && hexlength == 17 && *s == '0'))
-        { /* complete keyid */
-          unsigned long kid0, kid1;
-          char buf[9];
-          if (hexlength == 17)
-            s++;
-          mem2str(buf, s, 9 );
-          kid0 = strtoul (buf, NULL, 16);
-          kid1 = strtoul (s+8, NULL, 16);
-          desc->u.kid[0] = kid0 >> 24;
-          desc->u.kid[1] = kid0 >> 16;
-          desc->u.kid[2] = kid0 >>  8;
-          desc->u.kid[3] = kid0;
-          desc->u.kid[4] = kid1 >> 24;
-          desc->u.kid[5] = kid1 >> 16;
-          desc->u.kid[6] = kid1 >>  8;
-          desc->u.kid[7] = kid1;
-          mode = KEYDB_SEARCH_MODE_LONG_KID;
-        }
-      else if (hexlength == 32
-               || (!hexprefix && hexlength == 33 && *s == '0'))
-        { /* md5 fingerprint */
-          int i;
-          if (hexlength == 33)
-            s++;
-          memset(desc->u.fpr+16, 0, 4);
-          for (i=0; i < 16; i++, s+=2)
-            {
-              int c = hextobyte(s);
-              if (c == -1)
-                return 0;
-              desc->u.fpr[i] = c;
-            }
-          mode = KEYDB_SEARCH_MODE_FPR16;
-        }
-      else if (hexlength == 40
-               || (!hexprefix && hexlength == 41 && *s == '0'))
-        { /* sha1/rmd160 fingerprint */
-          int i;
-          if (hexlength == 41)
-            s++;
-          for (i=0; i < 20; i++, s+=2)
-            {
-              int c = hextobyte(s);
-              if (c == -1)
-                return 0;
-              desc->u.fpr[i] = c;
-            }
-          mode = KEYDB_SEARCH_MODE_FPR20;
-        }
-      else if (!hexprefix)
-        {
-          /* The fingerprint in an X.509 listing is often delimited by
-             colons, so we try to single this case out. */
-          mode = 0;
-          hexlength = strspn (s, ":0123456789abcdefABCDEF");
-          if (hexlength == 59 && (!s[hexlength] || spacep (s+hexlength)))
-            {
-              int i;
-
-              for (i=0; i < 20; i++, s += 3)
-                {
-                  int c = hextobyte(s);
-                  if (c == -1 || (i < 19 && s[2] != ':'))
-                    break;
-                  desc->u.fpr[i] = c;
-                }
-              if (i == 20)
-                mode = KEYDB_SEARCH_MODE_FPR20;
-            }
-          if (!mode) /* default is substring search */
-            {
-              *force_exact = 0;
-              desc->u.name = s;
-              mode = KEYDB_SEARCH_MODE_SUBSTR;
-            }
-        }
-      else
-	{ /* hex number with a prefix but a wrong length */
-          return 0;
-        }
-    }
-
-  desc->mode = mode;
-  return mode;
-}
-
-
-int
-keydb_classify_name (const char *name, KEYDB_SEARCH_DESC *desc)
-{
-  int dummy;
-  KEYDB_SEARCH_DESC dummy_desc;
-
-  if (!desc)
-    desc = &dummy_desc;
-
-  if (!classify_user_id (name, desc, &dummy))
-    return gpg_error (GPG_ERR_INV_NAME);
-  return 0;
-}
-
 
 /* Store the certificate in the key DB but make sure that it does not
    already exists.  We do this simply by comparing the fingerprint.
@@ -1497,8 +1116,9 @@ keydb_store_cert (ksba_cert_t cert, int ephemeral, int *existed)
       return gpg_error (GPG_ERR_ENOMEM);;
     }
 
-  if (ephemeral)
-    keydb_set_ephemeral (kh, 1);
+  /* Set the ephemeral flag so that the search looks at all
+     records.  */
+  keydb_set_ephemeral (kh, 1);
 
   rc = lock_all (kh);
   if (rc)
@@ -1512,12 +1132,29 @@ keydb_store_cert (ksba_cert_t cert, int ephemeral, int *existed)
         {
           if (existed)
             *existed = 1;
+          if (!ephemeral)
+            {
+              /* Remove ephemeral flags from existing certificate to "store"
+                 it permanently. */
+              rc = keydb_set_cert_flags (cert, 1, KEYBOX_FLAG_BLOB, 0,
+                                         KEYBOX_FLAG_BLOB_EPHEMERAL, 0);
+              if (rc)
+                {
+                  log_error ("clearing ephemeral flag failed: %s\n",
+                             gpg_strerror (rc));
+                  return rc;
+                }
+            }
           return 0; /* okay */
         }
       log_error (_("problem looking for existing certificate: %s\n"),
                  gpg_strerror (rc));
       return rc;
     }
+
+  /* Reset the ephemeral flag if not requested.  */
+  if (!ephemeral)
+    keydb_set_ephemeral (kh, 0);
 
   rc = keydb_locate_writable (kh, 0);
   if (rc)
@@ -1658,13 +1295,9 @@ keydb_clear_some_cert_flags (ctrl_t ctrl, strlist_t names)
     {
       for (ndesc=0, sl=names; sl; sl = sl->next)
         {
-          rc = keydb_classify_name (sl->d, desc+ndesc);
+          rc = classify_user_id (sl->d, desc+ndesc, 0);
           if (rc)
-            {
-              log_error ("key `%s' not found: %s\n",
-                         sl->d, gpg_strerror (rc));
-              rc = 0;
-            }
+            log_error ("key '%s' not found: %s\n", sl->d, gpg_strerror (rc));
           else
             ndesc++;
         }
@@ -1708,5 +1341,3 @@ keydb_clear_some_cert_flags (ctrl_t ctrl, strlist_t names)
   xfree (desc);
   keydb_release (hd);
 }
-
-

@@ -1,14 +1,22 @@
-/* sexp-parse.h - S-Exp helper functions
+/* sexp-parse.h - S-expression helper functions
  * Copyright (C) 2002, 2003, 2007 Free Software Foundation, Inc.
  *
- * This file is part of GnuPG.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
  *
- * GnuPG is distributed in the hope that it will be useful,
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -21,6 +29,7 @@
 #define SEXP_PARSE_H
 
 #include <gpg-error.h>
+
 
 /* Return the length of the next S-Exp part and update the pointer to
    the first data byte.  0 is returned on error */
@@ -51,7 +60,7 @@ sskip (unsigned char const **buf, int *depth)
   const unsigned char *s = *buf;
   size_t n;
   int d = *depth;
-  
+
   while (d > 0)
     {
       if (*s == '(')
@@ -70,7 +79,7 @@ sskip (unsigned char const **buf, int *depth)
             return gpg_error (GPG_ERR_INV_SEXP);
           n = snext (&s);
           if (!n)
-            return gpg_error (GPG_ERR_INV_SEXP); 
+            return gpg_error (GPG_ERR_INV_SEXP);
           s += n;
         }
     }
@@ -82,7 +91,7 @@ sskip (unsigned char const **buf, int *depth)
 
 /* Check whether the the string at the address BUF points to matches
    the token.  Return true on match and update BUF to point behind the
-   token.  Return false and dont update tha buffer if it does not
+   token.  Return false and do not update the buffer if it does not
    match. */
 static inline int
 smatch (unsigned char const **buf, size_t buflen, const char *token)
@@ -123,6 +132,6 @@ smklen (char *help_buffer, size_t help_buflen, size_t value, size_t *length)
     *length = (help_buffer + help_buflen) - p;
   return p;
 }
-    
+
 
 #endif /*SEXP_PARSE_H*/

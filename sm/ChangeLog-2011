@@ -1,21 +1,97 @@
-2011-12-02  Werner Koch  <wk@g10code.com>
+2011-12-01  Werner Koch  <wk@g10code.com>
 
 	NB: ChangeLog files are no longer manually maintained.  Starting
 	on December 1st, 2011 we put change information only in the GIT
 	commit log, and generate a top-level ChangeLog file from logs at
 	"make dist".  See doc/HACKING for details.
 
-2011-08-04  Werner Koch  <wk@g10code.com>
+2011-09-20  Werner Koch  <wk@g10code.com>
 
-	* keydb.c (keydb_add_resource): Remove set but unused var
-	CREATED_FNAME.
-	* gpgsm.c (main): Remove set but used var FNAME.
+	* verify.c (gpgsm_verify): s/gcry_md_start_debug/gcry_md_debug/
+	in preparation for Libgcrypt 1.6.
+	* sign.c (gpgsm_sign): Ditto.
+	* certreqgen.c (create_request): Ditto.
+	* certcheck.c (gpgsm_check_cert_sig): Ditto.
+
+2011-08-10  Werner Koch  <wk@g10code.com>
+
+	* keydb.c (keydb_add_resource): Remove unsued var CREATED_FNAME.
+
+	* gpgsm.c (main): Remove unused var FNAME.
 
 2011-07-21  Werner Koch  <wk@g10code.com>
 
 	* call-dirmngr.c (get_cached_cert, get_cached_cert_data_cb): New.
 	(gpgsm_dirmngr_isvalid): Try to get the only-valid-if-cert-valid
 	certificate from the dirmngr first.
+
+2011-06-01  Marcus Brinkmann  <mb@g10code.com>
+
+	* certreqgen.c (proc_parameters): Initialize RC.
+
+2011-04-25  Werner Koch  <wk@g10code.com>
+
+	* certlist.c (gpgsm_add_to_certlist): Mark classify_user_id for
+	use with non-OpenPGP.
+	(gpgsm_find_cert): Ditto.
+	* sign.c (get_default_signer): Ditto.
+	* keylist.c (list_internal_keys): Ditto.
+	* import.c (reimport_one): Ditto.
+	* export.c (gpgsm_export): Ditto.
+	* delete.c (delete_one): Ditto.
+
+2011-03-10  Werner Koch  <wk@g10code.com>
+
+	* minip12.c (oid_pkcs5PBKDF2, oid_pkcs5PBES2, oid_aes128_CBC): New.
+	(set_key_iv_pbes2): New.
+	(crypt_block): Add args IV and IVLEN.  Call set_key_iv_pbes2.
+	(decrypt_block): Add args IV and IVLEN.
+	(parse_bag_encrypted_data): Hack to support PBES2 data.
+	(parse_bag_data): Ditto.
+
+2011-03-03  Werner Koch  <wk@g10code.com>
+
+	* base64.c (base64_finish_write): Do not copy to radbuf to get rid
+	of a faulty gcc 4.4 "used uninitialized" warning.
+
+2011-03-01  Werner Koch  <wk@g10code.com>
+
+	* certreqgen.c (pSERIAL, pISSUERDN, pNOTBEFORE, pNOTAFTER)
+	(pSIGNINGKEY, pHASHALGO): New.
+	(reqgen_ctrl_s): Remove field WRITER.
+	(read_parameters): Support new keywords.  Change arg WRITER to
+	OUT_FP; pass that to proc_parameters.
+	(proc_parameters): Add arg WRITER.  Check values of new keywords.
+	Create writer object here.  Support generation of certificates.
+	(create_request): Take new arg SIGKEY.  Allow for hash algorithms
+	other than SHA-1.  Set serialno and other values for certificate
+	creation.
+	(gpgsm_genkey): Do not create writer object but pass output stream
+	to read_parameters.
+	* certreqgen-ui.c (gpgsm_gencertreq_tty): Ask for self-signed.
+	* misc.c (transform_sigval): New.
+
+2011-02-25  Werner Koch  <wk@g10code.com>
+
+	* certreqgen.c (create_request): Add arg SIGKEY.
+
+2010-11-25  Werner Koch  <wk@g10code.com>
+
+	* base64.c (gpgsm_create_writer): Remove arg FP which is not used
+	by any caller.  Change all callers.
+	(struct writer_cb_parm_s): Remove field FP.
+	(do_putc, do_fputs): Remove and replace callers by direct calls to
+	es_ functions.
+
+2010-11-23  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (gpgsm_LDADD): Add extra_bin_ldflags.
+
+2010-10-08  Werner Koch  <wk@g10code.com>
+
+	* gpgsm.c: Add option --with-keygrip.
+	* gpgsm.h (struct opt): Add WITH_KEYGRIP.
+	* keylist.c (list_cert_std): Implement option.
 
 2010-09-16  Werner Koch  <wk@g10code.com>
 
@@ -27,48 +103,157 @@
 	* import.c (check_and_store): Ditto.
 	(check_and_store): Ditto.
 
-2010-05-12  Werner Koch  <wk@g10code.com>
+2010-08-16  Werner Koch  <wk@g10code.com>
 
-	* Makefile.am (gpgsm_LDADD): Include NETLIBS which is required for
-	Solaris.
+	* gpgsm.c (main) <aGPGConfList>: Use es_printf.
 
-2010-03-12  Werner Koch  <wk@g10code.com>
+	* call-dirmngr.c (start_dirmngr_ext): Use new start_new_dirmngr
+	function.
 
-	* server.c (cmd_passwd): New.  From trunk.
-	(register_commands): Register it.
+	* gpgsm.c: Mark option --prefer-system-dirmngr obsolete.
+	(main): Enable dirmngr by default.
 
-2010-02-11  Marcus Brinkmann  <marcus@g10code.de>
+	* gpgsm.h (struct opt): Remove field PREFER_SYSTEM_DIRMNGR.
 
-	From trunk 2009-09-23, 2009-11-02, 2009-11-04, 2009-11-05, 2009-11-25,
-	2009-12-08:
+	* server.c (gpgsm_server): Use dirmngr_socket_name instead of the
+	envvar for the hello line info.
 
-	* call-agent.c (membuf_data_cb, default_inq_cb)
-	(inq_ciphertext_cb, scd_serialno_status_cb)
-	(scd_keypairinfo_status_cb, istrusted_status_cb)
-	(learn_status_cb, learn_cb, keyinfo_status_cb): Return gpg_error_t.
-	* gpgsm.c (main): Update to new assuan API.
-	* server.c: Include "gpgsm.h" before <assuan.h> due to check for
-	GPG_ERR_SOURCE_DEFAULT and assuan.h now including gpg-error.h.
-	* server.c (reset_notify, input_notify, output_notify): Update to
-	new assuan interface.
-	(option_handler, cmd_recipient, cmd_signer, cmd_encrypt)
-	(cmd_decrypt, cmd_verify, cmd_sign, cmd_import, cmd_export)
-	(cmd_delkeys, cmd_message, cmd_listkeys, cmd_dumpkeys)
-	(cmd_listsecretkeys, cmd_dumpsecretkeys, cmd_genkey)
-	(cmd_getauditlog, cmd_getinfo): Return gpg_error_t instead of int.
-	(register_commands): Use assuan_handler_t.  Same for member HANDLER
-	in table.  Add NULL arg to assuan_register_command.  Add help arg to
-	assuan_register_command.  Provide help strings for all commands.
-	(gpgsm_server): Allocate assuan context before starting server.
-	Use assuan_fd_t and assuan_fdopen on fds.
-	* call-dirmngr.c (prepare_dirmngr): Check for CTX and error before
-	setting LDAPSERVER.
-	(start_dirmngr_ext): Allocate assuan context before starting
-	server.  Update use ofassuan_pipe_connect and assuan_socket_connect.
-	Convert posix fd to assuan fd.
-	(inq_certificate, isvalid_status_cb, lookup_cb, lookup_status_cb)
-	(run_command_cb, run_command_inq_cb, run_command_status_cb):
-	Return gpg_error_t instead of int.
+2010-06-21  Werner Koch  <wk@g10code.com>
+
+	* minip12.c (p12_build): Change arg CERT to const void ptr.
+	(build_cert_sequence): Change arg CERT to const ptr.
+
+	* gpgsm.c (main) <aExportSecretKeyP12>: Use to estream.
+	(open_fwrite): Removed.
+
+	* export.c: Include minip12.h.
+	(popen_protect_tool): Remove.
+	(export_p12): Use gpg-agent directly.  Change calling convention.
+	(gpgsm_p12_export): Adjust for that change.  Change arg FP to an
+	estream_t.
+	(do_putc): Remove.  Change callers to es_putc.
+	(do_fputs): Likewise.
+	(print_short_info): Remove arg FP.
+	* call-agent.c (gpgsm_agent_export_key): new.
+
+2010-06-17  Werner Koch  <wk@g10code.com>
+
+	* import.c (parse_p12): Remove arg retfp.  Use the agent's new
+	import command.
+	(import_one): Adjust call to pkcs12.
+	(store_cert_cb, rsa_key_check): New.
+	(popen_protect_tool): Remove.
+	* minip12.c (parse_bag_encrypted_data, p12_parse): Add arg
+	R_BADPASS.
+	* call-agent.c (gpgsm_agent_ask_passphrase): New.
+	(gpgsm_agent_keywrap_key): New.
+	(struct import_key_parm_s): New.
+	(gpgsm_agent_import_key): New.
+	* minip12.c, minip12.h: Move from ../agent/.
+	* Makefile.am (gpgsm_SOURCES): Add them.
+
+2010-06-11  Marcus Brinkmann  <marcus@g10code.de>
+
+	* server.c (cmd_message) [HAVE_W32CE_SYSTEM]: Finish pipe.
+
+2010-06-10  Marcus Brinkmann  <marcus@g10code.de>
+
+	* server.c (SERVER_STDIN, SERVER_STDOUT): New macros.
+	(gpgsm_server): Use them with assuan_fdopen.
+
+2010-04-23  Marcus Brinkmann  <marcus@g10code.de>
+
+	* certreqgen.c (read_parameters): Use ascii_isspace instead of
+	spacep to stop at newline, too.
+
+2010-04-14  Werner Koch  <wk@g10code.com>
+
+	* gpgsm.c (main) [W32CE]: Disable dirmngr for now.
+
+2010-04-13  Werner Koch  <wk@g10code.com>
+
+	* sign.c (gpgsm_sign): Do not check qualified status in
+	no-chain-validation mode.
+
+2010-04-08  Werner Koch  <wk@g10code.com>
+
+	* gpgsm.c (open_es_fread): Add arg mode.
+	(main) <aKeygen>: Call with mode "r" instead of "rb".
+
+2010-04-07  Werner Koch  <wk@g10code.com>
+
+	* misc.c: Remove setenv.h.  Include sysutils.h.
+	(setup_pinentry_env): s/setenv/gnupg_setenv/
+
+2010-03-24  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (gpgsm_LDADD): Add extra_sys_libs.
+
+2010-03-23  Werner Koch  <wk@g10code.com>
+
+	* qualified.c (gpgsm_is_in_qualified_list): Replace rewind by
+	fseek+clearerr.
+
+2010-03-22  Werner Koch  <wk@g10code.com>
+
+	* import.c (parse_p12): Use estream functions for the tmp streams.
+	* export.c (export_p12): Ditto.
+
+2010-03-11  Werner Koch  <wk@g10code.com>
+
+	* verify.c (gpgsm_verify): Use gpgsm_es_print_name.
+
+	* gpgsm.c: Include "asshelp.h".
+	(main): Remove assuan_set_assuan_log_prefix.  Add
+	assuan_set_log_cb.
+	* server.c (gpgsm_server): Remove assuan_set_log_stream.
+
+2010-03-10  Werner Koch  <wk@g10code.com>
+
+	* Makefile.am (common_libs): Remove libjnlib.a.  Change order.
+
+	* gpgsm.h: Remove "estream.h".
+
+2010-03-08  Werner Koch  <wk@g10code.com>
+
+	* certreqgen.c (gpgsm_genkey): Change OUT_FP to an estream_t
+	OUT_STREAM.
+	* certreqgen-ui.c (gpgsm_gencertreq_tty): ditto.
+
+	* server.c (cmd_genkey): Close IN_STREAM.
+
+	* server.c (cmd_encrypt, cmd_decrypt, cmd_verify, cmd_sign): Avoid
+	dup call by using es_fdopen_nc.
+	(do_listkeys): Use es_fdopen_nc instead of dup and es_fdopen.
+	(cmd_export): Ditto.
+	(cmd_genkey): Ditto.
+	* export.c (popen_protect_tool): Change OUTFILE to an estream_t.
+	(export_p12): Change OUTFP and arg RETFP to an estream_t.
+	(gpgsm_p12_export): Change DATAFP to an estream_t.
+	(gpgsm_export): Remove arg FP.
+	* import.c (import_one): Change CERTFP and arg FP to an estream_t.
+	(popen_protect_tool): Ditto for OUTFILE.
+	(parse_p12): Change CERTFP to an estream_t.
+	* sign.c (hash_data, hash_and_copy_data): Use estream.
+	(gpgsm_sign): Change arg OUT_FP to an estream_t.
+	* verify.c (gpgsm_verify): Rename FP to IN_FP.  Change FP and arg
+	OUT_FP to an estream_t.
+	(hash_data): Use estream.
+	* base64.c (struct reader_cb_parm_s): Change FP to an estream_t.
+	(gpgsm_create_reader): Ditto.
+	(simple_reader_cb, base64_reader_cb): Adjust accordingly.
+	* decrypt.c (gpgsm_decrypt): Change OUT_FP and IN_FP to an estream_t.
+	* encrypt.c (gpgsm_encrypt): Change OUT_FP to an estream_t.  Ditto
+	for DATA_FD.
+	(encrypt_cb): Use estream.
+	* gpgsm.c (main) <aEncr, aVerify, aSign, aDecrypt>: Use estream
+	functions.
+	(main) <aExport, aKeygen>: Use open_es_fwrite.
+
+2009-12-14  Werner Koch  <wk@g10code.com>
+
+	* server.c (cmd_passwd): New.
+	(register_commands): Register new command.
 
 2009-12-10  Werner Koch  <wk@g10code.com>
 
@@ -76,30 +261,104 @@
 	* gpgsm.h (opt): Add field IGNORED_CERT_EXTENSIONS.
 	* certchain.c (unknown_criticals): Handle ignored extensions,
 
+2009-12-08  Werner Koch  <wk@g10code.com>
+
+	* keydb.c (keydb_search_kid): Fix code even that it is not used.
+	(classify_user_id): Adjust for change of u.kid type.
+	(keydb_classify_name): Replace GPG_ERR_INV_NAME by
+	GPG_ERR_INV_USER_ID.
+	(keydb_classify_name): Remove.  Replace all callers by
+	classify_user_id.
+
+2009-12-08  Marcus Brinkmann  <marcus@g10code.de>
+
+	* call-dirmngr.c (start_dirmngr_ext): Convert posix fd to assuan fd.
+
 2009-12-03  Werner Koch  <wk@g10code.com>
 
-	From trunk:
+	* gpgsm.c (set_debug): Allow for numerical debug leveles.  Print
+	active debug flags.
+
+2009-12-02  Werner Koch  <wk@g10code.com>
 
 	* verify.c (gpgsm_verify): Add audit info on hash algorithms.
+
 	* sign.c (gpgsm_sign): Add audit log calls.
 	(hash_data): Return an error indicator.
+
+2009-12-01  Werner Koch  <wk@g10code.com>
+
 	* decrypt.c (gpgsm_decrypt): Add audit log calls.
 
 	* gpgsm.c: New option --html-audit-log.
 
-	* certreqgen.c (proc_parameters): Change fallback key length to
-	2048.
+2009-11-25  Marcus Brinkmann  <marcus@g10code.de>
+
+	* server.c (gpgsm_server): Use assuan_fd_t and assuan_fdopen on
+	fds.
+
+2009-11-23  Werner Koch  <wk@g10code.com>
+
 	* gpgsm.c (main) <aGpgConfList>: Add key "default_pubkey_algo".
 
-2009-12-03  Werner Koch  <wk@g10code.com>
+2009-11-10  Marcus Brinkmann  <marcus@g10code.de>
 
-	* gpgsm.c (set_debug): Allow for numerical debug levels.  Print
-	active debug flags.
+	* server.c (cmd_getauditlog): Don't dup FD for es_fdopen_nc as
+	this leaks the FD here.
+
+2009-11-05  Marcus Brinkmann  <marcus@g10code.de>
+
+	* call-dirmngr.c (start_dirmngr_ext): Update use of
+	assuan_pipe_connect and assuan_socket_connect.
+
+2009-11-04  Werner Koch  <wk@g10code.com>
+
+	* certreqgen.c (proc_parameters): Change fallback key length to
+	2048.
+
+	* server.c (register_commands): Add help arg to
+	assuan_register_command.  Provide help strings for all commands.
+
+2009-11-02  Marcus Brinkmann  <marcus@g10code.de>
+
+	* server.c (reset_notify, input_notify, output_notify): Update to
+	new assuan interface.
+	(register_commands): Use assuan_handler_t.
+	* call-agent.c (membuf_data_cb, default_inq_cb)
+	(inq_ciphertext_cb, scd_serialno_status_cb)
+	(scd_keypairinfo_status_cb, istrusted_status_cb)
+	(learn_status_cb, learn_cb, keyinfo_status_cb): Return gpg_error_t.
 
 2009-10-16  Werner Koch  <wk@g10code.com>
 
-	* gpgsm.c (DEFAULT_INCLUDE_CERTS): New.
-	(default_include_certs):  Init to -2.
+	* gpgsm.c (default_include_certs): Change to -2.
+	(DEFAULT_INCLUDE_CERTS): New.
+	(DEFAULT_CIPHER_ALGO): New.  Use instead of hardcoded "3DES".
+
+2009-09-30  Werner Koch  <wk@g10code.com>
+
+	* gpgsm.c (main): Remove obsolete GCRYCTL_DISABLE_INTERNAL_LOCKING.
+
+2009-09-23  Marcus Brinkmann  <marcus@g10code.de>
+
+	* gpgsm.c (main): Update to new assuan API.
+	* server.c: Include "gpgsm.h" before <assuan.h> due to check for
+	GPG_ERR_SOURCE_DEFAULT and assuan.h now including gpg-error.h.
+	(option_handler, cmd_recipient, cmd_signer, cmd_encrypt)
+	(cmd_decrypt, cmd_verify, cmd_sign, cmd_import, cmd_export)
+	(cmd_delkeys, cmd_message, cmd_listkeys, cmd_dumpkeys)
+	(cmd_listsecretkeys, cmd_dumpsecretkeys, cmd_genkey)
+	(cmd_getauditlog, cmd_getinfo): Return gpg_error_t instead of int.
+	(register_commands): Same for member HANDLER in table.
+	(gpgsm_server): Allocate assuan context before starting server.
+	* sm/call-dirmngr.c:
+	* call-dirmngr.c (prepare_dirmngr): Check for CTX and error before
+	setting LDAPSERVER.
+	(start_dirmngr_ext): Allocate assuan context before starting
+	server.
+	(inq_certificate, isvalid_status_cb, lookup_cb, lookup_status_cb)
+	(run_command_cb, run_command_inq_cb, run_command_status_cb):
+	Return gpg_error_t instead of int.
 
 2009-08-06  Werner Koch  <wk@g10code.com>
 
@@ -2693,8 +2952,8 @@ h2007-11-22  Werner Koch  <wk@g10code.com>
 	* server.c (rc_to_assuan_status): New.  Use it for all commands.
 
 
- Copyright 2001, 2002, 2003, 2004, 2005, 2006,
-	   2007, 2008, 2009 Free Software Foundation, Inc.
+ Copyright 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+	   2010, 2011 Free Software Foundation, Inc.
 
  This file is free software; as a special exception the author gives
  unlimited permission to copy and/or distribute it, with or without
@@ -2703,3 +2962,7 @@ h2007-11-22  Werner Koch  <wk@g10code.com>
  This file is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+Local Variables:
+buffer-read-only: t
+End:

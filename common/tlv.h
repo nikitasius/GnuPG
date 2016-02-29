@@ -3,12 +3,22 @@
  *
  * This file is part of GnuPG.
  *
- * GnuPG is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
+ * This file is free software; you can redistribute it and/or modify
+ * it under the terms of either
  *
- * GnuPG is distributed in the hope that it will be useful,
+ *   - the GNU Lesser General Public License as published by the Free
+ *     Software Foundation; either version 3 of the License, or (at
+ *     your option) any later version.
+ *
+ * or
+ *
+ *   - the GNU General Public License as published by the Free
+ *     Software Foundation; either version 2 of the License, or (at
+ *     your option) any later version.
+ *
+ * or both in parallel, as here.
+ *
+ * This file is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -80,33 +90,26 @@ const unsigned char *find_tlv_unchecked (const unsigned char *buffer,
 /* ASN.1 BER parser: Parse BUFFER of length SIZE and return the tag
    and the length part from the TLV triplet.  Update BUFFER and SIZE
    on success. */
-gpg_error_t _parse_ber_header (unsigned char const **buffer, size_t *size,
-                               int *r_class, int *r_tag, 
+gpg_error_t parse_ber_header (unsigned char const **buffer, size_t *size,
+                               int *r_class, int *r_tag,
                                int *r_constructed,
-                               int *r_ndef, size_t *r_length, size_t *r_nhdr,
-                               gpg_err_source_t errsource);
-#define parse_ber_header(a,b,c,d,e,f,g,h) \
-        _parse_ber_header ((a),(b),(c),(d),(e),(f),(g),(h),\
-                           GPG_ERR_SOURCE_DEFAULT)
+                              int *r_ndef, size_t *r_length, size_t *r_nhdr);
 
 
-/* Return the next token of an canconical encoded S-expression.  BUF
+/* Return the next token of an canonical encoded S-expression.  BUF
    is the pointer to the S-expression and BUFLEN is a pointer to the
    length of this S-expression (used to validate the syntax).  Both
    are updated to reflect the new position.  The token itself is
-   returned as a pointer into the orginal buffer at TOK and TOKLEN.
+   returned as a pointer into the original buffer at TOK and TOKLEN.
    If a parentheses is the next token, TOK will be set to NULL.
-   TOKLEN is checked to be within the bounds.  On error a error code
-   is returned and all pointers should are not guaranteed to point to
-   a meanigful value. DEPTH should be initialized to 0 and will
+   TOKLEN is checked to be within the bounds.  On error an error code
+   is returned and no pointer is not guaranteed to point to
+   a meaningful value.  DEPTH should be initialized to 0 and will
    reflect on return the actual depth of the tree. To detect the end
    of the S-expression it is advisable to check DEPTH after a
    successful return. */
-gpg_error_t _parse_sexp (unsigned char const **buf, size_t *buflen,
-                         int *depth, unsigned char const **tok, size_t *toklen,
-                         gpg_err_source_t errsource);
-#define parse_sexp(a,b,c,d,e) \
-        _parse_sexp ((a),(b),(c),(d),(e), GPG_ERR_SOURCE_DEFAULT)
+gpg_error_t parse_sexp (unsigned char const **buf, size_t *buflen,
+                        int *depth, unsigned char const **tok, size_t *toklen);
 
 
 

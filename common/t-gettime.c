@@ -1,5 +1,5 @@
 /* t-gettime.c - Module test for gettime.c
- *	Copyright (C) 2007 Free Software Foundation, Inc.
+ *	Copyright (C) 2007, 2011 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -67,8 +67,8 @@ test_isotime2epoch (void)
         {
           fail (idx);
           if (verbose)
-            fprintf (stderr, "string `%s' exp: %ld got: %ld\n",
-                     array[idx].string, (long)array[idx].expected, 
+            fprintf (stderr, "string '%s' exp: %ld got: %ld\n",
+                     array[idx].string, (long)array[idx].expected,
                      (long)val);
         }
       if (array[idx].expected != INVALID)
@@ -77,7 +77,7 @@ test_isotime2epoch (void)
           if (strlen (tbuf) != 15)
             {
               if (verbose)
-                fprintf (stderr, "string `%s', time-t %ld, revert: `%s'\n",
+                fprintf (stderr, "string '%s', time-t %ld, revert: '%s'\n",
                          array[idx].string, (long)val, tbuf);
               fail (idx);
             }
@@ -89,6 +89,164 @@ test_isotime2epoch (void)
 
 
 
+static void
+test_string2isotime (void)
+{
+  struct {
+    const char *string;
+    size_t result;
+    const char *expected;
+  } array [] = {
+    { "19700101T000001",      15, "19700101T000001" },
+    { "19700101T235959",      15, "19700101T235959" },
+    { "19980815T143712",      15, "19980815T143712" },
+    { "19700101T000000",      15, "19700101T000000" },
+    { "19691231T235959",      15, "19691231T235959" },
+    { "19000101T000000",      15, "19000101T000000" },
+    { "",                      0, ""                },
+    { "19000101T00000",        0, ""                },
+    { "20010101t123456",       0, ""                },
+    { "20010101T123456",      15, "20010101T123456" },
+    { "20070629T160000",      15, "20070629T160000" },
+    { "20070629T160000:",     15, "20070629T160000" },
+    { "20070629T160000,",     15, "20070629T160000" },
+    { "20070629T160000 ",     15, "20070629T160000" },
+    { "20070629T160000\n",    15,"20070629T160000"  },
+    { "20070629T160000.",      0, ""                },
+    { "1066-03-20",           10, "10660320T000000" },
+    { "1066-03-20,",          10, "10660320T000000" },
+    { "1066-03-20:",           0, ""                },
+    { "1066-03-20 00",        13, "10660320T000000" },
+    { "1066-03-20 01",        13, "10660320T010000" },
+    { "1066-03-20 23",        13, "10660320T230000" },
+    { "1066-03-20 24",         0, ""                },
+    { "1066-03-20 00:",        0, ""                },
+    { "1066-03-20 00:3",       0, ""                },
+    { "1066-03-20 00:31",     16, "10660320T003100" },
+    { "1066-03-20 00:31:47",  19, "10660320T003147" },
+    { "1066-03-20 00:31:47 ", 19, "10660320T003147" },
+    { "1066-03-20 00:31:47,", 19, "10660320T003147" },
+    { "1066-03-20 00:31:47:",  0, ""                },
+    { "1-03-20 00:31:47:",     0, ""                },
+    { "10-03-20 00:31:47:",    0, ""                },
+    { "106-03-20 00:31:47:",   0, ""                },
+    { "1066-23-20 00:31:47:",  0, ""                },
+    { "1066-00-20 00:31:47:",  0, ""                },
+    { "1066-0-20 00:31:47:",   0, ""                },
+    { "1066-01-2 00:31:47:",   0, ""                },
+    { "1066-01-2  00:31:47:",  0, ""                },
+    { "1066-01-32 00:31:47:",  0, ""                },
+    { "1066-01-00 00:31:47:",  0, ""                },
+    { "1066-03-20  00:31:47:",11, "10660320T000000" },
+    { "1066-03-2000:31:47:",   0, ""                },
+    { "10666-03-20 00:31:47:", 0, ""                },
+    { NULL, 0 }
+  };
+  int idx;
+  size_t result;
+  gnupg_isotime_t tbuf;
+
+  for (idx=0; array[idx].string; idx++)
+    {
+      result = string2isotime (tbuf, array[idx].string);
+      if (result != array[idx].result)
+        {
+          fail (idx);
+          if (verbose)
+            fprintf (stderr, "string '%s' expected: %d, got: %d\n",
+                     array[idx].string, (int)array[idx].result, (int)result);
+        }
+      else if (result && strlen (tbuf) != 15)
+        {
+          fail (idx);
+          if (verbose)
+            fprintf (stderr, "string '%s' invalid isotime returned\n",
+                     array[idx].string);
+        }
+      else if (result && strcmp (array[idx].expected, tbuf))
+        {
+          fail (idx);
+          if (verbose)
+            fprintf (stderr, "string '%s' bad isotime '%s' returned\n",
+                     array[idx].string, tbuf);
+        }
+    }
+}
+
+
+static void
+test_isodate_human_to_tm (void)
+{
+  struct {
+    const char *string;
+    int okay;
+    int year, mon, mday;
+  } array [] = {
+    { "1970-01-01",      1, 1970,  1,  1 },
+    { "1970-02-01",      1, 1970,  2,  1 },
+    { "1970-12-31",      1, 1970, 12, 31 },
+    { "1971-01-01",      1, 1971,  1,  1 },
+    { "1998-08-15",      1, 1998,  8, 15 },
+    { "2015-04-10",      1, 2015,  4, 10 },
+    { "2015-04-10 11:30",1, 2015,  4, 10 },
+    { "1969-12-31",      0,    0,  0,  0 },
+    { "1900-01-01",      0,    0,  0,  0 },
+    { "",                0,    0,  0,  0 },
+    { "1970-12-32",      0,    0,  0,  0 },
+    { "1970-13-01",      0,    0,  0,  0 },
+    { "1970-01-00",      0,    0,  0,  0 },
+    { "1970-00-01",      0,    0,  0,  0 },
+    { "1970-00-01",      0,    0,  0,  0 },
+    { "1970",            0,    0,  0,  0 },
+    { "1970-01",         0,    0,  0,  0 },
+    { "1970-01-1",       0,    0,  0,  0 },
+    { "1970-1--01",      0,    0,  0,  0 },
+    { "1970-01-01,",     1, 1970,  1,  1 },
+    { "1970-01-01 ",     1, 1970,  1,  1 },
+    { "1970-01-01\t",    1, 1970,  1,  1 },
+    { "1970-01-01;",     0,    0,  0,  0 },
+    { "1970-01-01:",     0,    0,  0,  0 },
+    { "1970_01-01",      0,    0,  0,  0 },
+    { "1970-01_01",      0,    0,  0,  0 },
+    { NULL, 0 }
+  };
+  int idx;
+  int okay;
+  struct tm tmbuf;
+
+  for (idx=0; array[idx].string; idx++)
+    {
+      okay = !isodate_human_to_tm (array[idx].string, &tmbuf);
+      if (okay != array[idx].okay)
+        {
+          fail (idx);
+          if (verbose)
+            fprintf (stderr, "string '%s' expected: %d, got: %d\n",
+                     array[idx].string, (int)array[idx].okay, okay);
+        }
+      else if (!okay)
+        ;
+      else if (tmbuf.tm_year + 1900 != array[idx].year
+               || tmbuf.tm_mon +1   != array[idx].mon
+               || tmbuf.tm_mday     != array[idx].mday)
+        {
+          fail (idx);
+          if (verbose)
+            fprintf (stderr, "string '%s' returned %04d-%02d-%02d\n",
+                     array[idx].string,
+                     tmbuf.tm_year + 1900, tmbuf.tm_mon + 1, tmbuf.tm_mday);
+        }
+      else if (tmbuf.tm_sec || tmbuf.tm_min || tmbuf.tm_hour
+               || tmbuf.tm_isdst != -1)
+        {
+          fail (idx);
+          if (verbose)
+            fprintf (stderr, "string '%s' returned bad time part\n",
+                     array[idx].string);
+        }
+    }
+}
+
 
 int
 main (int argc, char **argv)
@@ -97,7 +255,8 @@ main (int argc, char **argv)
     verbose = 1;
 
   test_isotime2epoch ();
+  test_string2isotime ();
+  test_isodate_human_to_tm ();
 
   return !!errcount;
 }
-

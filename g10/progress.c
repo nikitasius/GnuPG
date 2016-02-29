@@ -115,9 +115,9 @@ progress_filter (void *opaque, int control,
 	  || timestamp - pfx->last_time > 0)
 	{
 	  char buffer[50];
-	  
+
 	  sprintf (buffer, "%.20s ? %lu %lu",
-                   pfx->what? pfx->what : "?", 
+                   pfx->what? pfx->what : "?",
                    pfx->offset,
 		   pfx->total);
 	  write_status_text (STATUS_PROGRESS, buffer);
@@ -131,7 +131,7 @@ progress_filter (void *opaque, int control,
       release_progress_context (pfx);
     }
   else if (control == IOBUFCTRL_DESC)
-    *(char**)buf = "progress_filter";
+    mem2str (buf, "progress_filter", *ret_len);
   return rc;
 }
 

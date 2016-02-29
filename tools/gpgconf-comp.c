@@ -1,5 +1,6 @@
 /* gpgconf-comp.c - Configuration utility for GnuPG.
- * Copyright (C) 2004, 2007, 2008, 2009 Free Software Foundation, Inc.
+ * Copyright (C) 2004, 2007, 2008, 2009, 2010,
+ *               2011 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -30,7 +31,9 @@
 #include <errno.h>
 #include <time.h>
 #include <stdarg.h>
-#include <signal.h>
+#ifdef HAVE_SIGNAL_H
+# include <signal.h>
+#endif
 #include <ctype.h>
 #ifdef HAVE_W32_SYSTEM
 # define WIN32_LEAN_AND_MEAN 1
@@ -41,7 +44,6 @@
 #endif
 
 /* For log_logv(), asctimestamp(), gnupg_get_time ().  */
-#define JNLIB_NEED_LOG_LOGV
 #include "util.h"
 #include "i18n.h"
 #include "exechelp.h"
@@ -49,15 +51,13 @@
 #include "gc-opt-flags.h"
 #include "gpgconf.h"
 
-
 /* There is a problem with gpg 1.4 under Windows: --gpgconf-list
    returns a plain filename without escaping.  As long as we have not
-   fixed that we need to use gpg2 - it might actually be better to use
-   gpg2 in any case.  */
-#ifdef HAVE_W32_SYSTEM
+   fixed that we need to use gpg2.  */
+#if defined(HAVE_W32_SYSTEM) && !defined(HAVE_W32CE_SYSTEM)
 #define GPGNAME "gpg2"
 #else
-#define GPGNAME "gpg"
+#define GPGNAME GPG_NAME
 #endif
 
 
@@ -86,7 +86,7 @@ gc_error (int status, int errnum, const char *fmt, ...)
   va_list arg_ptr;
 
   va_start (arg_ptr, fmt);
-  log_logv (JNLIB_LOG_ERROR, fmt, arg_ptr);
+  log_logv (GPGRT_LOG_ERROR, fmt, arg_ptr);
   va_end (arg_ptr);
 
   if (errnum)
@@ -104,8 +104,9 @@ gc_error (int status, int errnum, const char *fmt, ...)
 
 
 /* Forward declaration.  */
-static void gpg_agent_runtime_change (void);
-static void scdaemon_runtime_change (void);
+static void gpg_agent_runtime_change (int killflag);
+static void scdaemon_runtime_change (int killflag);
+static void dirmngr_runtime_change (int killflag);
 
 /* Backend configuration.  Backends are used to decide how the default
    and current value of an option can be determined, and how the
@@ -131,11 +132,14 @@ typedef enum
     /* The GnuPG SCDaemon.  */
     GC_BACKEND_SCDAEMON,
 
-    /* The Aegypten directory manager.  */
+    /* The GnuPG directory manager.  */
     GC_BACKEND_DIRMNGR,
 
-    /* The LDAP server list file for the Aegypten director manager.  */
+    /* The LDAP server list file for the director manager.  */
     GC_BACKEND_DIRMNGR_LDAP_SERVER_LIST,
+
+    /* The Pinentry (not a part of GnuPG, proper).  */
+    GC_BACKEND_PINENTRY,
 
     /* The number of the above entries.  */
     GC_BACKEND_NR
@@ -156,12 +160,13 @@ static struct
 
   /* The module name (GNUPG_MODULE_NAME_foo) as defined by
      ../common/util.h.  This value is used to get the actual installed
-     path of the program.  0 is used if no backedn program is
+     path of the program.  0 is used if no backend program is
      available. */
   char module_name;
 
-  /* The runtime change callback.  */
-  void (*runtime_change) (void);
+  /* The runtime change callback.  If KILLFLAG is true the component
+     is killed and not just reloaded.  */
+  void (*runtime_change) (int killflag);
 
   /* The option name for the configuration filename of this backend.
      This must be an absolute filename.  It can be an option from a
@@ -175,18 +180,20 @@ static struct
 } gc_backend[GC_BACKEND_NR] =
   {
     { NULL },		/* GC_BACKEND_ANY dummy entry.  */
-    { "GnuPG", GPGNAME, GNUPG_MODULE_NAME_GPG,
-      NULL, "gpgconf-gpg.conf" },
-    { "GPGSM", "gpgsm", GNUPG_MODULE_NAME_GPGSM,
-      NULL, "gpgconf-gpgsm.conf" },
-    { "GPG Agent", "gpg-agent", GNUPG_MODULE_NAME_AGENT,
-      gpg_agent_runtime_change, "gpgconf-gpg-agent.conf" },
-    { "SCDaemon", "scdaemon", GNUPG_MODULE_NAME_SCDAEMON,
-      scdaemon_runtime_change, "gpgconf-scdaemon.conf" },
-    { "DirMngr", "dirmngr", GNUPG_MODULE_NAME_DIRMNGR,
-      NULL, "gpgconf-dirmngr.conf" },
-    { "DirMngr LDAP Server List", NULL, 0,
+    { GPG_DISP_NAME, GPGNAME, GNUPG_MODULE_NAME_GPG,
+      NULL, GPGCONF_NAME "-" GPG_NAME ".conf" },
+    { GPGSM_DISP_NAME, GPGSM_NAME, GNUPG_MODULE_NAME_GPGSM,
+      NULL, GPGCONF_NAME "-" GPGSM_NAME ".conf" },
+    { GPG_AGENT_DISP_NAME, GPG_AGENT_NAME, GNUPG_MODULE_NAME_AGENT,
+      gpg_agent_runtime_change, GPGCONF_NAME"-" GPG_AGENT_NAME ".conf" },
+    { SCDAEMON_DISP_NAME, SCDAEMON_NAME, GNUPG_MODULE_NAME_SCDAEMON,
+      scdaemon_runtime_change, GPGCONF_NAME"-" SCDAEMON_NAME ".conf" },
+    { DIRMNGR_DISP_NAME, DIRMNGR_NAME, GNUPG_MODULE_NAME_DIRMNGR,
+      dirmngr_runtime_change, GPGCONF_NAME "-" DIRMNGR_NAME ".conf" },
+    { DIRMNGR_DISP_NAME " LDAP Server List", NULL, 0,
       NULL, "ldapserverlist-file", "LDAP Server" },
+    { "Pinentry", "pinentry", GNUPG_MODULE_NAME_PINENTRY,
+      NULL, GPGCONF_NAME "-pinentry.conf" },
   };
 
 
@@ -350,11 +357,6 @@ static struct
    several times.  A comma separated list of arguments is used as the
    argument value.  */
 #define GC_OPT_FLAG_LIST	(1UL << 2)
-/* The NO_CHANGE flag for an option indicates that the user should not
-   be allowed to change this option using the standard gpgconf method.
-   Frontends using gpgconf should grey out such options, so that only
-   the current value is displayed.  */
-#define GC_OPT_FLAG_NO_CHANGE   (1UL <<7)
 
 
 /* A human-readable description for each flag.  */
@@ -461,11 +463,15 @@ typedef struct gc_option gc_option_t;
 #define GC_OPTION_NULL { NULL }
 
 
+#ifndef BUILD_WITH_AGENT
+#define gc_options_gpg_agent NULL
+#else
 /* The options of the GC_COMPONENT_GPG_AGENT component.  */
 static gc_option_t gc_options_gpg_agent[] =
  {
    /* The configuration file to which we write the changes.  */
-   { "gpgconf-gpg-agent.conf", GC_OPT_FLAG_NONE, GC_LEVEL_INTERNAL,
+   { GPGCONF_NAME"-" GPG_AGENT_NAME ".conf",
+     GC_OPT_FLAG_NONE, GC_LEVEL_INTERNAL,
      NULL, NULL, GC_ARG_TYPE_FILENAME, GC_BACKEND_GPG_AGENT },
 
    { "Monitor",
@@ -532,11 +538,18 @@ static gc_option_t gc_options_gpg_agent[] =
    { "ignore-cache-for-signing", GC_OPT_FLAG_RUNTIME,
      GC_LEVEL_BASIC, "gnupg", "do not use the PIN cache when signing",
      GC_ARG_TYPE_NONE, GC_BACKEND_GPG_AGENT },
+   { "allow-emacs-pinentry", GC_OPT_FLAG_RUNTIME,
+     GC_LEVEL_ADVANCED,
+     "gnupg", "allow passphrase to be prompted through Emacs",
+     GC_ARG_TYPE_NONE, GC_BACKEND_GPG_AGENT },
    { "no-allow-external-cache", GC_OPT_FLAG_RUNTIME,
      GC_LEVEL_BASIC, "gnupg", "disallow the use of an external password cache",
      GC_ARG_TYPE_NONE, GC_BACKEND_GPG_AGENT },
    { "no-allow-mark-trusted", GC_OPT_FLAG_RUNTIME,
      GC_LEVEL_ADVANCED, "gnupg", "disallow clients to mark keys as \"trusted\"",
+     GC_ARG_TYPE_NONE, GC_BACKEND_GPG_AGENT },
+   { "allow-loopback-pinentry", GC_OPT_FLAG_RUNTIME,
+     GC_LEVEL_EXPERT, "gnupg", "allow caller to override the pinentry",
      GC_ARG_TYPE_NONE, GC_BACKEND_GPG_AGENT },
    { "no-grab", GC_OPT_FLAG_RUNTIME, GC_LEVEL_EXPERT,
      "gnupg", "do not grab keyboard and mouse",
@@ -569,16 +582,25 @@ static gc_option_t gc_options_gpg_agent[] =
      GC_LEVEL_EXPERT, "gnupg",
      N_("do not allow the reuse of old passphrases"),
      GC_ARG_TYPE_NONE, GC_BACKEND_GPG_AGENT },
+   { "pinentry-timeout", GC_OPT_FLAG_RUNTIME,
+     GC_LEVEL_ADVANCED, "gnupg",
+     N_("|N|set the Pinentry timeout to N seconds"),
+     GC_ARG_TYPE_UINT32, GC_BACKEND_GPG_AGENT },
 
    GC_OPTION_NULL
  };
+#endif /*BUILD_WITH_AGENT*/
 
 
+#ifndef BUILD_WITH_SCDAEMON
+#define gc_options_scdaemon NULL
+#else
 /* The options of the GC_COMPONENT_SCDAEMON component.  */
 static gc_option_t gc_options_scdaemon[] =
  {
    /* The configuration file to which we write the changes.  */
-   { "gpgconf-scdaemon.conf", GC_OPT_FLAG_NONE, GC_LEVEL_INTERNAL,
+   { GPGCONF_NAME"-"SCDAEMON_NAME".conf",
+     GC_OPT_FLAG_NONE, GC_LEVEL_INTERNAL,
      NULL, NULL, GC_ARG_TYPE_FILENAME, GC_BACKEND_SCDAEMON },
 
    { "Monitor",
@@ -643,13 +665,17 @@ static gc_option_t gc_options_scdaemon[] =
 
    GC_OPTION_NULL
  };
+#endif /*BUILD_WITH_SCDAEMON*/
 
-
+#ifndef BUILD_WITH_GPG
+#define gc_options_gpg NULL
+#else
 /* The options of the GC_COMPONENT_GPG component.  */
 static gc_option_t gc_options_gpg[] =
  {
    /* The configuration file to which we write the changes.  */
-   { "gpgconf-gpg.conf", GC_OPT_FLAG_NONE, GC_LEVEL_INTERNAL,
+   { GPGCONF_NAME"-"GPG_NAME".conf",
+     GC_OPT_FLAG_NONE, GC_LEVEL_INTERNAL,
      NULL, NULL, GC_ARG_TYPE_FILENAME, GC_BACKEND_GPG },
 
    { "Monitor",
@@ -680,6 +706,11 @@ static gc_option_t gc_options_gpg[] =
    { "options", GC_OPT_FLAG_NONE, GC_LEVEL_EXPERT,
      "gnupg", "|FILE|read options from FILE",
      GC_ARG_TYPE_FILENAME, GC_BACKEND_GPG },
+   { "default_pubkey_algo",
+     (GC_OPT_FLAG_ARG_OPT|GC_OPT_FLAG_NO_CHANGE), GC_LEVEL_INVISIBLE,
+     NULL, NULL,
+     GC_ARG_TYPE_STRING, GC_BACKEND_GPG },
+
 
    { "Debug",
      GC_OPT_FLAG_GROUP, GC_LEVEL_ADVANCED,
@@ -697,8 +728,8 @@ static gc_option_t gc_options_gpg[] =
    { "Keyserver",
      GC_OPT_FLAG_GROUP, GC_LEVEL_BASIC,
      "gnupg", N_("Configuration for Keyservers") },
-   { "keyserver", GC_OPT_FLAG_NONE, GC_LEVEL_BASIC,
-     "gnupg", N_("|URL|use keyserver at URL"),
+   { "keyserver", GC_OPT_FLAG_NONE, GC_LEVEL_EXPERT,
+     "gnupg", N_("|URL|use keyserver at URL"), /* Deprecated - use dirmngr */
      GC_ARG_TYPE_STRING, GC_BACKEND_GPG },
    { "allow-pka-lookup", GC_OPT_FLAG_NONE, GC_LEVEL_BASIC,
      "gnupg", N_("allow PKA lookups (DNS requests)"),
@@ -710,14 +741,18 @@ static gc_option_t gc_options_gpg[] =
 
    GC_OPTION_NULL
  };
+#endif /*BUILD_WITH_GPG*/
 
 
-
+#ifndef BUILD_WITH_GPGSM
+#define gc_options_gpgsm NULL
+#else
 /* The options of the GC_COMPONENT_GPGSM component.  */
 static gc_option_t gc_options_gpgsm[] =
  {
    /* The configuration file to which we write the changes.  */
-   { "gpgconf-gpgsm.conf", GC_OPT_FLAG_NONE, GC_LEVEL_INTERNAL,
+   { GPGCONF_NAME"-"GPGSM_NAME".conf",
+     GC_OPT_FLAG_NONE, GC_LEVEL_INTERNAL,
      NULL, NULL, GC_ARG_TYPE_FILENAME, GC_BACKEND_GPGSM },
 
    { "Monitor",
@@ -757,6 +792,10 @@ static gc_option_t gc_options_gpgsm[] =
    { "keyserver", GC_OPT_FLAG_LIST, GC_LEVEL_BASIC,
      "gnupg", N_("|SPEC|use this keyserver to lookup keys"),
      GC_ARG_TYPE_LDAP_SERVER, GC_BACKEND_GPGSM },
+   { "default_pubkey_algo",
+     (GC_OPT_FLAG_ARG_OPT|GC_OPT_FLAG_NO_CHANGE), GC_LEVEL_INVISIBLE,
+     NULL, NULL,
+     GC_ARG_TYPE_STRING, GC_BACKEND_GPGSM },
 
    { "Debug",
      GC_OPT_FLAG_GROUP, GC_LEVEL_ADVANCED,
@@ -798,13 +837,18 @@ static gc_option_t gc_options_gpgsm[] =
 
    GC_OPTION_NULL
  };
+#endif /*BUILD_WITH_GPGSM*/
 
 
+#ifndef BUILD_WITH_DIRMNGR
+#define gc_options_dirmngr NULL
+#else
 /* The options of the GC_COMPONENT_DIRMNGR component.  */
 static gc_option_t gc_options_dirmngr[] =
  {
    /* The configuration file to which we write the changes.  */
-   { "gpgconf-dirmngr.conf", GC_OPT_FLAG_NONE, GC_LEVEL_INTERNAL,
+   { GPGCONF_NAME"-"DIRMNGR_NAME".conf",
+     GC_OPT_FLAG_NONE, GC_LEVEL_INTERNAL,
      NULL, NULL, GC_ARG_TYPE_FILENAME, GC_BACKEND_DIRMNGR },
 
    { "Monitor",
@@ -865,6 +909,20 @@ static gc_option_t gc_options_dirmngr[] =
    { "force", GC_OPT_FLAG_NONE, GC_LEVEL_BASIC,
      "dirmngr", "force loading of outdated CRLs",
      GC_ARG_TYPE_NONE, GC_BACKEND_DIRMNGR },
+
+   { "Tor",
+     GC_OPT_FLAG_GROUP, GC_LEVEL_BASIC,
+     "gnupg", N_("Options controlling the use of Tor") },
+   { "use-tor", GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE,
+     "dirmngr", "route all network traffic via TOR",
+      GC_ARG_TYPE_NONE, GC_BACKEND_DIRMNGR },
+
+   { "Keyserver",
+     GC_OPT_FLAG_GROUP, GC_LEVEL_BASIC,
+     "gnupg", N_("Configuration for Keyservers") },
+   { "keyserver", GC_OPT_FLAG_NONE, GC_LEVEL_BASIC,
+     "gnupg", N_("|URL|use keyserver at URL"),
+     GC_ARG_TYPE_STRING, GC_BACKEND_DIRMNGR },
 
    { "HTTP",
      GC_OPT_FLAG_GROUP, GC_LEVEL_ADVANCED,
@@ -938,6 +996,21 @@ static gc_option_t gc_options_dirmngr[] =
 
    GC_OPTION_NULL
  };
+#endif /*BUILD_WITH_DIRMNGR*/
+
+
+/* The options of the GC_COMPONENT_PINENTRY component.  */
+static gc_option_t gc_options_pinentry[] =
+ {
+   /* A dummy option to allow gc_component_list_components to find the
+      pinentry backend.  Needs to be a conf file. */
+   { GPGCONF_NAME"-pinentry.conf",
+     GC_OPT_FLAG_NONE, GC_LEVEL_INTERNAL,
+     NULL, NULL, GC_ARG_TYPE_FILENAME, GC_BACKEND_PINENTRY },
+
+   GC_OPTION_NULL
+ };
+
 
 
 /* Component system.  Each component is a set of options that can be
@@ -959,6 +1032,9 @@ typedef enum
 
     /* The LDAP Directory Manager for CRLs.  */
     GC_COMPONENT_DIRMNGR,
+
+    /* The external Pinentry.  */
+    GC_COMPONENT_PINENTRY,
 
     /* The number of components.  */
     GC_COMPONENT_NR
@@ -984,11 +1060,12 @@ static struct
   gc_option_t *options;
 } gc_component[] =
   {
-    { "gpg", NULL,   "GPG for OpenPGP", gc_options_gpg },
-    { "gpg-agent", NULL, "GPG Agent", gc_options_gpg_agent },
-    { "scdaemon", NULL, "Smartcard Daemon", gc_options_scdaemon },
-    { "gpgsm", NULL, "GPG for S/MIME", gc_options_gpgsm },
-    { "dirmngr", NULL, "Directory Manager", gc_options_dirmngr }
+    { "gpg",      "gnupg", N_("GPG for OpenPGP"), gc_options_gpg },
+    { "gpg-agent","gnupg", N_("GPG Agent"), gc_options_gpg_agent },
+    { "scdaemon", "gnupg", N_("Smartcard Daemon"), gc_options_scdaemon },
+    { "gpgsm",    "gnupg", N_("GPG for S/MIME"), gc_options_gpgsm },
+    { "dirmngr",  "gnupg", N_("Key Acquirer"), gc_options_dirmngr },
+    { "pinentry", "gnupg", N_("PIN and Passphrase Entry"), gc_options_pinentry }
   };
 
 
@@ -1009,63 +1086,37 @@ struct error_line_s
 
 /* Engine specific support.  */
 static void
-gpg_agent_runtime_change (void)
+gpg_agent_runtime_change (int killflag)
 {
-#ifndef HAVE_W32_SYSTEM
-  char *agent = getenv ("GPG_AGENT_INFO");
-  char *pid_str;
-  unsigned long pid_long;
-  char *tail;
-  pid_t pid;
-
-  if (!agent)
-    return;
-
-  pid_str = strchr (agent, ':');
-  if (!pid_str)
-    return;
-
-  pid_str++;
-  errno = 0;
-  pid_long = strtoul (pid_str, &tail, 0);
-  if (errno || (*tail != ':' && *tail != '\0'))
-    return;
-
-  pid = (pid_t) pid_long;
-
-  /* Check for overflow.  */
-  if (pid_long != (unsigned long) pid)
-    return;
-
-  /* Ignore any errors here.  */
-  kill (pid, SIGHUP);
-#else
   gpg_error_t err;
   const char *pgmname;
-  const char *argv[2];
+  const char *argv[3];
   pid_t pid;
 
   pgmname = gnupg_module_name (GNUPG_MODULE_NAME_CONNECT_AGENT);
-  argv[0] = "reloadagent";
-  argv[1] = NULL;
+  argv[0] = "--no-autostart";
+  argv[1] = killflag? "KILLAGENT" : "RELOADAGENT";
+  argv[2] = NULL;
 
   err = gnupg_spawn_process_fd (pgmname, argv, -1, -1, -1, &pid);
   if (!err)
-    err = gnupg_wait_process (pgmname, pid, NULL);
+    err = gnupg_wait_process (pgmname, pid, 1, NULL);
   if (err)
-    gc_error (0, 0, "error running `%s%s': %s",
-              pgmname, " reloadagent", gpg_strerror (err));
-#endif /*!HAVE_W32_SYSTEM*/
+    gc_error (0, 0, "error running '%s %s': %s",
+              pgmname, argv[1], gpg_strerror (err));
+  gnupg_release_process (pid);
 }
 
 
 static void
-scdaemon_runtime_change (void)
+scdaemon_runtime_change (int killflag)
 {
   gpg_error_t err;
   const char *pgmname;
-  const char *argv[6];
+  const char *argv[7];
   pid_t pid;
+
+  (void)killflag;  /* For scdaemon kill and reload are synonyms.  */
 
   /* We use "GETINFO app_running" to see whether the agent is already
      running and kill it only in this case.  This avoids an explicit
@@ -1074,18 +1125,112 @@ scdaemon_runtime_change (void)
 
   pgmname = gnupg_module_name (GNUPG_MODULE_NAME_CONNECT_AGENT);
   argv[0] = "-s";
-  argv[1] = "GETINFO scd_running";
-  argv[2] = "/if ${! $?}";
-  argv[3] = "scd killscd";
-  argv[4] = "/end";
-  argv[5] = NULL;
+  argv[1] = "--no-autostart";
+  argv[2] = "GETINFO scd_running";
+  argv[3] = "/if ${! $?}";
+  argv[4] = "scd killscd";
+  argv[5] = "/end";
+  argv[6] = NULL;
 
   err = gnupg_spawn_process_fd (pgmname, argv, -1, -1, -1, &pid);
   if (!err)
-    err = gnupg_wait_process (pgmname, pid, NULL);
+    err = gnupg_wait_process (pgmname, pid, 1, NULL);
   if (err)
-    gc_error (0, 0, "error running `%s%s': %s",
-              pgmname, " scd killscd", gpg_strerror (err));
+    gc_error (0, 0, "error running '%s %s': %s",
+              pgmname, argv[4], gpg_strerror (err));
+  gnupg_release_process (pid);
+}
+
+
+static void
+dirmngr_runtime_change (int killflag)
+{
+  gpg_error_t err;
+  const char *pgmname;
+  const char *argv[4];
+  pid_t pid;
+
+  pgmname = gnupg_module_name (GNUPG_MODULE_NAME_CONNECT_AGENT);
+  argv[0] = "--no-autostart";
+  argv[1] = "--dirmngr";
+  argv[2] = killflag? "KILLDIRMNGR" : "RELOADDIRMNGR";
+  argv[3] = NULL;
+
+  err = gnupg_spawn_process_fd (pgmname, argv, -1, -1, -1, &pid);
+  if (!err)
+    err = gnupg_wait_process (pgmname, pid, 1, NULL);
+  if (err)
+    gc_error (0, 0, "error running '%s %s': %s",
+              pgmname, argv[2], gpg_strerror (err));
+  gnupg_release_process (pid);
+}
+
+
+/* Launch the gpg-agent or the dirmngr if not already running.  */
+gpg_error_t
+gc_component_launch (int component)
+{
+  gpg_error_t err;
+  const char *pgmname;
+  const char *argv[3];
+  int i;
+  pid_t pid;
+
+  if (!(component == GC_COMPONENT_GPG_AGENT
+        || component == GC_COMPONENT_DIRMNGR))
+    {
+      es_fputs (_("Component not suitable for launching"), es_stderr);
+      es_putc ('\n', es_stderr);
+      exit (1);
+    }
+
+  pgmname = gnupg_module_name (GNUPG_MODULE_NAME_CONNECT_AGENT);
+  i = 0;
+  if (component == GC_COMPONENT_DIRMNGR)
+    argv[i++] = "--dirmngr";
+  argv[i++] = "NOP";
+  argv[i] = NULL;
+
+  err = gnupg_spawn_process_fd (pgmname, argv, -1, -1, -1, &pid);
+  if (!err)
+    err = gnupg_wait_process (pgmname, pid, 1, NULL);
+  if (err)
+    gc_error (0, 0, "error running '%s%s%s': %s",
+              pgmname,
+              component == GC_COMPONENT_DIRMNGR? " --dirmngr":"",
+              " NOP",
+              gpg_strerror (err));
+  gnupg_release_process (pid);
+  return err;
+}
+
+
+/* Unconditionally restart COMPONENT.  */
+void
+gc_component_kill (int component)
+{
+  int runtime[GC_BACKEND_NR];
+  gc_option_t *option;
+  gc_backend_t backend;
+
+  /* Set a flag for the backends to be reloaded.  */
+  for (backend = 0; backend < GC_BACKEND_NR; backend++)
+    runtime[backend] = 0;
+
+  if (component >= 0)
+    {
+      assert (component < GC_COMPONENT_NR);
+      option = gc_component[component].options;
+      for (; option && option->name; option++)
+        runtime[option->backend] = 1;
+    }
+
+  /* Do the restart for the selected backends.  */
+  for (backend = 0; backend < GC_BACKEND_NR; backend++)
+    {
+      if (runtime[backend] && gc_backend[backend].runtime_change)
+        (*gc_backend[backend].runtime_change) (1);
+    }
 }
 
 
@@ -1122,7 +1267,7 @@ gc_component_reload (int component)
   for (backend = 0; backend < GC_BACKEND_NR; backend++)
     {
       if (runtime[backend] && gc_backend[backend].runtime_change)
-        (*gc_backend[backend].runtime_change) ();
+        (*gc_backend[backend].runtime_change) (0);
     }
 }
 
@@ -1130,7 +1275,7 @@ gc_component_reload (int component)
 
 /* More or less Robust version of dgettext.  It has the side effect of
    switching the codeset to utf-8 because this is what we want to
-   output.  In theory it is posible to keep the orginal code set and
+   output.  In theory it is posible to keep the original code set and
    switch back for regular disgnostic output (redefine "_(" for that)
    but given the natur of this tool, being something invoked from
    other pograms, it does not make much sense.  */
@@ -1146,7 +1291,7 @@ my_dgettext (const char *domain, const char *msgid)
       if (!switched_codeset)
         {
           switched_codeset = 1;
-          gettext_select_utf8 (1);
+          gettext_use_utf8 (1);
         }
 
       if (!strcmp (domain, "gnupg"))
@@ -1157,6 +1302,8 @@ my_dgettext (const char *domain, const char *msgid)
       text = (char*)gettext (msgid);
       return text ? text : msgid;
     }
+  else
+    return msgid;
 #elif defined(ENABLE_NLS)
   if (domain)
     {
@@ -1168,8 +1315,8 @@ my_dgettext (const char *domain, const char *msgid)
           switched_codeset = 1;
           bind_textdomain_codeset (PACKAGE_GT, "utf-8");
 
-          bindtextdomain ("dirmngr", LOCALEDIR);
-          bind_textdomain_codeset ("dirmngr", "utf-8");
+          bindtextdomain (DIRMNGR_NAME, LOCALEDIR);
+          bind_textdomain_codeset (DIRMNGR_NAME, "utf-8");
 
         }
 
@@ -1183,8 +1330,11 @@ my_dgettext (const char *domain, const char *msgid)
       return text ? text : msgid;
     }
   else
-#endif
     return msgid;
+#else
+  (void)domain;
+  return msgid;
+#endif
 }
 
 
@@ -1282,7 +1432,7 @@ percent_deescape (const char *src)
 
 /* List all components that are available.  */
 void
-gc_component_list_components (FILE *out)
+gc_component_list_components (estream_t out)
 {
   gc_component_t component;
   gc_option_t *option;
@@ -1318,9 +1468,9 @@ gc_component_list_components (FILE *out)
 
           desc = gc_component[component].desc;
           desc = my_dgettext (gc_component[component].desc_domain, desc);
-          fprintf (out, "%s:%s:",
-                   gc_component[component].name,  gc_percent_escape (desc));
-          fprintf (out, "%s\n",  gc_percent_escape (pgmname));
+          es_fprintf (out, "%s:%s:",
+                      gc_component[component].name,  gc_percent_escape (desc));
+          es_fprintf (out, "%s\n",  gc_percent_escape (pgmname));
         }
     }
 }
@@ -1339,14 +1489,12 @@ all_digits_p (const char *p, size_t len)
 }
 
 
-/* Collect all error lines from file descriptor FD. Only lines
-   prefixed with TAG are considered.  Close that file descriptor
-   then.  Returns a list of error line items (which may be empty).
-   There is no error return.  */
+/* Collect all error lines from stream FP. Only lines prefixed with
+   TAG are considered.  Returns a list of error line items (which may
+   be empty).  There is no error return.  */
 static error_line_t
-collect_error_output (int fd, const char *tag)
+collect_error_output (estream_t fp, const char *tag)
 {
-  FILE *fp;
   char buffer[1024];
   char *p, *p2, *p3;
   int c, cont_line;
@@ -1354,15 +1502,11 @@ collect_error_output (int fd, const char *tag)
   error_line_t eitem, errlines, *errlines_tail;
   size_t taglen = strlen (tag);
 
-  fp = fdopen (fd, "r");
-  if (!fp)
-    gc_error (1, errno, "can't fdopen pipe for reading");
-
   errlines = NULL;
   errlines_tail = &errlines;
   pos = 0;
   cont_line = 0;
-  while ((c=getc (fp)) != EOF)
+  while ((c=es_getc (fp)) != EOF)
     {
       buffer[pos++] = c;
       if (pos >= sizeof buffer - 5 || c == '\n')
@@ -1377,6 +1521,7 @@ collect_error_output (int fd, const char *tag)
               p = buffer + taglen + 1;
               while (*p == ' ' || *p == '\t')
                 p++;
+              trim_trailing_spaces (p); /* Get rid of extra CRs.  */
               if (!*p)
                 ; /* Empty lines are ignored.  */
               else if ( (p2 = strchr (p, ':')) && (p3 = strchr (p2+1, ':'))
@@ -1421,8 +1566,6 @@ collect_error_output (int fd, const char *tag)
     }
 
   /* We ignore error lines not terminated by a LF.  */
-
-  fclose (fp);
   return errlines;
 }
 
@@ -1430,7 +1573,7 @@ collect_error_output (int fd, const char *tag)
 /* Check the options of a single component.  Returns 0 if everything
    is OK.  */
 int
-gc_component_check_options (int component, FILE *out, const char *conf_file)
+gc_component_check_options (int component, estream_t out, const char *conf_file)
 {
   gpg_error_t err;
   unsigned int result;
@@ -1442,13 +1585,8 @@ gc_component_check_options (int component, FILE *out, const char *conf_file)
   int i;
   pid_t pid;
   int exitcode;
-  int filedes[2];
+  estream_t errfp;
   error_line_t errlines;
-
-  /* We use a temporary file to collect the error output.  It would be
-     better to use a pipe here but as of now we have no suitable
-     fucntion to create a portable pipe outside of exechelp.  Thus it
-     is easier to use the tempfile approach.  */
 
   for (backend = 0; backend < GC_BACKEND_NR; backend++)
     backend_seen[backend] = 0;
@@ -1480,34 +1618,31 @@ gc_component_check_options (int component, FILE *out, const char *conf_file)
       argv[i++] = "--options";
       argv[i++] = conf_file;
     }
-  argv[i++] = "--gpgconf-test";
+  if (component == GC_COMPONENT_PINENTRY)
+    argv[i++] = "--version";
+  else
+    argv[i++] = "--gpgconf-test";
   argv[i++] = NULL;
-
-  err = gnupg_create_inbound_pipe (filedes);
-  if (err)
-    gc_error (1, 0, _("error creating a pipe: %s\n"),
-	      gpg_strerror (err));
 
   result = 0;
   errlines = NULL;
-  if (gnupg_spawn_process_fd (pgmname, argv, -1, -1, filedes[1], &pid))
-    {
-      close (filedes[0]);
-      close (filedes[1]);
-      result |= 1; /* Program could not be run.  */
-    }
+  err = gnupg_spawn_process (pgmname, argv, GPG_ERR_SOURCE_DEFAULT, NULL, 0,
+                             NULL, NULL, &errfp, &pid);
+  if (err)
+    result |= 1; /* Program could not be run.  */
   else
     {
-      close (filedes[1]);
-      errlines = collect_error_output (filedes[0],
+      errlines = collect_error_output (errfp,
 				       gc_component[component].name);
-      if (gnupg_wait_process (pgmname, pid, &exitcode))
+      if (gnupg_wait_process (pgmname, pid, 1, &exitcode))
 	{
 	  if (exitcode == -1)
 	    result |= 1; /* Program could not be run or it
 			    terminated abnormally.  */
 	  result |= 2; /* Program returned an error.  */
 	}
+      gnupg_release_process (pid);
+      es_fclose (errfp);
     }
 
   /* If the program could not be run, we can't tell whether
@@ -1522,24 +1657,24 @@ gc_component_check_options (int component, FILE *out, const char *conf_file)
 
       desc = gc_component[component].desc;
       desc = my_dgettext (gc_component[component].desc_domain, desc);
-      fprintf (out, "%s:%s:",
-	       gc_component[component].name, gc_percent_escape (desc));
-      fputs (gc_percent_escape (pgmname), out);
-      fprintf (out, ":%d:%d:", !(result & 1), !(result & 2));
+      es_fprintf (out, "%s:%s:",
+                  gc_component[component].name, gc_percent_escape (desc));
+      es_fputs (gc_percent_escape (pgmname), out);
+      es_fprintf (out, ":%d:%d:", !(result & 1), !(result & 2));
       for (errptr = errlines; errptr; errptr = errptr->next)
 	{
 	  if (errptr != errlines)
-	    fputs ("\n:::::", out); /* Continuation line.  */
+	    es_fputs ("\n:::::", out); /* Continuation line.  */
 	  if (errptr->fname)
-	    fputs (gc_percent_escape (errptr->fname), out);
-	  putc (':', out);
+	    es_fputs (gc_percent_escape (errptr->fname), out);
+	  es_putc (':', out);
 	  if (errptr->fname)
-	    fprintf (out, "%u", errptr->lineno);
-	  putc (':', out);
-	  fputs (gc_percent_escape (errptr->errtext), out);
-	  putc (':', out);
+	    es_fprintf (out, "%u", errptr->lineno);
+	  es_putc (':', out);
+	  es_fputs (gc_percent_escape (errptr->errtext), out);
+	  es_putc (':', out);
 	}
-      putc ('\n', out);
+      es_putc ('\n', out);
     }
 
   while (errlines)
@@ -1553,9 +1688,10 @@ gc_component_check_options (int component, FILE *out, const char *conf_file)
 }
 
 
+
 /* Check all components that are available.  */
 void
-gc_check_programs (FILE *out)
+gc_check_programs (estream_t out)
 {
   gc_component_t component;
 
@@ -1584,7 +1720,7 @@ gc_component_find (const char *name)
 
 /* List the option OPTION.  */
 static void
-list_one_option (const gc_option_t *option, FILE *out)
+list_one_option (const gc_option_t *option, estream_t out)
 {
   const char *desc = NULL;
   char *arg_name = NULL;
@@ -1614,16 +1750,16 @@ list_one_option (const gc_option_t *option, FILE *out)
      FIELDS.  */
 
   /* The name field.  */
-  fprintf (out, "%s", option->name);
+  es_fprintf (out, "%s", option->name);
 
   /* The flags field.  */
-  fprintf (out, ":%lu", option->flags);
+  es_fprintf (out, ":%lu", option->flags);
   if (opt.verbose)
     {
-      putc (' ', out);
+      es_putc (' ', out);
 
       if (!option->flags)
-	fprintf (out, "none");
+	es_fprintf (out, "none");
       else
 	{
 	  unsigned long flags = option->flags;
@@ -1637,8 +1773,8 @@ list_one_option (const gc_option_t *option, FILE *out)
 		  if (first)
 		    first = 0;
 		  else
-		    putc (',', out);
-		  fprintf (out, "%s", gc_flag[flag].name);
+		    es_putc (',', out);
+		  es_fprintf (out, "%s", gc_flag[flag].name);
 		}
 	      flags >>= 1;
 	      flag++;
@@ -1647,34 +1783,33 @@ list_one_option (const gc_option_t *option, FILE *out)
     }
 
   /* The level field.  */
-  fprintf (out, ":%u", option->level);
+  es_fprintf (out, ":%u", option->level);
   if (opt.verbose)
-    fprintf (out, " %s", gc_level[option->level].name);
+    es_fprintf (out, " %s", gc_level[option->level].name);
 
   /* The description field.  */
-  fprintf (out, ":%s", desc ? gc_percent_escape (desc) : "");
+  es_fprintf (out, ":%s", desc ? gc_percent_escape (desc) : "");
 
   /* The type field.  */
-  fprintf (out, ":%u", option->arg_type);
+  es_fprintf (out, ":%u", option->arg_type);
   if (opt.verbose)
-    fprintf (out, " %s", gc_arg_type[option->arg_type].name);
+    es_fprintf (out, " %s", gc_arg_type[option->arg_type].name);
 
   /* The alternate type field.  */
-  fprintf (out, ":%u", gc_arg_type[option->arg_type].fallback);
+  es_fprintf (out, ":%u", gc_arg_type[option->arg_type].fallback);
   if (opt.verbose)
-    fprintf (out, " %s",
-	     gc_arg_type[gc_arg_type[option->arg_type].fallback].name);
+    es_fprintf (out, " %s",
+                gc_arg_type[gc_arg_type[option->arg_type].fallback].name);
 
   /* The argument name field.  */
-  fprintf (out, ":%s", arg_name ? gc_percent_escape (arg_name) : "");
-  if (arg_name)
-    xfree (arg_name);
+  es_fprintf (out, ":%s", arg_name ? gc_percent_escape (arg_name) : "");
+  xfree (arg_name);
 
   /* The default value field.  */
-  fprintf (out, ":%s", option->default_value ? option->default_value : "");
+  es_fprintf (out, ":%s", option->default_value ? option->default_value : "");
 
   /* The default argument field.  */
-  fprintf (out, ":%s", option->default_arg ? option->default_arg : "");
+  es_fprintf (out, ":%s", option->default_arg ? option->default_arg : "");
 
   /* The value field.  */
   if (gc_arg_type[option->arg_type].fallback == GC_ARG_TYPE_NONE
@@ -1682,19 +1817,19 @@ list_one_option (const gc_option_t *option, FILE *out)
       && option->value)
     /* The special format "1,1,1,1,...,1" is converted to a number
        here.  */
-    fprintf (out, ":%u", (unsigned int)((strlen (option->value) + 1) / 2));
+    es_fprintf (out, ":%u", (unsigned int)((strlen (option->value) + 1) / 2));
   else
-    fprintf (out, ":%s", option->value ? option->value : "");
+    es_fprintf (out, ":%s", option->value ? option->value : "");
 
   /* ADD NEW FIELDS HERE.  */
 
-  putc ('\n', out);
+  es_putc ('\n', out);
 }
 
 
 /* List all options of the component COMPONENT.  */
 void
-gc_component_list_options (int component, FILE *out)
+gc_component_list_options (int component, estream_t out)
 {
   const gc_option_t *option = gc_component[component].options;
 
@@ -1790,7 +1925,9 @@ get_config_filename (gc_component_t component, gc_backend_t backend)
   else
     filename = "";
 
-#ifdef HAVE_DOSISH_SYSTEM
+#if HAVE_W32CE_SYSTEM
+  if (!(filename[0] == '/' || filename[0] == '\\'))
+#elif defined(HAVE_DOSISH_SYSTEM)
   if (!(filename[0]
         && filename[1] == ':'
         && (filename[2] == '/' || filename[2] == '\\')))
@@ -1811,20 +1948,16 @@ static void
 retrieve_options_from_program (gc_component_t component, gc_backend_t backend)
 {
   gpg_error_t err;
-  int filedes[2];
   const char *pgmname;
   const char *argv[2];
+  estream_t outfp;
   int exitcode;
   pid_t pid;
   char *line = NULL;
   size_t line_len = 0;
   ssize_t length;
-  FILE *config;
+  estream_t config;
   char *config_filename;
-
-  err = gnupg_create_inbound_pipe (filedes);
-  if (err)
-    gc_error (1, 0, _("error creating a pipe: %s\n"), gpg_strerror (err));
 
   pgmname = (gc_backend[backend].module_name
              ? gnupg_module_name (gc_backend[backend].module_name)
@@ -1832,20 +1965,15 @@ retrieve_options_from_program (gc_component_t component, gc_backend_t backend)
   argv[0] = "--gpgconf-list";
   argv[1] = NULL;
 
-  err = gnupg_spawn_process_fd (pgmname, argv, -1, filedes[1], -1, &pid);
+  err = gnupg_spawn_process (pgmname, argv, GPG_ERR_SOURCE_DEFAULT, NULL, 0,
+                             NULL, &outfp, NULL, &pid);
   if (err)
     {
-      close (filedes[0]);
-      close (filedes[1]);
-      gc_error (1, 0, "could not gather active options from `%s': %s",
+      gc_error (1, 0, "could not gather active options from '%s': %s",
                 pgmname, gpg_strerror (err));
     }
-  close (filedes[1]);
-  config = fdopen (filedes[0], "r");
-  if (!config)
-    gc_error (1, errno, "can't fdopen pipe for reading");
 
-  while ((length = read_line (config, &line, &line_len, NULL)) > 0)
+  while ((length = es_read_line (outfp, &line, &line_len, NULL)) > 0)
     {
       gc_option_t *option;
       char *linep;
@@ -1871,7 +1999,7 @@ retrieve_options_from_program (gc_component_t component, gc_backend_t backend)
 	  if (end)
 	    *(end++) = '\0';
 
-	  errno = 0;
+	  gpg_err_set_errno (0);
 	  flags = strtoul (linep, &tail, 0);
 	  if (errno)
 	    gc_error (1, errno, "malformed flags in option %s from %s",
@@ -1914,27 +2042,28 @@ retrieve_options_from_program (gc_component_t component, gc_backend_t backend)
 	    option->default_value = xstrdup (default_value);
 	}
     }
-  if (length < 0 || ferror (config))
-    gc_error (1, errno, "error reading from %s",pgmname);
-  if (fclose (config))
+  if (length < 0 || es_ferror (outfp))
+    gc_error (1, errno, "error reading from %s", pgmname);
+  if (es_fclose (outfp))
     gc_error (1, errno, "error closing %s", pgmname);
 
-  err = gnupg_wait_process (pgmname, pid, &exitcode);
+  err = gnupg_wait_process (pgmname, pid, 1, &exitcode);
   if (err)
     gc_error (1, 0, "running %s failed (exitcode=%d): %s",
               pgmname, exitcode, gpg_strerror (err));
+  gnupg_release_process (pid);
 
 
   /* At this point, we can parse the configuration file.  */
   config_filename = get_config_filename (component, backend);
 
-  config = fopen (config_filename, "r");
+  config = es_fopen (config_filename, "r");
   if (!config)
     gc_error (0, errno, "warning: can not open config file %s",
 	      config_filename);
   else
     {
-      while ((length = read_line (config, &line, &line_len, NULL)) > 0)
+      while ((length = es_read_line (config, &line, &line_len, NULL)) > 0)
 	{
 	  char *name;
 	  char *value;
@@ -2015,9 +2144,9 @@ retrieve_options_from_program (gc_component_t component, gc_backend_t backend)
 	    }
 	}
 
-      if (length < 0 || ferror (config))
+      if (length < 0 || es_ferror (config))
 	gc_error (1, errno, "error reading from %s", config_filename);
-      if (fclose (config))
+      if (es_fclose (config))
 	gc_error (1, errno, "error closing %s", config_filename);
     }
 
@@ -2114,6 +2243,9 @@ gc_component_retrieve_options (int component)
   gc_backend_t backend;
   gc_option_t *option;
 
+  if (component == GC_COMPONENT_PINENTRY)
+    return; /* Dummy module for now.  */
+
   for (backend = 0; backend < GC_BACKEND_NR; backend++)
     backend_seen[backend] = 0;
 
@@ -2187,7 +2319,7 @@ option_check_validity (gc_option_t *option, unsigned long flags,
     {
       char *tail;
 
-      errno = 0;
+      gpg_err_set_errno (0);
       *new_value_nr = strtoul (new_value, &tail, 0);
 
       if (errno)
@@ -2241,8 +2373,11 @@ option_check_validity (gc_option_t *option, unsigned long flags,
 	}
       else if (gc_arg_type[option->arg_type].fallback == GC_ARG_TYPE_INT32)
 	{
-	  errno = 0;
-	  (void) strtol (arg, &arg, 0);
+	  long res;
+
+	  gpg_err_set_errno (0);
+	  res = strtol (arg, &arg, 0);
+	  (void) res;
 
 	  if (errno)
 	    gc_error (1, errno, "invalid argument for option %s",
@@ -2254,8 +2389,11 @@ option_check_validity (gc_option_t *option, unsigned long flags,
 	}
       else if (gc_arg_type[option->arg_type].fallback == GC_ARG_TYPE_UINT32)
 	{
-	  errno = 0;
-	  (void) strtoul (arg, &arg, 0);
+	  unsigned long res;
+
+	  gpg_err_set_errno (0);
+	  res = strtoul (arg, &arg, 0);
+	  (void) res;
 
 	  if (errno)
 	    gc_error (1, errno, "invalid argument for option %s",
@@ -2291,7 +2429,7 @@ copy_file (const char *src_name, const char *dst_name)
     {
       int saved_err = errno;
       fclose (src);
-      errno = saved_err;
+      gpg_err_set_errno (saved_err);
       return -1;
     }
 
@@ -2314,7 +2452,7 @@ copy_file (const char *src_name, const char *dst_name)
       fclose (src);
       fclose (dst);
       unlink (dst_name);
-      errno = saved_errno;
+      gpg_err_set_errno (saved_errno);
       return -1;
     }
 
@@ -2335,7 +2473,7 @@ change_options_file (gc_component_t component, gc_backend_t backend,
 		     char **src_filenamep, char **dest_filenamep,
 		     char **orig_filenamep)
 {
-  static const char marker[] = "###+++--- GPGConf ---+++###";
+  static const char marker[] = "###+++--- " GPGCONF_DISP_NAME " ---+++###";
   /* True if we are within the marker in the config file.  */
   int in_marker = 0;
   gc_option_t *option;
@@ -2362,8 +2500,10 @@ change_options_file (gc_component_t component, gc_backend_t backend,
   /* Note that get_config_filename() calls percent_deescape(), so we
      call this before processing the arguments.  */
   dest_filename = xstrdup (get_config_filename (component, backend));
-  src_filename = xasprintf ("%s.gpgconf.%i.new", dest_filename, getpid ());
-  orig_filename = xasprintf ("%s.gpgconf.%i.bak", dest_filename, getpid ());
+  src_filename = xasprintf ("%s.%s.%i.new",
+                            dest_filename, GPGCONF_NAME, (int)getpid ());
+  orig_filename = xasprintf ("%s.%s.%i.bak",
+                             dest_filename, GPGCONF_NAME, (int)getpid ());
 
   arg = option->new_value;
   if (arg && arg[0] == '\0')
@@ -2417,7 +2557,7 @@ change_options_file (gc_component_t component, gc_backend_t backend,
   res = errno;
   if (!src_file)
     {
-      errno = res;
+      gpg_err_set_errno (res);
       return -1;
     }
 
@@ -2503,8 +2643,8 @@ change_options_file (gc_component_t component, gc_backend_t backend,
 	      if (!in_marker)
 		{
 		  fprintf (src_file,
-			   "# GPGConf disabled this option here at %s\n",
-			   asctimestamp (gnupg_get_time ()));
+			   "# %s disabled this option here at %s\n",
+			   GPGCONF_DISP_NAME, asctimestamp (gnupg_get_time ()));
 		  if (ferror (src_file))
 		    goto change_file_one_err;
 		  fprintf (src_file, "# %s", line);
@@ -2572,7 +2712,8 @@ change_options_file (gc_component_t component, gc_backend_t backend,
 
   if (!in_marker)
     {
-      fprintf (src_file, "# GPGConf edited this configuration file.\n");
+      fprintf (src_file, "# %s edited this configuration file.\n",
+               GPGCONF_DISP_NAME);
       if (ferror (src_file))
 	goto change_file_one_err;
       fprintf (src_file, "# It will disable options before this marked "
@@ -2604,7 +2745,7 @@ change_options_file (gc_component_t component, gc_backend_t backend,
       close (fd);
       if (dest_file)
 	fclose (dest_file);
-      errno = res;
+      gpg_err_set_errno (res);
       return -1;
     }
   close (fd);
@@ -2626,7 +2767,7 @@ change_options_file (gc_component_t component, gc_backend_t backend,
     }
   if (dest_file)
     fclose (dest_file);
-  errno = res;
+  gpg_err_set_errno (res);
   return -1;
 }
 
@@ -2638,7 +2779,7 @@ change_options_program (gc_component_t component, gc_backend_t backend,
 			char **src_filenamep, char **dest_filenamep,
 			char **orig_filenamep)
 {
-  static const char marker[] = "###+++--- GPGConf ---+++###";
+  static const char marker[] = "###+++--- " GPGCONF_DISP_NAME " ---+++###";
   /* True if we are within the marker in the config file.  */
   int in_marker = 0;
   gc_option_t *option;
@@ -2657,8 +2798,10 @@ change_options_program (gc_component_t component, gc_backend_t backend,
 
   /* FIXME.  Throughout the function, do better error reporting.  */
   dest_filename = xstrdup (get_config_filename (component, backend));
-  src_filename = xasprintf ("%s.gpgconf.%i.new", dest_filename, getpid ());
-  orig_filename = xasprintf ("%s.gpgconf.%i.bak", dest_filename, getpid ());
+  src_filename = xasprintf ("%s.%s.%i.new",
+                            dest_filename, GPGCONF_NAME, (int)getpid ());
+  orig_filename = xasprintf ("%s.%s.%i.bak",
+                             dest_filename, GPGCONF_NAME, (int)getpid ());
 
 #ifdef HAVE_W32_SYSTEM
   res = copy_file (dest_filename, orig_filename);
@@ -2687,7 +2830,7 @@ change_options_program (gc_component_t component, gc_backend_t backend,
   res = errno;
   if (!src_file)
     {
-      errno = res;
+      gpg_err_set_errno (res);
       return -1;
     }
 
@@ -2749,8 +2892,8 @@ change_options_program (gc_component_t component, gc_backend_t backend,
 	      if (!in_marker)
 		{
 		  fprintf (src_file,
-			   "# GPGConf disabled this option here at %s\n",
-			   asctimestamp (gnupg_get_time ()));
+			   "# %s disabled this option here at %s\n",
+			   GPGCONF_DISP_NAME, asctimestamp (gnupg_get_time ()));
 		  if (ferror (src_file))
 		    goto change_one_err;
 		  fprintf (src_file, "# %s", line);
@@ -2870,7 +3013,8 @@ change_options_program (gc_component_t component, gc_backend_t backend,
 
   if (!in_marker)
     {
-      fprintf (src_file, "# GPGConf edited this configuration file.\n");
+      fprintf (src_file, "# %s edited this configuration file.\n",
+               GPGCONF_DISP_NAME);
       if (ferror (src_file))
 	goto change_one_err;
       fprintf (src_file, "# It will disable options before this marked "
@@ -2902,7 +3046,7 @@ change_options_program (gc_component_t component, gc_backend_t backend,
       close (fd);
       if (dest_file)
 	fclose (dest_file);
-      errno = res;
+      gpg_err_set_errno (res);
       return -1;
     }
   close (fd);
@@ -2924,7 +3068,7 @@ change_options_program (gc_component_t component, gc_backend_t backend,
     }
   if (dest_file)
     fclose (dest_file);
-  errno = res;
+  gpg_err_set_errno (res);
   return -1;
 }
 
@@ -2973,7 +3117,7 @@ change_one_value (gc_option_t *option, int *runtime,
    modifications are expected to already have been set to the global
    table. */
 void
-gc_component_change_options (int component, FILE *in, FILE *out)
+gc_component_change_options (int component, estream_t in, estream_t out)
 {
   int err = 0;
   int runtime[GC_BACKEND_NR];
@@ -2986,6 +3130,9 @@ gc_component_change_options (int component, FILE *in, FILE *out)
   size_t line_len = 0;
   ssize_t length;
 
+  if (component == GC_COMPONENT_PINENTRY)
+    return; /* Dummy component for now.  */
+
   for (backend = 0; backend < GC_BACKEND_NR; backend++)
     {
       runtime[backend] = 0;
@@ -2997,7 +3144,7 @@ gc_component_change_options (int component, FILE *in, FILE *out)
   if (in)
     {
       /* Read options from the file IN.  */
-      while ((length = read_line (in, &line, &line_len, NULL)) > 0)
+      while ((length = es_read_line (in, &line, &line_len, NULL)) > 0)
         {
           char *linep;
           unsigned long flags = 0;
@@ -3022,7 +3169,7 @@ gc_component_change_options (int component, FILE *in, FILE *out)
               if (end)
                 *(end++) = '\0';
 
-              errno = 0;
+              gpg_err_set_errno (0);
               flags = strtoul (linep, &tail, 0);
               if (errno)
                 gc_error (1, errno, "malformed flags in option %s", line);
@@ -3092,7 +3239,7 @@ gc_component_change_options (int component, FILE *in, FILE *out)
 		  gc_error (0, 0,
 			    _("External verification of component %s failed"),
 			    gc_component[component].name);
-		  errno = EINVAL;
+		  gpg_err_set_errno (EINVAL);
 		}
 	    }
 
@@ -3157,7 +3304,7 @@ gc_component_change_options (int component, FILE *in, FILE *out)
       int i;
       int saved_errno = errno;
 
-      /* An error occured or a dry-run is requested.  */
+      /* An error occurred or a dry-run is requested.  */
       for (i = 0; i < GC_BACKEND_NR; i++)
 	{
 	  if (src_filename[i])
@@ -3197,7 +3344,7 @@ gc_component_change_options (int component, FILE *in, FILE *out)
     for (backend = 0; backend < GC_BACKEND_NR; backend++)
       {
 	if (runtime[backend] && gc_backend[backend].runtime_change)
-	  (*gc_backend[backend].runtime_change) ();
+	  (*gc_backend[backend].runtime_change) (0);
       }
 
   /* Move the per-process backup file into its place.  */
@@ -3208,7 +3355,8 @@ gc_component_change_options (int component, FILE *in, FILE *out)
 
 	assert (dest_filename[backend]);
 
-	backup_filename = xasprintf ("%s.gpgconf.bak", dest_filename[backend]);
+	backup_filename = xasprintf ("%s.%s.bak",
+                                     dest_filename[backend], GPGCONF_NAME);
 
 #ifdef HAVE_W32_SYSTEM
 	/* There is no atomic update on W32.  */
@@ -3241,6 +3389,7 @@ key_matches_user_or_group (char *user)
   /* Under Windows we don't support groups. */
   if (group && *group)
     gc_error (0, 0, _("Note that group specifications are ignored\n"));
+#ifndef HAVE_W32CE_SYSTEM
   if (*user)
     {
       static char *my_name;
@@ -3260,6 +3409,7 @@ key_matches_user_or_group (char *user)
       if (!strcmp (user, my_name))
         return 1; /* Found.  */
     }
+#endif /*HAVE_W32CE_SYSTEM*/
 #else /*!HAVE_W32_SYSTEM*/
   /* First check whether the user matches.  */
   if (*user)
@@ -3338,7 +3488,7 @@ key_matches_user_or_group (char *user)
    returned on error. */
 int
 gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
-                         FILE *listfp)
+                         estream_t listfp)
 {
   int result = 0;
   char *line = NULL;
@@ -3355,7 +3505,8 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
   if (fname_arg)
     fname = xstrdup (fname_arg);
   else
-    fname = make_filename (gnupg_sysconfdir (), "gpgconf.conf", NULL);
+    fname = make_filename (gnupg_sysconfdir (), GPGCONF_NAME EXTSEP_S "conf",
+                           NULL);
 
   for (backend_id = 0; backend_id < GC_BACKEND_NR; backend_id++)
     runtime[backend_id] = 0;
@@ -3367,7 +3518,7 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
          when running in syntax check mode.  */
       if (errno != ENOENT || !update)
         {
-          gc_error (0, errno, "can not open global config file `%s'", fname);
+          gc_error (0, errno, "can not open global config file '%s'", fname);
           result = -1;
         }
       xfree (fname);
@@ -3401,7 +3552,7 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
             ;
           if (!*p)
             {
-              gc_error (0, 0, "missing rule at `%s', line %d", fname, lineno);
+              gc_error (0, 0, "missing rule at '%s', line %d", fname, lineno);
               result = -1;
               continue;
             }
@@ -3410,7 +3561,7 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
         }
       else if (!in_rule)
         {
-          gc_error (0, 0, "continuation but no rule at `%s', line %d",
+          gc_error (0, 0, "continuation but no rule at '%s', line %d",
                     fname, lineno);
           result = -1;
           continue;
@@ -3430,7 +3581,7 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
         ;
       if (p == component)
         {
-          gc_error (0, 0, "missing component at `%s', line %d",
+          gc_error (0, 0, "missing component at '%s', line %d",
                     fname, lineno);
           result = -1;
           continue;
@@ -3441,7 +3592,7 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
       component_id = gc_component_find (component);
       if (component_id < 0)
         {
-          gc_error (0, 0, "unknown component at `%s', line %d",
+          gc_error (0, 0, "unknown component at '%s', line %d",
                     fname, lineno);
           result = -1;
         }
@@ -3453,7 +3604,7 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
         ;
       if (p == option)
         {
-          gc_error (0, 0, "missing option at `%s', line %d",
+          gc_error (0, 0, "missing option at '%s', line %d",
                     fname, lineno);
           result = -1;
           continue;
@@ -3465,7 +3616,7 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
           option_info = find_option (component_id, option, GC_BACKEND_ANY);
           if (!option_info)
             {
-              gc_error (0, 0, "unknown option at `%s', line %d",
+              gc_error (0, 0, "unknown option at '%s', line %d",
                         fname, lineno);
               result = -1;
             }
@@ -3481,7 +3632,7 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
           p = strchr (flags, ']');
           if (!p)
             {
-              gc_error (0, 0, "syntax error in rule at `%s', line %d",
+              gc_error (0, 0, "syntax error in rule at '%s', line %d",
                         fname, lineno);
               result = -1;
               continue;
@@ -3518,7 +3669,7 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
           if (*value)
             {
               gc_error (0, 0, "flag \"default\" may not be combined "
-                        "with a value at `%s', line %d",
+                        "with a value at '%s', line %d",
                         fname, lineno);
               result = -1;
             }
@@ -3529,7 +3680,7 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
         ;
       else
         {
-          gc_error (0, 0, "unknown flag at `%s', line %d",
+          gc_error (0, 0, "unknown flag at '%s', line %d",
                     fname, lineno);
           result = -1;
         }
@@ -3548,19 +3699,19 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
                     *p = 0; /* We better strip any extra stuff. */
                 }
 
-              fprintf (listfp, "k:%s:", gc_percent_escape (key));
-              fprintf (listfp, "%s\n", group? gc_percent_escape (group):"");
+              es_fprintf (listfp, "k:%s:", gc_percent_escape (key));
+              es_fprintf (listfp, "%s\n", group? gc_percent_escape (group):"");
             }
 
           /* All other lines are rule records.  */
-          fprintf (listfp, "r:::%s:%s:%s:",
-                   gc_component[component_id].name,
-                   option_info->name? option_info->name : "",
-                   flags? flags : "");
+          es_fprintf (listfp, "r:::%s:%s:%s:",
+                      gc_component[component_id].name,
+                      option_info->name? option_info->name : "",
+                      flags? flags : "");
           if (value != empty)
-            fprintf (listfp, "\"%s", gc_percent_escape (value));
+            es_fprintf (listfp, "\"%s", gc_percent_escape (value));
 
-          putc ('\n', listfp);
+          es_putc ('\n', listfp);
         }
 
       /* Check whether the key matches but do this only if we are not
@@ -3585,8 +3736,6 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
 
           if (defaults)
             {
-              assert (component_id >= 0 && component_id < GC_COMPONENT_NR);
-
               /* Here we explicitly allow to update the value again.  */
               if (newflags)
                 {
@@ -3604,11 +3753,11 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
 
   if (length < 0 || ferror (config))
     {
-      gc_error (0, errno, "error reading from `%s'", fname);
+      gc_error (0, errno, "error reading from '%s'", fname);
       result = -1;
     }
-  if (fclose (config) && ferror (config))
-    gc_error (0, errno, "error closing `%s'", fname);
+  if (fclose (config))
+    gc_error (0, errno, "error closing '%s'", fname);
 
   xfree (line);
 
@@ -3630,7 +3779,7 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
         {
           for (backend_id = 0; backend_id < GC_BACKEND_NR; backend_id++)
             if (runtime[backend_id] && gc_backend[backend_id].runtime_change)
-              (*gc_backend[backend_id].runtime_change) ();
+              (*gc_backend[backend_id].runtime_change) (0);
         }
     }
 

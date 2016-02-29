@@ -38,13 +38,11 @@
 #include <fcntl.h> /* for setmode() */
 #endif
 
-#define JNLIB_NEED_LOG_LOGV
 #include "agent.h"
-#include "minip12.h"
 #include "i18n.h"
 #include "get-passphrase.h"
 #include "sysutils.h"
-#include "estream.h"
+#include "../common/init.h"
 
 
 enum cmd_and_opt_values
@@ -64,9 +62,6 @@ enum cmd_and_opt_values
   oS2Kcalibration,
   oCanonical,
 
-  oP12Import,
-  oP12Export,
-  oP12Charset,
   oStore,
   oForce,
   oHaveCert,
@@ -100,14 +95,10 @@ static int opt_have_cert;
 static const char *opt_passphrase;
 static char *opt_prompt;
 static int opt_status_msg;
-static const char *opt_p12_charset;
 static const char *opt_agent_program;
-static session_env_t opt_session_env;
 
 static char *get_passphrase (int promptno);
 static void release_passphrase (char *pw);
-static int store_private_key (const unsigned char *grip,
-                              const void *buffer, size_t length, int force);
 
 
 static ARGPARSE_OPTS opts[] = {
@@ -118,11 +109,6 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_c (oShadow,    "shadow", "create a shadow entry for a public key"),
   ARGPARSE_c (oShowShadowInfo,  "show-shadow-info", "return the shadow info"),
   ARGPARSE_c (oShowKeygrip, "show-keygrip", "show the \"keygrip\""),
-  ARGPARSE_c (oP12Import, "p12-import",
-              "import a pkcs#12 encoded private key"),
-  ARGPARSE_c (oP12Export, "p12-export",
-              "export a private key pkcs#12 encoded"),
-
   ARGPARSE_c (oS2Kcalibration, "s2k-calibration", "@"),
 
   ARGPARSE_group (301, N_("@\nOptions:\n ")),
@@ -132,8 +118,6 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oCanonical, "canonical", "write output in canonical format"),
 
   ARGPARSE_s_s (oPassphrase, "passphrase", "|STRING|use passphrase STRING"),
-  ARGPARSE_s_s (oP12Charset,"p12-charset",
-                "|NAME|set charset for a new PKCS#12 passphrase to NAME"),
   ARGPARSE_s_n (oHaveCert, "have-cert",
                 "certificate to export provided on STDIN"),
   ARGPARSE_s_n (oStore,    "store",
@@ -157,7 +141,7 @@ my_strusage (int level)
   const char *p;
   switch (level)
     {
-    case 11: p = "gpg-protect-tool (GnuPG)";
+    case 11: p = "gpg-protect-tool (" GNUPG_NAME ")";
       break;
     case 13: p = VERSION; break;
     case 17: p = PRINTABLE_OS_NAME; break;
@@ -206,7 +190,7 @@ make_canonical (const char *fname, const char *buf, size_t buflen)
   rc = gcry_sexp_sscan (&sexp, &erroff, buf, buflen);
   if (rc)
     {
-      log_error ("invalid S-Expression in `%s' (off=%u): %s\n",
+      log_error ("invalid S-Expression in '%s' (off=%u): %s\n",
                  fname, (unsigned int)erroff, gpg_strerror (rc));
       return NULL;
     }
@@ -273,7 +257,7 @@ read_file (const char *fname, size_t *r_length)
           nread = fread (buf+buflen, 1, NCHUNK, fp);
           if (nread < NCHUNK && ferror (fp))
             {
-              log_error ("error reading `[stdin]': %s\n", strerror (errno));
+              log_error ("error reading '[stdin]': %s\n", strerror (errno));
               xfree (buf);
               return NULL;
             }
@@ -290,13 +274,13 @@ read_file (const char *fname, size_t *r_length)
       fp = fopen (fname, "rb");
       if (!fp)
         {
-          log_error ("can't open `%s': %s\n", fname, strerror (errno));
+          log_error ("can't open '%s': %s\n", fname, strerror (errno));
           return NULL;
         }
 
       if (fstat (fileno(fp), &st))
         {
-          log_error ("can't stat `%s': %s\n", fname, strerror (errno));
+          log_error ("can't stat '%s': %s\n", fname, strerror (errno));
           fclose (fp);
           return NULL;
         }
@@ -305,7 +289,7 @@ read_file (const char *fname, size_t *r_length)
       buf = xmalloc (buflen+1);
       if (fread (buf, buflen, 1, fp) != 1)
         {
-          log_error ("error reading `%s': %s\n", fname, strerror (errno));
+          log_error ("error reading '%s': %s\n", fname, strerror (errno));
           fclose (fp);
           xfree (buf);
           return NULL;
@@ -349,7 +333,7 @@ read_and_protect (const char *fname)
     return;
 
   pw = get_passphrase (1);
-  rc = agent_protect (key, pw, &result, &resultlen);
+  rc = agent_protect (key, pw, &result, &resultlen, 0);
   release_passphrase (pw);
   xfree (key);
   if (rc)
@@ -387,7 +371,7 @@ read_and_unprotect (const char *fname)
   if (!key)
     return;
 
-  rc = agent_unprotect (key, (pw=get_passphrase (1)),
+  rc = agent_unprotect (NULL, key, (pw=get_passphrase (1)),
                         protected_at, &result, &resultlen);
   release_passphrase (pw);
   xfree (key);
@@ -554,463 +538,6 @@ show_keygrip (const char *fname)
 }
 
 
-static int
-rsa_key_check (struct rsa_secret_key_s *skey)
-{
-  int err = 0;
-  gcry_mpi_t t = gcry_mpi_snew (0);
-  gcry_mpi_t t1 = gcry_mpi_snew (0);
-  gcry_mpi_t t2 = gcry_mpi_snew (0);
-  gcry_mpi_t phi = gcry_mpi_snew (0);
-
-  /* check that n == p * q */
-  gcry_mpi_mul (t, skey->p, skey->q);
-  if (gcry_mpi_cmp( t, skey->n) )
-    {
-      log_error ("RSA oops: n != p * q\n");
-      err++;
-    }
-
-  /* check that p is less than q */
-  if (gcry_mpi_cmp (skey->p, skey->q) > 0)
-    {
-      gcry_mpi_t tmp;
-
-      log_info ("swapping secret primes\n");
-      tmp = gcry_mpi_copy (skey->p);
-      gcry_mpi_set (skey->p, skey->q);
-      gcry_mpi_set (skey->q, tmp);
-      gcry_mpi_release (tmp);
-      /* and must recompute u of course */
-      gcry_mpi_invm (skey->u, skey->p, skey->q);
-    }
-
-  /* check that e divides neither p-1 nor q-1 */
-  gcry_mpi_sub_ui (t, skey->p, 1 );
-  gcry_mpi_div (NULL, t, t, skey->e, 0);
-  if (!gcry_mpi_cmp_ui( t, 0) )
-    {
-      log_error ("RSA oops: e divides p-1\n");
-      err++;
-    }
-  gcry_mpi_sub_ui (t, skey->q, 1);
-  gcry_mpi_div (NULL, t, t, skey->e, 0);
-  if (!gcry_mpi_cmp_ui( t, 0))
-    {
-      log_info ( "RSA oops: e divides q-1\n" );
-      err++;
-    }
-
-  /* check that d is correct. */
-  gcry_mpi_sub_ui (t1, skey->p, 1);
-  gcry_mpi_sub_ui (t2, skey->q, 1);
-  gcry_mpi_mul (phi, t1, t2);
-  gcry_mpi_invm (t, skey->e, phi);
-  if (gcry_mpi_cmp (t, skey->d))
-    { /* no: try universal exponent. */
-      gcry_mpi_gcd (t, t1, t2);
-      gcry_mpi_div (t, NULL, phi, t, 0);
-      gcry_mpi_invm (t, skey->e, t);
-      if (gcry_mpi_cmp (t, skey->d))
-        {
-          log_error ("RSA oops: bad secret exponent\n");
-          err++;
-        }
-    }
-
-  /* check for correctness of u */
-  gcry_mpi_invm (t, skey->p, skey->q);
-  if (gcry_mpi_cmp (t, skey->u))
-    {
-      log_info ( "RSA oops: bad u parameter\n");
-      err++;
-    }
-
-  if (err)
-    log_info ("RSA secret key check failed\n");
-
-  gcry_mpi_release (t);
-  gcry_mpi_release (t1);
-  gcry_mpi_release (t2);
-  gcry_mpi_release (phi);
-
-  return err? -1:0;
-}
-
-
-/* A callback used by p12_parse to return a certificate.  */
-static void
-import_p12_cert_cb (void *opaque, const unsigned char *cert, size_t certlen)
-{
-  struct b64state state;
-  gpg_error_t err, err2;
-
-  (void)opaque;
-
-  err = b64enc_start (&state, stdout, "CERTIFICATE");
-  if (!err)
-    err = b64enc_write (&state, cert, certlen);
-  err2 = b64enc_finish (&state);
-  if (!err)
-    err = err2;
-  if (err)
-    log_error ("error writing armored certificate: %s\n", gpg_strerror (err));
-}
-
-static void
-import_p12_file (const char *fname)
-{
-  char *buf;
-  unsigned char *result;
-  size_t buflen, resultlen, buf_off;
-  int i;
-  int rc;
-  gcry_mpi_t *kparms;
-  struct rsa_secret_key_s sk;
-  gcry_sexp_t s_key;
-  unsigned char *key;
-  unsigned char grip[20];
-  char *pw;
-
-  /* fixme: we should release some stuff on error */
-
-  buf = read_file (fname, &buflen);
-  if (!buf)
-    return;
-
-  /* GnuPG 2.0.4 accidently created binary P12 files with the string
-     "The passphrase is %s encoded.\n\n" prepended to the ASN.1 data.
-     We fix that here.  */
-  if (buflen > 29 && !memcmp (buf, "The passphrase is ", 18))
-    {
-      for (buf_off=18; buf_off < buflen && buf[buf_off] != '\n'; buf_off++)
-        ;
-      buf_off++;
-      if (buf_off < buflen && buf[buf_off] == '\n')
-        buf_off++;
-    }
-  else
-    buf_off = 0;
-
-  kparms = p12_parse ((unsigned char*)buf+buf_off, buflen-buf_off,
-                      (pw=get_passphrase (2)),
-                      import_p12_cert_cb, NULL);
-  release_passphrase (pw);
-  xfree (buf);
-  if (!kparms)
-    {
-      log_error ("error parsing or decrypting the PKCS-12 file\n");
-      return;
-    }
-  for (i=0; kparms[i]; i++)
-    ;
-  if (i != 8)
-    {
-      log_error ("invalid structure of private key\n");
-      return;
-    }
-
-
-/*    print_mpi ("   n", kparms[0]); */
-/*    print_mpi ("   e", kparms[1]); */
-/*    print_mpi ("   d", kparms[2]); */
-/*    print_mpi ("   p", kparms[3]); */
-/*    print_mpi ("   q", kparms[4]); */
-/*    print_mpi ("dmp1", kparms[5]); */
-/*    print_mpi ("dmq1", kparms[6]); */
-/*    print_mpi ("   u", kparms[7]); */
-
-  sk.n = kparms[0];
-  sk.e = kparms[1];
-  sk.d = kparms[2];
-  sk.q = kparms[3];
-  sk.p = kparms[4];
-  sk.u = kparms[7];
-  if (rsa_key_check (&sk))
-    return;
-/*    print_mpi ("   n", sk.n); */
-/*    print_mpi ("   e", sk.e); */
-/*    print_mpi ("   d", sk.d); */
-/*    print_mpi ("   p", sk.p); */
-/*    print_mpi ("   q", sk.q); */
-/*    print_mpi ("   u", sk.u); */
-
-  /* Create an S-expresion from the parameters. */
-  rc = gcry_sexp_build (&s_key, NULL,
-                        "(private-key(rsa(n%m)(e%m)(d%m)(p%m)(q%m)(u%m)))",
-                        sk.n, sk.e, sk.d, sk.p, sk.q, sk.u, NULL);
-  for (i=0; i < 8; i++)
-    gcry_mpi_release (kparms[i]);
-  gcry_free (kparms);
-  if (rc)
-    {
-      log_error ("failed to created S-expression from key: %s\n",
-                 gpg_strerror (rc));
-      return;
-    }
-
-  /* Compute the keygrip. */
-  if (!gcry_pk_get_keygrip (s_key, grip))
-    {
-      log_error ("can't calculate keygrip\n");
-      return;
-    }
-  log_info ("keygrip: ");
-  for (i=0; i < 20; i++)
-    log_printf ("%02X", grip[i]);
-  log_printf ("\n");
-
-  /* Convert to canonical encoding. */
-  buflen = gcry_sexp_sprint (s_key, GCRYSEXP_FMT_CANON, NULL, 0);
-  assert (buflen);
-  key = gcry_xmalloc_secure (buflen);
-  buflen = gcry_sexp_sprint (s_key, GCRYSEXP_FMT_CANON, key, buflen);
-  assert (buflen);
-  gcry_sexp_release (s_key);
-
-  pw = get_passphrase (4);
-  rc = agent_protect (key, pw, &result, &resultlen);
-  release_passphrase (pw);
-  xfree (key);
-  if (rc)
-    {
-      log_error ("protecting the key failed: %s\n", gpg_strerror (rc));
-      return;
-    }
-
-  if (opt_armor)
-    {
-      char *p = make_advanced (result, resultlen);
-      xfree (result);
-      if (!p)
-        return;
-      result = (unsigned char*)p;
-      resultlen = strlen (p);
-    }
-
-  if (opt_store)
-    store_private_key (grip, result, resultlen, opt_force);
-  else
-    fwrite (result, resultlen, 1, stdout);
-
-  xfree (result);
-}
-
-
-
-static gcry_mpi_t *
-sexp_to_kparms (gcry_sexp_t sexp)
-{
-  gcry_sexp_t list, l2;
-  const char *name;
-  const char *s;
-  size_t n;
-  int i, idx;
-  const char *elems;
-  gcry_mpi_t *array;
-
-  list = gcry_sexp_find_token (sexp, "private-key", 0 );
-  if(!list)
-    return NULL;
-  l2 = gcry_sexp_cadr (list);
-  gcry_sexp_release (list);
-  list = l2;
-  name = gcry_sexp_nth_data (list, 0, &n);
-  if(!name || n != 3 || memcmp (name, "rsa", 3))
-    {
-      gcry_sexp_release (list);
-      return NULL;
-    }
-
-  /* Parameter names used with RSA. */
-  elems = "nedpqu";
-  array = xcalloc (strlen(elems) + 1, sizeof *array);
-  for (idx=0, s=elems; *s; s++, idx++ )
-    {
-      l2 = gcry_sexp_find_token (list, s, 1);
-      if (!l2)
-        {
-          for (i=0; i<idx; i++)
-            gcry_mpi_release (array[i]);
-          xfree (array);
-          gcry_sexp_release (list);
-          return NULL; /* required parameter not found */
-	}
-      array[idx] = gcry_sexp_nth_mpi (l2, 1, GCRYMPI_FMT_USG);
-      gcry_sexp_release (l2);
-      if (!array[idx])
-        {
-          for (i=0; i<idx; i++)
-            gcry_mpi_release (array[i]);
-          xfree (array);
-          gcry_sexp_release (list);
-          return NULL; /* required parameter is invalid */
-	}
-    }
-
-  gcry_sexp_release (list);
-  return array;
-}
-
-
-/* Check whether STRING is a KEYGRIP, i.e has the correct length and
-   does only consist of uppercase hex characters. */
-static int
-is_keygrip (const char *string)
-{
-  int i;
-
-  for(i=0; string[i] && i < 41; i++)
-    if (!strchr("01234567890ABCDEF", string[i]))
-      return 0;
-  return i == 40;
-}
-
-
-static void
-export_p12_file (const char *fname)
-{
-  int rc;
-  gcry_mpi_t kparms[9], *kp;
-  unsigned char *key;
-  size_t keylen;
-  gcry_sexp_t private;
-  struct rsa_secret_key_s sk;
-  int i;
-  unsigned char *cert = NULL;
-  size_t certlen = 0;
-  int keytype;
-  size_t keylen_for_wipe = 0;
-  char *pw;
-
-  if ( is_keygrip (fname) )
-    {
-      char hexgrip[40+4+1];
-      char *p;
-
-      assert (strlen(fname) == 40);
-      strcpy (stpcpy (hexgrip, fname), ".key");
-
-      p = make_filename (opt_homedir, GNUPG_PRIVATE_KEYS_DIR, hexgrip, NULL);
-      key = read_key (p);
-      xfree (p);
-    }
-  else
-    key = read_key (fname);
-
-  if (!key)
-    return;
-
-  keytype = agent_private_key_type (key);
-  if (keytype == PRIVATE_KEY_PROTECTED)
-    {
-      unsigned char *tmpkey;
-      size_t tmplen;
-
-      rc = agent_unprotect (key, (pw=get_passphrase (1)),
-                            NULL, &tmpkey, &tmplen);
-      release_passphrase (pw);
-      if (rc)
-        {
-          if (opt_status_msg && gpg_err_code (rc) == GPG_ERR_BAD_PASSPHRASE )
-            log_info ("[PROTECT-TOOL:] bad-passphrase\n");
-          log_error ("unprotecting key `%s' failed: %s\n",
-                     fname, gpg_strerror (rc));
-          xfree (key);
-          return;
-        }
-      xfree (key);
-      key = tmpkey;
-      keylen_for_wipe = tmplen;
-
-      keytype = agent_private_key_type (key);
-    }
-
-  if (keytype == PRIVATE_KEY_SHADOWED)
-    {
-      log_error ("`%s' is a shadowed private key - can't export it\n", fname);
-      wipememory (key, keylen_for_wipe);
-      xfree (key);
-      return;
-    }
-  else if (keytype != PRIVATE_KEY_CLEAR)
-    {
-      log_error ("\%s' is not a private key\n", fname);
-      wipememory (key, keylen_for_wipe);
-      xfree (key);
-      return;
-    }
-
-
-  if (opt_have_cert)
-    {
-      cert = (unsigned char*)read_file ("-", &certlen);
-      if (!cert)
-        {
-          wipememory (key, keylen_for_wipe);
-          xfree (key);
-          return;
-        }
-    }
-
-
-  if (gcry_sexp_new (&private, key, 0, 0))
-    {
-      log_error ("gcry_sexp_new failed\n");
-      wipememory (key, keylen_for_wipe);
-      xfree (key);
-      xfree (cert);
-      return;
-    }
-  wipememory (key, keylen_for_wipe);
-  xfree (key);
-
-  kp = sexp_to_kparms (private);
-  gcry_sexp_release (private);
-  if (!kp)
-    {
-      log_error ("error converting key parameters\n");
-      xfree (cert);
-      return;
-    }
-  sk.n = kp[0];
-  sk.e = kp[1];
-  sk.d = kp[2];
-  sk.p = kp[3];
-  sk.q = kp[4];
-  sk.u = kp[5];
-  xfree (kp);
-
-
-  kparms[0] = sk.n;
-  kparms[1] = sk.e;
-  kparms[2] = sk.d;
-  kparms[3] = sk.q;
-  kparms[4] = sk.p;
-  kparms[5] = gcry_mpi_snew (0);  /* compute d mod (p-1) */
-  gcry_mpi_sub_ui (kparms[5], kparms[3], 1);
-  gcry_mpi_mod (kparms[5], sk.d, kparms[5]);
-  kparms[6] = gcry_mpi_snew (0);  /* compute d mod (q-1) */
-  gcry_mpi_sub_ui (kparms[6], kparms[4], 1);
-  gcry_mpi_mod (kparms[6], sk.d, kparms[6]);
-  kparms[7] = sk.u;
-  kparms[8] = NULL;
-
-  pw = get_passphrase (3);
-  key = p12_build (kparms, cert, certlen, pw, opt_p12_charset, &keylen);
-  release_passphrase (pw);
-  xfree (cert);
-  for (i=0; i < 8; i++)
-    gcry_mpi_release (kparms[i]);
-  if (!key)
-    return;
-
-#ifdef HAVE_DOSISH_SYSTEM
-  setmode ( fileno (stdout) , O_BINARY );
-#endif
-  fwrite (key, keylen, 1, stdout);
-  xfree (key);
-}
 
 
 
@@ -1021,13 +548,14 @@ main (int argc, char **argv )
   int cmd = 0;
   const char *fname;
 
+  early_system_init ();
   set_strusage (my_strusage);
   gcry_control (GCRYCTL_SUSPEND_SECMEM_WARN);
   log_set_prefix ("gpg-protect-tool", 1);
 
   /* Make sure that our subsystems are ready.  */
   i18n_init ();
-  init_common_subsystems ();
+  init_common_subsystems (&argc, &argv);
 
   if (!gcry_check_version (NEED_LIBGCRYPT_VERSION) )
     {
@@ -1041,7 +569,6 @@ main (int argc, char **argv )
 
   opt_homedir = default_homedir ();
 
-  opt_session_env = session_env_new ();
 
   pargs.argc = &argc;
   pargs.argv = &argv;
@@ -1062,10 +589,6 @@ main (int argc, char **argv )
         case oShadow: cmd = oShadow; break;
         case oShowShadowInfo: cmd = oShowShadowInfo; break;
         case oShowKeygrip: cmd = oShowKeygrip; break;
-        case oP12Import: cmd = oP12Import; break;
-        case oP12Export: cmd = oP12Export; break;
-        case oP12Charset: opt_p12_charset = pargs.r.ret_str; break;
-
         case oS2Kcalibration: cmd = oS2Kcalibration; break;
 
         case oPassphrase: opt_passphrase = pargs.r.ret_str; break;
@@ -1093,7 +616,7 @@ main (int argc, char **argv )
                                 opt.verbose,
                                 opt_homedir,
                                 opt_agent_program,
-                                NULL, NULL, opt_session_env);
+                                NULL, NULL, NULL);
 
   if (opt_prompt)
     opt_prompt = percent_plus_unescape (opt_prompt, 0);
@@ -1108,10 +631,6 @@ main (int argc, char **argv )
     show_shadow_info (fname);
   else if (cmd == oShowKeygrip)
     show_keygrip (fname);
-  else if (cmd == oP12Import)
-    import_p12_file (fname);
-  else if (cmd == oP12Export)
-    export_p12_file (fname);
   else if (cmd == oS2Kcalibration)
     {
       if (!opt.verbose)
@@ -1129,8 +648,6 @@ void
 agent_exit (int rc)
 {
   rc = rc? rc : log_get_errorcount(0)? 2 : 0;
-  session_env_release (opt_session_env);
-  opt_session_env = NULL;
   exit (rc);
 }
 
@@ -1188,7 +705,8 @@ get_passphrase (int promptno)
                               repeat, repeat, 1, &pw);
   if (err)
     {
-      if (gpg_err_code (err) == GPG_ERR_CANCELED)
+      if (gpg_err_code (err) == GPG_ERR_CANCELED
+          || gpg_err_code (err) == GPG_ERR_FULLY_CANCELED)
         log_info (_("cancelled\n"));
       else
         log_error (_("error while asking for the passphrase: %s\n"),
@@ -1211,65 +729,14 @@ release_passphrase (char *pw)
     }
 }
 
-static int
-store_private_key (const unsigned char *grip,
-                   const void *buffer, size_t length, int force)
+
+/* Stub function.  */
+gpg_error_t
+convert_from_openpgp_native (gcry_sexp_t s_pgp, const char *passphrase,
+                             unsigned char **r_key)
 {
-  char *fname;
-  estream_t fp;
-  char hexgrip[40+4+1];
-
-  bin2hex (grip, 20, hexgrip);
-  strcpy (hexgrip+40, ".key");
-
-  fname = make_filename (opt_homedir, GNUPG_PRIVATE_KEYS_DIR, hexgrip, NULL);
-  if (force)
-    fp = es_fopen (fname, "wb");
-  else
-    {
-      if (!access (fname, F_OK))
-      {
-        if (opt_status_msg)
-          log_info ("[PROTECT-TOOL:] secretkey-exists\n");
-        if (opt_no_fail_on_exist)
-          log_info ("secret key file `%s' already exists\n", fname);
-        else
-          log_error ("secret key file `%s' already exists\n", fname);
-        xfree (fname);
-        return opt_no_fail_on_exist? 0 : -1;
-      }
-      /* FWIW: Under Windows Vista the standard fopen in the msvcrt
-         fails if the "x" GNU extension is used.  */
-      fp = es_fopen (fname, "wbx");
-    }
-
-  if (!fp)
-    {
-      log_error ("can't create `%s': %s\n", fname, strerror (errno));
-      xfree (fname);
-      return -1;
-    }
-
-  if (es_fwrite (buffer, length, 1, fp) != 1)
-    {
-      log_error ("error writing `%s': %s\n", fname, strerror (errno));
-      es_fclose (fp);
-      remove (fname);
-      xfree (fname);
-      return -1;
-    }
-  if (es_fclose (fp))
-    {
-      log_error ("error closing `%s': %s\n", fname, strerror (errno));
-      remove (fname);
-      xfree (fname);
-      return -1;
-    }
-  log_info ("secret key stored as `%s'\n", fname);
-
-  if (opt_status_msg)
-    log_info ("[PROTECT-TOOL:] secretkey-stored\n");
-
-  xfree (fname);
-  return 0;
+  (void)s_pgp;
+  (void)passphrase;
+  (void)r_key;
+  return gpg_error (GPG_ERR_BUG);
 }
